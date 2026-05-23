@@ -2,7 +2,15 @@ from __future__ import annotations
 
 import pytest
 
-from ax_browser_broker.iproyal import IPRoyalClient, IPRoyalConfig, IPRoyalError, isp_dedicated_summary, redact
+from ax_browser_broker.iproyal import (
+    IPRoyalClient,
+    IPRoyalConfig,
+    IPRoyalError,
+    extract_proxy_records,
+    isp_dedicated_summary,
+    redact,
+    redact_payload,
+)
 
 
 def test_redact() -> None:
@@ -32,3 +40,38 @@ def test_create_order_requires_confirm_spend() -> None:
     client = IPRoyalClient(IPRoyalConfig(api_key="test"))
     with pytest.raises(IPRoyalError, match="confirm_spend"):
         client.create_order(product_location_id=1)
+
+
+def test_extract_proxy_records_from_nested_payload() -> None:
+    payload = {
+        "data": {
+            "order": {
+                "proxies": [
+                    {
+                        "ip": "203.0.113.10",
+                        "port": 1234,
+                        "username": "user",
+                        "password": "pass",
+                    }
+                ]
+            }
+        }
+    }
+
+    assert extract_proxy_records(payload) == [
+        {
+            "scheme": "http",
+            "host": "203.0.113.10",
+            "port": 1234,
+            "username": "user",
+            "password": "pass",
+        }
+    ]
+
+
+def test_redact_payload_masks_proxy_credentials() -> None:
+    payload = {"proxy": {"username": "user-secret", "password": "pass-secret", "host": "203.0.113.10"}}
+
+    assert redact_payload(payload) == {
+        "proxy": {"username": "user...cret", "password": "pass...cret", "host": "203.0.113.10"}
+    }

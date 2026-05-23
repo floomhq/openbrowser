@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export PYTHONPATH="/root/ax-browser-broker:${PYTHONPATH:-}"
+exec python3 -m ax_browser_broker.proxy_forwarder "$@"

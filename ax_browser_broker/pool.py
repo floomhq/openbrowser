@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import LEASE_TTL_SECONDS, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
+from .identities import require_identity
 
 
 class LeaseError(RuntimeError):
@@ -28,6 +29,7 @@ class Lease:
     expires_at: int
     cdp: str
     profile_dir: str
+    identity_id: str | None = None
 
 
 def healthy(port: int, timeout: float = 1.5) -> bool:
@@ -69,6 +71,7 @@ def _lease_from_state(lease_id: str, lease: dict[str, Any]) -> Lease:
     created_at = int(lease.get("created_at", lease.get("ts", time.time())))
     heartbeat_at = int(lease.get("heartbeat_at", lease.get("ts", created_at)))
     expires_at = heartbeat_at + LEASE_TTL_SECONDS
+    profile_dir = str(lease.get("profile_dir") or slot.profile_dir)
     return Lease(
         lease_id=lease_id,
         name=slot.name,
@@ -78,7 +81,8 @@ def _lease_from_state(lease_id: str, lease: dict[str, Any]) -> Lease:
         heartbeat_at=heartbeat_at,
         expires_at=expires_at,
         cdp=slot.cdp,
-        profile_dir=str(slot.profile_dir),
+        profile_dir=profile_dir,
+        identity_id=str(lease["identity_id"]) if lease.get("identity_id") else None,
     )
 
 
@@ -93,13 +97,23 @@ def gc_leases(state: dict[str, Any]) -> list[str]:
     return expired
 
 
-def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS) -> Lease:
+def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None) -> Lease:
     now = int(time.time())
     effective_ttl = max(60, min(int(ttl_seconds), LEASE_TTL_SECONDS))
+    allowed_slot = None
+    identity_profile_dir = None
+    if identity_id:
+        identity = require_identity(identity_id)
+        allowed_slot = identity.slot
+        identity_profile_dir = str(identity.profile_dir)
     with locked_state() as state:
         gc_leases(state)
+        if identity_id and any(item.get("identity_id") == identity_id for item in state["leases"].values()):
+            raise LeaseError(f"Identity already leased: {identity_id}")
         in_use = {str(item["name"]) for item in state["leases"].values()}
         for slot in SLOTS:
+            if allowed_slot and slot.name != allowed_slot:
+                continue
             if slot.name in in_use or not healthy(slot.port):
                 continue
             lease_id = str(uuid.uuid4())
@@ -112,6 +126,10 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS) -> Lease:
                 "heartbeat_at": now,
                 "ttl_seconds": effective_ttl,
             }
+            if identity_id:
+                state["leases"][lease_id]["identity_id"] = identity_id
+            if identity_profile_dir:
+                state["leases"][lease_id]["profile_dir"] = identity_profile_dir
             return _lease_from_state(lease_id, state["leases"][lease_id])
     raise LeaseError("No healthy free browser slots")
 

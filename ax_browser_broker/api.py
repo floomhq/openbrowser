@@ -26,6 +26,7 @@ from .profiles import profile_status, seed_slot, snapshot_golden
 class LeaseRequest(BaseModel):
     owner: str = "unknown"
     ttl_seconds: int = Field(default=14400, ge=60, le=14400)
+    identity_id: str | None = None
 
 
 class LeaseIdRequest(BaseModel):
@@ -111,7 +112,7 @@ async def get_status() -> dict[str, Any]:
 @app.post("/lease")
 async def create_lease(request: LeaseRequest) -> dict[str, Any]:
     try:
-        return lease(request.owner, request.ttl_seconds).__dict__
+        return lease(request.owner, request.ttl_seconds, request.identity_id).__dict__
     except Exception as error:
         raise _http_error(error) from error
 

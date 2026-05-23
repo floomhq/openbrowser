@@ -10,7 +10,7 @@ def test_browser_use_adapter_releases_on_process_failure(monkeypatch) -> None:
     monkeypatch.setattr(
         adapters,
         "_lease",
-        lambda owner: {
+        lambda owner, identity_id=None: {
             "lease_id": "lease-1",
             "name": "pool-a",
             "cdp": "http://127.0.0.1:9223",

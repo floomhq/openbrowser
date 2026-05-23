@@ -44,6 +44,21 @@ def redact(value: str | None) -> str | None:
     return text[:4] + "..." + text[-4:]
 
 
+def redact_payload(value: Any) -> Any:
+    sensitive_keys = {"password", "pass", "username", "user", "login", "api_key", "token"}
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        for key, child in value.items():
+            if str(key).lower() in sensitive_keys:
+                redacted[key] = redact(str(child)) if child is not None else None
+            else:
+                redacted[key] = redact_payload(child)
+        return redacted
+    if isinstance(value, list):
+        return [redact_payload(child) for child in value]
+    return value
+
+
 class IPRoyalClient:
     def __init__(self, config: IPRoyalConfig | None = None) -> None:
         self.config = config or load_config()
@@ -152,6 +167,35 @@ def isp_dedicated_summary(products: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def extract_proxy_records(payload: Any) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            host = value.get("host") or value.get("hostname") or value.get("ip") or value.get("address")
+            port = value.get("port") or value.get("http_port") or value.get("socks5_port")
+            username = value.get("username") or value.get("user") or value.get("login")
+            password = value.get("password") or value.get("pass")
+            if host and port and username and password:
+                records.append(
+                    {
+                        "scheme": str(value.get("scheme") or value.get("protocol") or "http").lower(),
+                        "host": str(host),
+                        "port": int(port),
+                        "username": str(username),
+                        "password": str(password),
+                    }
+                )
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(payload)
+    return records
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="IPRoyal helper for AX41 Browser Broker")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -166,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
     buy.add_argument("--location-id", type=int, required=True)
     buy.add_argument("--quantity", type=int, default=1)
     buy.add_argument("--confirm-spend", action="store_true")
+    buy.add_argument("--store-ref")
+    buy.add_argument("--country")
     args = parser.parse_args(argv)
 
     client = IPRoyalClient()
@@ -178,7 +224,20 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "pricing":
         print(json.dumps(client.calculate_pricing(args.location_id, args.quantity), indent=2))
     elif args.cmd == "buy-isp-30d":
-        print(json.dumps(client.create_order(args.location_id, args.quantity, confirm_spend=args.confirm_spend), indent=2))
+        order = client.create_order(args.location_id, args.quantity, confirm_spend=args.confirm_spend)
+        if args.store_ref:
+            from .identities import save_proxy
+
+            records = extract_proxy_records(order)
+            if not records:
+                raise IPRoyalError("Order created, but no proxy credentials were found in the response")
+            proxy = records[0]
+            if args.country:
+                proxy["country"] = args.country
+            save_proxy(args.store_ref, proxy)
+            print(json.dumps({"stored_ref": args.store_ref, "order": redact_payload(order)}, indent=2))
+        else:
+            print(json.dumps(redact_payload(order), indent=2))
     return 0
 
 

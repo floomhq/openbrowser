@@ -37,9 +37,9 @@ def browser_status() -> dict[str, Any]:
 
 
 @mcp.tool()
-def browser_lease(owner: str = "agent", ttl_seconds: int = 14400) -> dict[str, Any]:
-    """Lease an isolated browser session. Use the returned lease_id for every browser action."""
-    return _request("POST", "/lease", {"owner": owner, "ttl_seconds": ttl_seconds})
+def browser_lease(owner: str = "agent", ttl_seconds: int = 14400, identity_id: str | None = None) -> dict[str, Any]:
+    """Lease an isolated browser session. Pass identity_id for a pinned profile/proxy identity."""
+    return _request("POST", "/lease", {"owner": owner, "ttl_seconds": ttl_seconds, "identity_id": identity_id})
 
 
 @mcp.tool()
