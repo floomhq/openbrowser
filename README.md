@@ -32,6 +32,8 @@ PYTHONPATH=/root/ax-browser-broker python3 -m pytest -q /root/ax-browser-broker/
 curl -fsS http://127.0.0.1:8767/health
 ```
 
+Operational verification and rollback notes live in `docs/operations.md`.
+
 ## Auth flow
 
 Agents create an auth request with `/auth/request` or `auth_request`.
