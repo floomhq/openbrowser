@@ -1,0 +1,19 @@
+{
+  "identities": {
+    "linkedin-main": {
+      "site": "linkedin.com",
+      "profile_dir": "/root/ax-browser-broker/identities/linkedin-main/profile",
+      "proxy_ref": "iproyal:linkedin-main",
+      "timezone": "America/New_York",
+      "locale": "en-US",
+      "geo": {
+        "country": "US",
+        "city": ""
+      },
+      "policy": {
+        "max_parallel_sessions": 1,
+        "requires_human_auth": true
+      }
+    }
+  }
+}
