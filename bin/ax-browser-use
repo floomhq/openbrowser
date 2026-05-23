@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/ax-browser-broker
+exec python3 -m ax_browser_broker.adapters browser-use "$@"

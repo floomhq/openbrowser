@@ -1,0 +1,15 @@
+[project]
+name = "ax-browser-broker"
+version = "0.1.0"
+description = "Local AX41 browser broker with MCP tools, isolated CDP leases, and human auth refresh."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.128.0",
+  "uvicorn>=0.39.0",
+  "playwright>=1.50.0",
+  "mcp>=1.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

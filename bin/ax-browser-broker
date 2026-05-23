@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd /root/ax-browser-broker
+exec python3 -m uvicorn ax_browser_broker.api:app --host 127.0.0.1 --port 8767

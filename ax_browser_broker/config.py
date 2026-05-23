@@ -1,0 +1,46 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class Slot:
+    name: str
+    port: int
+
+    @property
+    def cdp(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    @property
+    def profile_dir(self) -> Path:
+        return BROWSER_POOL_DIR / "profiles" / self.name
+
+
+ROOT = Path("/root/ax-browser-broker")
+BROWSER_POOL_DIR = Path("/root/browser-pool")
+STATE_DIR = ROOT / "state"
+ARTIFACT_DIR = ROOT / "artifacts"
+SCREENSHOT_DIR = ARTIFACT_DIR / "screenshots"
+LOG_DIR = ROOT / "logs"
+PROFILE_DIR = ROOT / "profiles"
+GOLDEN_PROFILE_DIR = PROFILE_DIR / "golden"
+AUTHENTICATED_PROFILE_DIR = Path("/root/.config/authenticated-chrome")
+POOL_STATE_FILE = BROWSER_POOL_DIR / "state" / "leases.json"
+AUTH_STATE_FILE = STATE_DIR / "auth_requests.json"
+BROKER_HOST = "127.0.0.1"
+BROKER_PORT = 8767
+LEASE_TTL_SECONDS = 60 * 60 * 4
+AUTH_REQUEST_TTL_SECONDS = 15 * 60
+MAX_SNAPSHOT_CHARS = 18000
+SLOTS = (
+    Slot("pool-a", 9223),
+    Slot("pool-b", 9224),
+    Slot("pool-c", 9225),
+)
+
+
+def ensure_dirs() -> None:
+    for path in (STATE_DIR, ARTIFACT_DIR, SCREENSHOT_DIR, LOG_DIR, PROFILE_DIR):
+        path.mkdir(parents=True, exist_ok=True)
