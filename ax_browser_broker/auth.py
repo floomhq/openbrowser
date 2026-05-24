@@ -227,6 +227,46 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     }
 
 
+def _process_gone(pid: int) -> bool:
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if proc_stat.exists():
+        try:
+            parts = proc_stat.read_text(encoding="utf-8").split()
+            if len(parts) > 2 and parts[2] == "Z":
+                return True
+        except OSError:
+            pass
+    try:
+        os.kill(pid, 0)
+        return False
+    except ProcessLookupError:
+        return True
+
+
+def _terminate_process_group(pid: int, timeout_seconds: float = 2.0) -> bool:
+    try:
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if _process_gone(pid):
+            return True
+        time.sleep(0.05)
+    try:
+        os.killpg(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        if _process_gone(pid):
+            return True
+        time.sleep(0.05)
+    return _process_gone(pid)
+
+
 def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
     try:
         request = get_auth_request(token)
@@ -240,11 +280,9 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
         pid = vnc.get(key)
         if not pid:
             continue
-        try:
-            os.kill(int(pid), signal.SIGTERM)
-            stopped.append(int(pid))
-        except ProcessLookupError:
-            pass
+        int_pid = int(pid)
+        if _terminate_process_group(int_pid):
+            stopped.append(int_pid)
     password_file = vnc.get("password_file")
     if password_file:
         try:

@@ -37,3 +37,20 @@ def test_stop_auth_vnc_removes_password_file(tmp_path, monkeypatch) -> None:
     result = auth.stop_auth_vnc(request["token"])
     assert result["stopped"] == []
     assert not password_file.exists()
+
+
+def test_stop_auth_vnc_terminates_recorded_process_groups(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    terminated = []
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["vnc"] = {"x11vnc_pid": 123, "websockify_pid": 456}
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    result = auth.stop_auth_vnc(request["token"])
+
+    assert terminated == [123, 456]
+    assert result["stopped"] == [123, 456]
