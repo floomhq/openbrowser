@@ -32,6 +32,35 @@ The supported fallback is human auth into the AX41 profile:
 
 If Chrome Sync is enabled during human login, Chrome-managed passwords/bookmarks/extensions may sync through Google's normal Chrome account flow. Website login sessions still depend on the website and normally require login on AX41.
 
+## Mirror And Tunnel Verification
+
+Use the profile sync wrapper for the whole Mac dependency chain:
+
+```bash
+/root/ax-browser-broker/bin/ax-mac-profile-sync status
+/root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
+/root/ax-browser-broker/bin/ax-mac-profile-sync sync --report-issue
+```
+
+The wrapper verifies:
+
+- Mac reverse SSH is reachable at AX41 `127.0.0.1:2222`.
+- Mac Chrome CDP is reachable through AX41 `http://127.0.0.1:19333`.
+- Mac Chrome profiles can be mirrored into `/root/browser-pool/profiles/chrome-*`.
+
+If the Mac reverse tunnel is missing, reinstall the Mac launch agents from the Mac:
+
+```bash
+/root/ax-browser-broker/scripts/install-mac-reverse-tunnel.sh
+```
+
+The installer creates:
+
+- `~/Library/LaunchAgents/dev.ax41.mac-reverse-ssh.plist`
+- `~/Library/LaunchAgents/dev.ax41.chrome-cdp.plist`
+
+The reverse SSH agent exposes Mac SSH only on AX41 localhost, not publicly. The Chrome CDP launch agent uses `~/.hermes/chrome-cdp-clone` and port `9333` on the Mac; AX41 then connects through `/root/.codex/scripts/mac-chrome-cdp ensure`.
+
 ## Slot Behavior
 
 Imported `chrome-*` identities use `slot: "auto"` by default.

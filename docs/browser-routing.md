@@ -54,6 +54,8 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 ```bash
 /root/ax-browser-broker/bin/ax-browser-identity mirror-mac-profiles --dry-run
 /root/ax-browser-broker/bin/ax-browser-identity mirror-mac-profiles
+/root/ax-browser-broker/bin/ax-mac-profile-sync status
+/root/ax-browser-broker/bin/ax-mac-profile-sync sync --report-issue
 /root/ax-browser-broker/bin/ax-browser-identity activate chrome-depontefede --slot pool-a
 ```
 

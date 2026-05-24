@@ -24,6 +24,8 @@ For Federico's Mac Chrome people/profiles, import metadata into broker identitie
 /root/ax-browser-broker/bin/ax-browser-identity mac-inventory
 /root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles --dry-run
 /root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles
+/root/ax-browser-broker/bin/ax-mac-profile-sync status
+/root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
 ```
 
 The importer creates `chrome-*` identities with isolated AX41 profile directories and `slot: "auto"` so different profiles can run concurrently when free pool slots exist. Auto identities use free non-reserved slots; pinned/proxied identities such as `linkedin-main` keep their dedicated slot and are not overwritten by generic Chrome profile work. The importer copies no raw cookies, passwords, or tokens from macOS because macOS Chrome secret state is Keychain-backed and not portable Linux Chrome session state.
