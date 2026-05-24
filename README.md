@@ -49,6 +49,7 @@ Agents can call `broker_docs` through MCP for live runbook topics:
 - `openbrowser`
 - `auth`
 - `feedback`
+- `telemetry`
 - `safety`
 
 Agents can report issues through MCP:
@@ -58,6 +59,14 @@ Agents can report issues through MCP:
 - `feedback_update_issue`
 
 The issue store is local at `/root/ax-browser-broker/state/issues.json` and is ignored by git.
+
+Agents can record and inspect telemetry through MCP:
+
+- `telemetry_record_event`
+- `telemetry_list_events`
+- `telemetry_summary`
+
+The telemetry store is append-only JSONL at `/root/ax-browser-broker/state/telemetry.jsonl` and is ignored by git. Sensitive keys such as password, token, cookie, secret, authorization, and totp are redacted before storage. Browser typing telemetry stores text length, not typed text.
 
 ## Auth flow
 

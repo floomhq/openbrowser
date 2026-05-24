@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from ax_browser_broker import api, auth, feedback
+from ax_browser_broker import api, auth, feedback, telemetry
 
 
 def test_auth_portal_escapes_request_values(tmp_path, monkeypatch) -> None:
@@ -47,6 +47,7 @@ def test_agent_docs_endpoint() -> None:
 
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(feedback, "ISSUE_STATE_FILE", tmp_path / "issues.json")
+    monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")
     client = TestClient(api.app)
 
     created = client.post(
@@ -66,3 +67,28 @@ def test_feedback_issue_api(tmp_path, monkeypatch) -> None:
     assert listed.json()["count"] == 1
     resolved = client.post(f"/feedback/issues/{issue_id}", json={"status": "resolved", "note": "Done"})
     assert resolved.json()["status"] == "resolved"
+    events = client.get(f"/telemetry/events?issue_id={issue_id}")
+    assert events.json()["count"] == 2
+
+
+def test_telemetry_api_redacts_sensitive_data(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")
+    client = TestClient(api.app)
+
+    created = client.post(
+        "/telemetry/events",
+        json={
+            "source": "pytest",
+            "event_type": "smoke",
+            "message": "Credential redaction smoke",
+            "severity": "info",
+            "data": {"token": "abc123", "result": "ok"},
+        },
+    )
+
+    assert created.status_code == 200
+    assert created.json()["data"]["token"] == "[redacted]"
+    listed = client.get("/telemetry/events?event_type=smoke")
+    assert listed.json()["count"] == 1
+    summary = client.get("/telemetry/summary")
+    assert summary.json()["by_event_type"]["smoke"] == 1

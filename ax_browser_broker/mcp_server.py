@@ -39,7 +39,7 @@ def browser_status() -> dict[str, Any]:
 
 @mcp.tool()
 def broker_docs(topic: str = "quickstart") -> dict[str, Any]:
-    """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, safety."""
+    """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, telemetry, safety."""
     return _request("GET", f"/agent-docs?topic={urllib.parse.quote(topic)}")
 
 
@@ -175,6 +175,68 @@ def feedback_list_issues(status: str = "open", limit: int = 50) -> dict[str, Any
 def feedback_update_issue(issue_id: str, status: str | None = None, note: str | None = None) -> dict[str, Any]:
     """Update a browser broker feedback issue by adding a note and/or changing status."""
     return _request("POST", f"/feedback/issues/{urllib.parse.quote(issue_id)}", {"status": status, "note": note})
+
+
+@mcp.tool()
+def telemetry_record_event(
+    source: str,
+    event_type: str,
+    message: str,
+    severity: str = "info",
+    lease_id: str | None = None,
+    issue_id: str | None = None,
+    url: str | None = None,
+    tags: list[str] | None = None,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record a sanitized telemetry event for browser sessions, agent actions, failures, or smoke tests."""
+    return _request(
+        "POST",
+        "/telemetry/events",
+        {
+            "source": source,
+            "event_type": event_type,
+            "message": message,
+            "severity": severity,
+            "lease_id": lease_id,
+            "issue_id": issue_id,
+            "url": url,
+            "tags": tags or [],
+            "data": data or {},
+        },
+    )
+
+
+@mcp.tool()
+def telemetry_list_events(
+    source: str | None = None,
+    event_type: str | None = None,
+    severity: str | None = None,
+    lease_id: str | None = None,
+    issue_id: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """List recent sanitized telemetry events with optional filters."""
+    params = {
+        "limit": str(int(limit)),
+    }
+    if source:
+        params["source"] = source
+    if event_type:
+        params["event_type"] = event_type
+    if severity:
+        params["severity"] = severity
+    if lease_id:
+        params["lease_id"] = lease_id
+    if issue_id:
+        params["issue_id"] = issue_id
+    return _request("GET", "/telemetry/events?" + urllib.parse.urlencode(params))
+
+
+@mcp.tool()
+def telemetry_summary(window_seconds: int = 86400) -> dict[str, Any]:
+    """Return telemetry counts by event type, severity, and source for a time window."""
+    return _request("GET", f"/telemetry/summary?window_seconds={int(window_seconds)}")
 
 
 def main() -> None:

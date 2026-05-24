@@ -89,3 +89,38 @@ Agents use MCP tools:
 - `feedback_report_issue`
 - `feedback_list_issues`
 - `feedback_update_issue`
+
+Issue creation and updates also emit telemetry events linked by `issue_id`.
+
+## Telemetry
+
+Telemetry state lives at `/root/ax-browser-broker/state/telemetry.jsonl`.
+
+Agents use MCP tools:
+
+- `telemetry_record_event`
+- `telemetry_list_events`
+- `telemetry_summary`
+
+Event types:
+
+- `auth`
+- `browser_action`
+- `docs`
+- `error`
+- `feedback`
+- `issue`
+- `lease`
+- `profile`
+- `proxy`
+- `session`
+- `smoke`
+
+Severity values:
+
+- `info`
+- `warning`
+- `error`
+- `critical`
+
+The broker records lease lifecycle, browser actions, auth requests, auth completion, issue creation, and issue updates. Agent-created telemetry accepts structured `data` and redacts sensitive keys before writing to disk.

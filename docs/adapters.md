@@ -46,3 +46,13 @@ feedback_report_issue(source="agent-name", title="Short title", details="What fa
 feedback_list_issues(status="open")
 feedback_update_issue(issue_id="axbi_...", status="resolved", note="Verification command passed")
 ```
+
+Agents record operational telemetry through MCP:
+
+```text
+telemetry_record_event(source="agent-name", event_type="smoke", message="LinkedIn proxy smoke passed", severity="info", tags=["linkedin-main"])
+telemetry_list_events(event_type="browser_action", limit=25)
+telemetry_summary(window_seconds=86400)
+```
+
+Use issues for human-actionable failures. Use telemetry for session evidence, smoke-test receipts, non-blocking observations, and debugging breadcrumbs.

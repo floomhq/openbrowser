@@ -71,6 +71,22 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Include source, severity, title, details, and optional lease_id/url/tags.",
             "Call feedback_list_issues to inspect open issues.",
             "Call feedback_update_issue to resolve or annotate an issue.",
+            "Issue reports automatically write linked telemetry events.",
+        ],
+    },
+    "telemetry": {
+        "title": "Telemetry",
+        "steps": [
+            "Call telemetry_record_event for structured session evidence, smoke-test results, and non-issue observations.",
+            "Use event_type values: auth, browser_action, docs, error, feedback, issue, lease, profile, proxy, session, smoke.",
+            "Use severity values: info, warning, error, critical.",
+            "Filter with telemetry_list_events by source, event_type, severity, lease_id, or issue_id.",
+            "Use telemetry_summary for counts by event type, severity, and source.",
+        ],
+        "privacy": [
+            "Telemetry redacts sensitive keys such as password, token, cookie, secret, authorization, and totp.",
+            "Browser type telemetry stores text length, not typed text.",
+            "State lives in /root/ax-browser-broker/state/telemetry.jsonl and is ignored by git.",
         ],
     },
     "safety": {

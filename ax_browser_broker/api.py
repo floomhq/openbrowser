@@ -23,6 +23,7 @@ from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
+from .telemetry import TelemetryError, list_events, record_event, summary
 
 
 class LeaseRequest(BaseModel):
@@ -98,6 +99,18 @@ class FeedbackUpdateRequest(BaseModel):
     note: str | None = None
 
 
+class TelemetryEventRequest(BaseModel):
+    source: str = "agent"
+    event_type: str
+    message: str
+    severity: str = "info"
+    lease_id: str | None = None
+    issue_id: str | None = None
+    url: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_dirs()
@@ -114,6 +127,13 @@ app = FastAPI(title="AX41 Browser Broker", version="0.1.0", lifespan=lifespan)
 def _http_error(error: Exception) -> HTTPException:
     status_code = 409 if isinstance(error, LeaseError) else 400
     return HTTPException(status_code=status_code, detail=str(error))
+
+
+def _safe_record_event(**kwargs: Any) -> None:
+    try:
+        record_event(**kwargs)
+    except Exception:
+        return
 
 
 @app.get("/health")
@@ -134,20 +154,48 @@ async def agent_docs(topic: str = "quickstart") -> dict[str, Any]:
 @app.post("/lease")
 async def create_lease(request: LeaseRequest) -> dict[str, Any]:
     try:
-        return lease(request.owner, request.ttl_seconds, request.identity_id).__dict__
+        lease_obj = lease(request.owner, request.ttl_seconds, request.identity_id)
+        result = lease_obj.__dict__
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="lease",
+            message="Lease created",
+            lease_id=lease_obj.lease_id,
+            tags=["lease", lease_obj.name],
+            data={"slot": lease_obj.name, "identity_id": lease_obj.identity_id, "ttl_seconds": request.ttl_seconds},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
 
 @app.post("/release/{lease_id}")
 async def release_lease(lease_id: str) -> dict[str, Any]:
-    return release(lease_id)
+    result = release(lease_id)
+    _safe_record_event(
+        source="broker-api",
+        event_type="lease",
+        message="Lease released",
+        lease_id=lease_id,
+        tags=["lease", "release"],
+        data=result,
+    )
+    return result
 
 
 @app.post("/heartbeat/{lease_id}")
 async def heartbeat_lease(lease_id: str) -> dict[str, Any]:
     try:
-        return heartbeat(lease_id).__dict__
+        lease_obj = heartbeat(lease_id)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="lease",
+            message="Lease heartbeat",
+            lease_id=lease_obj.lease_id,
+            tags=["lease", "heartbeat"],
+            data={"slot": lease_obj.name, "identity_id": lease_obj.identity_id},
+        )
+        return lease_obj.__dict__
     except Exception as error:
         raise _http_error(error) from error
 
@@ -155,7 +203,18 @@ async def heartbeat_lease(lease_id: str) -> dict[str, Any]:
 @app.post("/browser/navigate")
 async def browser_navigate(request: NavigateRequest) -> dict[str, Any]:
     try:
-        return await controller.navigate(require_lease(request.lease_id), request.url, request.wait_until)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.navigate(lease_obj, request.url, request.wait_until)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser navigate",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["browser", "navigate"],
+            data={"slot": lease_obj.name, "status": result.get("status"), "title": result.get("title")},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -163,7 +222,18 @@ async def browser_navigate(request: NavigateRequest) -> dict[str, Any]:
 @app.post("/browser/snapshot")
 async def browser_snapshot(request: LeaseIdRequest) -> dict[str, Any]:
     try:
-        return await controller.snapshot(require_lease(request.lease_id))
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.snapshot(lease_obj)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser snapshot",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["browser", "snapshot"],
+            data={"slot": lease_obj.name, "title": result.get("title"), "element_count": len(result.get("elements", []))},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -171,7 +241,17 @@ async def browser_snapshot(request: LeaseIdRequest) -> dict[str, Any]:
 @app.post("/browser/screenshot")
 async def browser_screenshot(request: ScreenshotRequest) -> dict[str, Any]:
     try:
-        return await controller.screenshot(require_lease(request.lease_id), request.full_page)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.screenshot(lease_obj, request.full_page)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser screenshot",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "screenshot"],
+            data={"slot": lease_obj.name, "path": result.get("path"), "full_page": request.full_page},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -179,7 +259,18 @@ async def browser_screenshot(request: ScreenshotRequest) -> dict[str, Any]:
 @app.post("/browser/click")
 async def browser_click(request: ClickRequest) -> dict[str, Any]:
     try:
-        return await controller.click(require_lease(request.lease_id), request.selector)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.click(lease_obj, request.selector)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser click",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["browser", "click"],
+            data={"slot": lease_obj.name, "selector": request.selector},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -187,7 +278,17 @@ async def browser_click(request: ClickRequest) -> dict[str, Any]:
 @app.post("/browser/type")
 async def browser_type(request: TypeRequest) -> dict[str, Any]:
     try:
-        return await controller.type_text(require_lease(request.lease_id), request.selector, request.text, request.submit)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.type_text(lease_obj, request.selector, request.text, request.submit)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser type",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "type"],
+            data={"slot": lease_obj.name, "selector": request.selector, "submitted": request.submit, "text_length": len(request.text)},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -195,7 +296,17 @@ async def browser_type(request: TypeRequest) -> dict[str, Any]:
 @app.post("/browser/wait")
 async def browser_wait(request: WaitRequest) -> dict[str, Any]:
     try:
-        return await controller.wait(require_lease(request.lease_id), request.selector, request.timeout_ms)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.wait(lease_obj, request.selector, request.timeout_ms)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser wait",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "wait"],
+            data={"slot": lease_obj.name, "selector": request.selector, "timeout_ms": request.timeout_ms},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -203,7 +314,17 @@ async def browser_wait(request: WaitRequest) -> dict[str, Any]:
 @app.post("/browser/tabs")
 async def browser_tabs(request: LeaseIdRequest) -> dict[str, Any]:
     try:
-        return await controller.tabs(require_lease(request.lease_id))
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.tabs(lease_obj)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser tabs listed",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "tabs"],
+            data={"slot": lease_obj.name, "tab_count": len(result.get("tabs", []))},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -211,7 +332,18 @@ async def browser_tabs(request: LeaseIdRequest) -> dict[str, Any]:
 @app.post("/browser/new-tab")
 async def browser_new_tab(request: NewTabRequest) -> dict[str, Any]:
     try:
-        return await controller.new_tab(require_lease(request.lease_id), request.url)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.new_tab(lease_obj, request.url)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser new tab",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["browser", "new-tab"],
+            data={"slot": lease_obj.name, "title": result.get("title")},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -219,7 +351,18 @@ async def browser_new_tab(request: NewTabRequest) -> dict[str, Any]:
 @app.post("/browser/switch-tab")
 async def browser_switch_tab(request: SwitchTabRequest) -> dict[str, Any]:
     try:
-        return await controller.switch_tab(require_lease(request.lease_id), request.index)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.switch_tab(lease_obj, request.index)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser switch tab",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["browser", "switch-tab"],
+            data={"slot": lease_obj.name, "index": request.index, "title": result.get("title")},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -227,7 +370,17 @@ async def browser_switch_tab(request: SwitchTabRequest) -> dict[str, Any]:
 @app.post("/browser/upload")
 async def browser_upload(request: UploadRequest) -> dict[str, Any]:
     try:
-        return await controller.upload(require_lease(request.lease_id), request.selector, request.path)
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.upload(lease_obj, request.selector, request.path)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser upload",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "upload"],
+            data={"slot": lease_obj.name, "selector": request.selector, "path": request.path},
+        )
+        return result
     except Exception as error:
         raise _http_error(error) from error
 
@@ -239,7 +392,16 @@ async def auth_status() -> dict[str, Any]:
 
 @app.post("/auth/request")
 async def auth_request(request: AuthRequest) -> dict[str, Any]:
-    return create_auth_request(request.owner, request.url, request.reason)
+    result = create_auth_request(request.owner, request.url, request.reason)
+    _safe_record_event(
+        source=request.owner,
+        event_type="auth",
+        message="Auth request created",
+        url=request.url,
+        tags=["auth", request.reason],
+        data={"token": result.get("token"), "status": result.get("status")},
+    )
+    return result
 
 
 @app.get("/auth/{token}", response_class=HTMLResponse)
@@ -306,6 +468,14 @@ async def auth_complete(token: str) -> dict[str, Any]:
     try:
         request = complete_auth_request(token)
         request["vnc_stop"] = stop_auth_vnc(token, missing_ok=True)
+        _safe_record_event(
+            source=str(request.get("owner", "unknown")),
+            event_type="auth",
+            message="Auth request completed",
+            url=str(request.get("url") or ""),
+            tags=["auth", "complete"],
+            data={"token": token, "status": request.get("status")},
+        )
         return request
     except AuthError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
@@ -351,7 +521,7 @@ async def feedback_issues(status: str = "open", limit: int = 50) -> dict[str, An
 @app.post("/feedback/issues")
 async def feedback_create_issue(request: FeedbackIssueRequest) -> dict[str, Any]:
     try:
-        return report_issue(
+        issue = report_issue(
             source=request.source,
             title=request.title,
             details=request.details,
@@ -360,6 +530,18 @@ async def feedback_create_issue(request: FeedbackIssueRequest) -> dict[str, Any]
             url=request.url,
             tags=request.tags,
         )
+        _safe_record_event(
+            source=request.source,
+            event_type="issue",
+            message="Issue reported",
+            severity="error" if issue["severity"] in {"high", "blocker"} else "warning",
+            lease_id=request.lease_id,
+            issue_id=issue["id"],
+            url=request.url,
+            tags=["issue", *request.tags],
+            data={"title": issue["title"], "issue_severity": issue["severity"]},
+        )
+        return issue
     except FeedbackError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -367,6 +549,53 @@ async def feedback_create_issue(request: FeedbackIssueRequest) -> dict[str, Any]
 @app.post("/feedback/issues/{issue_id}")
 async def feedback_update(issue_id: str, request: FeedbackUpdateRequest) -> dict[str, Any]:
     try:
-        return update_issue(issue_id, request.status, request.note)
+        issue = update_issue(issue_id, request.status, request.note)
+        _safe_record_event(
+            source="broker-api",
+            event_type="issue",
+            message="Issue updated",
+            severity="info",
+            lease_id=issue.get("lease_id"),
+            issue_id=issue_id,
+            url=issue.get("url"),
+            tags=["issue", "update"],
+            data={"status": issue.get("status"), "note_added": bool(request.note)},
+        )
+        return issue
     except FeedbackError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/telemetry/events")
+async def telemetry_create_event(request: TelemetryEventRequest) -> dict[str, Any]:
+    try:
+        return record_event(
+            source=request.source,
+            event_type=request.event_type,
+            message=request.message,
+            severity=request.severity,
+            lease_id=request.lease_id,
+            issue_id=request.issue_id,
+            url=request.url,
+            tags=request.tags,
+            data=request.data,
+        )
+    except TelemetryError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/telemetry/events")
+async def telemetry_events(
+    source: str | None = None,
+    event_type: str | None = None,
+    severity: str | None = None,
+    lease_id: str | None = None,
+    issue_id: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    return list_events(source, event_type, severity, lease_id, issue_id, limit)
+
+
+@app.get("/telemetry/summary")
+async def telemetry_summary(window_seconds: int = 86400) -> dict[str, Any]:
+    return summary(window_seconds)
