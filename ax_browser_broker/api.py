@@ -78,6 +78,7 @@ class AuthRequest(BaseModel):
     owner: str = "unknown"
     url: str
     reason: str = "login_required"
+    identity_id: str | None = None
 
 
 class SeedSlotRequest(BaseModel):
@@ -398,14 +399,14 @@ async def auth_status() -> dict[str, Any]:
 
 @app.post("/auth/request")
 async def auth_request(request: AuthRequest) -> dict[str, Any]:
-    result = create_auth_request(request.owner, request.url, request.reason)
+    result = create_auth_request(request.owner, request.url, request.reason, request.identity_id)
     _safe_record_event(
         source=request.owner,
         event_type="auth",
         message="Auth request created",
         url=request.url,
         tags=["auth", request.reason],
-        data={"token": result.get("token"), "status": result.get("status")},
+        data={"token": result.get("token"), "status": result.get("status"), "identity_id": request.identity_id},
     )
     return result
 
@@ -419,6 +420,7 @@ async def auth_portal(token: str) -> str:
     safe_url = html.escape(str(request["url"]))
     safe_owner = html.escape(str(request["owner"]))
     safe_status = html.escape(str(request["status"]))
+    safe_identity = html.escape(str(request.get("identity_id") or "authenticated-chrome"))
     return f"""
 <!doctype html>
 <html>
@@ -437,6 +439,7 @@ async def auth_portal(token: str) -> str:
     <h1>Auth refresh</h1>
     <p class="muted">Requesting agent: <b>{safe_owner}</b></p>
     <p class="muted">Status: <b>{safe_status}</b></p>
+    <p class="muted">Chrome identity: <b>{safe_identity}</b></p>
     <div class="row">Target URL: <code>{safe_url}</code></div>
     <div class="row">
       <form method="post" action="/auth/{token}/start-vnc"><button type="submit">Start browser login view</button></form>

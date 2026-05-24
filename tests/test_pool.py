@@ -28,6 +28,7 @@ def test_identity_lease_is_exclusive(monkeypatch) -> None:
         profile_dir = "/tmp/linkedin-main"
 
     monkeypatch.setattr(pool, "require_identity", lambda _identity_id: Identity())
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: "linkedin-main")
 
     lease = pool.lease("test-identity", identity_id="linkedin-main")
     try:

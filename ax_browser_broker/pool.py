@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import LEASE_TTL_SECONDS, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
-from .identities import require_identity
+from .identities import active_identity_id, activate_identity, require_identity
 
 
 class LeaseError(RuntimeError):
@@ -114,7 +114,11 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
         for slot in SLOTS:
             if allowed_slot and slot.name != allowed_slot:
                 continue
-            if slot.name in in_use or not healthy(slot.port):
+            if slot.name in in_use:
+                continue
+            if identity_id and (active_identity_id(slot.name) != identity_id or not healthy(slot.port)):
+                activate_identity(identity_id)
+            if not healthy(slot.port):
                 continue
             lease_id = str(uuid.uuid4())
             state["leases"][lease_id] = {
@@ -179,6 +183,7 @@ def status() -> dict[str, Any]:
                 "port": slot.port,
                 "cdp": slot.cdp,
                 "profile_dir": str(slot.profile_dir),
+                "active_identity_id": active_identity_id(slot.name),
                 "healthy": healthy(slot.port),
                 "leased": slot.name in leased_names,
             }

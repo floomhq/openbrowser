@@ -24,9 +24,13 @@ TOPICS: dict[str, dict[str, Any]] = {
             "linkedin-main uses /root/browser-pool/profiles/linkedin-main.",
             "linkedin-main routes Chrome through local proxy http://127.0.0.1:18803.",
             "Identity leases are exclusive; a second lease for the same identity returns a conflict.",
+            "Imported Mac Chrome people use chrome-* identities and isolated AX41 profile directories.",
+            "When a chrome-* identity is leased, the broker activates its matching slot before returning the lease.",
         ],
         "commands": [
             "/root/ax-browser-broker/bin/ax-browser-identity status",
+            "/root/ax-browser-broker/bin/ax-browser-identity mac-inventory",
+            "/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles --dry-run",
             "/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state",
             "/root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status",
         ],
@@ -59,9 +63,13 @@ TOPICS: dict[str, dict[str, Any]] = {
         "title": "Human Auth Handoff",
         "steps": [
             "When an agent hits a login wall, call auth_request with owner, url, and reason.",
+            "For an imported Chrome person, pass identity_id so the noVNC login opens that identity profile.",
             "Send the returned local portal URL to the human operator.",
             "The portal starts local-only noVNC for login and marks completion.",
-            "After completion, snapshot/seed profiles when the authenticated browser state changed.",
+            "After completion, lease the same identity_id; the saved AX41 profile state is reused.",
+        ],
+        "examples": [
+            {"tool": "auth_request", "args": {"owner": "agent-name", "url": "https://accounts.google.com/", "reason": "google_profile_login", "identity_id": "chrome-openpaper"}},
         ],
     },
     "feedback": {

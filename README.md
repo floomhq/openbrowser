@@ -18,6 +18,16 @@ All action endpoints validate the lease before touching a browser.
 
 For authenticated LinkedIn work, pass `identity_id: "linkedin-main"` to `browser_lease` or `--identity linkedin-main` to the wrappers. This pins the work to `pool-c`, `/root/browser-pool/profiles/linkedin-main`, and the configured US ISP proxy.
 
+For Federico's Mac Chrome people/profiles, import metadata into broker identities:
+
+```bash
+/root/ax-browser-broker/bin/ax-browser-identity mac-inventory
+/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles --dry-run
+/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles
+```
+
+The importer creates `chrome-*` identities with isolated AX41 profile directories. It copies no raw cookies, passwords, or tokens from macOS. Use `auth_request(..., identity_id="chrome-...")` once per imported identity to log in through local noVNC, then agents can lease that identity through the broker.
+
 ## Commands
 
 ```bash
@@ -82,6 +92,7 @@ The audit checks telemetry, feedback issues, active leases, and session logs. It
 Agents create an auth request with `/auth/request` or `auth_request`.
 The broker returns a one-time portal URL.
 The portal can launch noVNC against authenticated Chrome for human login.
+When `identity_id` is provided, the portal launches a temporary graphical Chrome using that identity's AX41 profile directory.
 
 Normal tools do not return raw cookies or password data.
 

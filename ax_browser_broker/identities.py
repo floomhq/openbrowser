@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import stat
+import subprocess
+import time
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
@@ -57,6 +60,48 @@ def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
 
 def _slot_names() -> set[str]:
     return {slot.name for slot in SLOTS}
+
+
+def _slot_by_name(slot_name: str):
+    return next((slot for slot in SLOTS if slot.name == slot_name), None)
+
+
+def local_proxy_port_for_slot(slot_name: str) -> int:
+    for index, slot in enumerate(SLOTS, start=1):
+        if slot.name == slot_name:
+            return 18800 + index
+    raise IdentityError(f"Unknown slot: {slot_name}")
+
+
+def read_slot_config(slot_name: str) -> dict[str, str]:
+    if slot_name not in _slot_names():
+        raise IdentityError(f"Unknown slot: {slot_name}")
+    path = POOL_CONFIG_DIR / f"{slot_name}.env"
+    if not path.exists():
+        return {}
+    config: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        try:
+            config[key] = str(ast.literal_eval(value))
+        except (SyntaxError, ValueError):
+            config[key] = value
+    return config
+
+
+def active_identity_id(slot_name: str) -> str | None:
+    return read_slot_config(slot_name).get("IDENTITY_ID")
+
+
+def _healthy(port: int, timeout: float = 1.5) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=timeout) as response:
+            return response.status == 200
+    except Exception:
+        return False
 
 
 def load_identities(path: Path | None = None) -> dict[str, BrowserIdentity]:
@@ -146,6 +191,7 @@ def redacted_status() -> dict[str, Any]:
             },
             "timezone": identity.timezone,
             "lang": identity.lang,
+            "active_on_slot": active_identity_id(identity.slot) == identity.identity_id,
         }
     return out
 
@@ -178,6 +224,38 @@ def write_slot_config(identity_id: str, local_proxy_port: int = 18801) -> Path:
     return path
 
 
+def activate_identity(identity_id: str) -> dict[str, Any]:
+    identity = require_identity(identity_id)
+    slot = _slot_by_name(identity.slot)
+    if slot is None:
+        raise IdentityError(f"Unknown slot: {identity.slot}")
+    local_proxy_port = local_proxy_port_for_slot(identity.slot)
+    write_slot_config(identity_id, local_proxy_port)
+    identity.profile_dir.mkdir(parents=True, exist_ok=True)
+    supervisor_was_active = subprocess.run(
+        ["systemctl", "is-active", "--quiet", "browser-pool-supervisor.service"],
+        check=False,
+    ).returncode == 0
+    try:
+        if supervisor_was_active:
+            subprocess.run(["systemctl", "stop", "browser-pool-supervisor.service"], check=True)
+        subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), identity.slot, str(slot.port)], check=True)
+    finally:
+        if supervisor_was_active:
+            subprocess.run(["systemctl", "start", "browser-pool-supervisor.service"], check=False)
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if _healthy(slot.port):
+            return {
+                "identity_id": identity.identity_id,
+                "slot": identity.slot,
+                "profile_dir": str(identity.profile_dir),
+                "active": True,
+            }
+        time.sleep(0.2)
+    raise IdentityError(f"Activated {identity_id}, but slot {identity.slot} did not become healthy")
+
+
 def check_proxy(ref: str, timeout: float = 20.0) -> dict[str, Any]:
     proxy = require_proxy(ref)
     opener = urllib.request.build_opener(
@@ -201,9 +279,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Identity and proxy helper for AX41 Browser Broker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
+    sub.add_parser("mac-inventory")
+    mac_import = sub.add_parser("import-mac-profiles")
+    mac_import.add_argument("--chrome-dir")
+    mac_import.add_argument("--prefix", default="chrome")
+    mac_import.add_argument("--slot", default="pool-a")
+    mac_import.add_argument("--dry-run", action="store_true")
     configure = sub.add_parser("configure-slot")
     configure.add_argument("identity_id")
     configure.add_argument("--local-proxy-port", type=int, default=18801)
+    activate = sub.add_parser("activate")
+    activate.add_argument("identity_id")
     seed = sub.add_parser("seed-profile")
     seed.add_argument("identity_id")
     seed.add_argument("--force", action="store_true")
@@ -213,8 +299,28 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "status":
         print(json.dumps(redacted_status(), indent=2))
+    elif args.cmd == "mac-inventory":
+        from .mac_chrome import redacted_inventory
+
+        print(json.dumps({"profiles": redacted_inventory()}, indent=2))
+    elif args.cmd == "import-mac-profiles":
+        from .mac_chrome import import_profiles
+
+        print(
+            json.dumps(
+                import_profiles(
+                    chrome_dir=args.chrome_dir,
+                    prefix=args.prefix,
+                    slot=args.slot,
+                    dry_run=args.dry_run,
+                ),
+                indent=2,
+            )
+        )
     elif args.cmd == "configure-slot":
         print(json.dumps({"slot_config": str(write_slot_config(args.identity_id, args.local_proxy_port))}, indent=2))
+    elif args.cmd == "activate":
+        print(json.dumps(activate_identity(args.identity_id), indent=2))
     elif args.cmd == "seed-profile":
         from .profiles import seed_identity
 

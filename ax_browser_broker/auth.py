@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from .config import AUTH_REQUEST_TTL_SECONDS, AUTH_STATE_FILE, BROKER_PORT, ensure_dirs
+from .identities import require_identity
+from .pool import status as pool_status
 
 
 class AuthError(RuntimeError):
@@ -48,8 +50,10 @@ def gc_auth_requests(state: dict[str, Any]) -> list[str]:
     return expired
 
 
-def create_auth_request(owner: str, url: str, reason: str = "login_required") -> dict[str, Any]:
+def create_auth_request(owner: str, url: str, reason: str = "login_required", identity_id: str | None = None) -> dict[str, Any]:
     now = int(time.time())
+    if identity_id:
+        require_identity(identity_id)
     token = secrets.token_urlsafe(24)
     request = {
         "token": token,
@@ -61,6 +65,8 @@ def create_auth_request(owner: str, url: str, reason: str = "login_required") ->
         "expires_at": now + AUTH_REQUEST_TTL_SECONDS,
         "portal_url": f"http://127.0.0.1:{BROKER_PORT}/auth/{token}",
     }
+    if identity_id:
+        request["identity_id"] = identity_id
     with locked_auth_state() as state:
         gc_auth_requests(state)
         state["requests"][token] = request
@@ -148,30 +154,67 @@ def _authenticated_x_display() -> tuple[str, str | None]:
     raise AuthError("Authenticated Chrome X display not found")
 
 
-def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901) -> dict[str, Any]:
-    request = get_auth_request(token)
-    if request["status"] not in {"pending", "complete"}:
-        raise AuthError(f"Auth request is {request['status']}")
+def _find_free_display(start: int = 870, end: int = 899) -> str:
+    for display_number in range(start, end + 1):
+        if not Path(f"/tmp/.X11-unix/X{display_number}").exists():
+            return f":{display_number}"
+    raise AuthError("No free X display found for identity auth")
+
+
+def _start_identity_auth_vnc(
+    request: dict[str, Any],
+    websocket_port: int,
+    vnc_port: int,
+    password_file: Path,
+    log_path: Path,
+) -> dict[str, Any]:
+    identity = require_identity(str(request["identity_id"]))
+    xvfb = shutil.which("Xvfb")
     x11vnc = shutil.which("x11vnc")
     websockify = shutil.which("websockify")
-    if not x11vnc or not websockify:
-        raise AuthError("x11vnc or websockify is missing")
-    display, auth_path = _authenticated_x_display()
-    runtime_dir = Path("/root/ax-browser-broker/state/vnc")
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    password_file = runtime_dir / f"{token}.passwd"
-    password = secrets.token_urlsafe(12)
-    password_file.write_text(password + "\n", encoding="utf-8")
-    os.chmod(password_file, 0o600)
-    log_path = runtime_dir / f"{token}.log"
-
-    stop_auth_vnc(token, missing_ok=True)
-
+    chrome = shutil.which("google-chrome-stable") or shutil.which("google-chrome")
+    if not xvfb or not x11vnc or not websockify or not chrome:
+        raise AuthError("Xvfb, Chrome, x11vnc, or websockify is missing")
+    active_leases = pool_status().get("leases", {})
+    if any(item.get("identity_id") == identity.identity_id for item in active_leases.values()):
+        raise AuthError(f"Identity is actively leased: {identity.identity_id}")
+    identity.profile_dir.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["pkill", "-f", "--", f"--user-data-dir={identity.profile_dir}"], check=False)
+    time.sleep(0.5)
+    display = _find_free_display()
     env = os.environ.copy()
     env["DISPLAY"] = display
-    if auth_path:
-        env["XAUTHORITY"] = auth_path
     with log_path.open("ab") as log:
+        xvfb_proc = subprocess.Popen(
+            [xvfb, display, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
+            stdout=log,
+            stderr=log,
+            env=env,
+            start_new_session=True,
+        )
+        time.sleep(0.4)
+        chrome_proc = subprocess.Popen(
+            [
+                chrome,
+                f"--user-data-dir={identity.profile_dir}",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-gpu-sandbox",
+                "--in-process-gpu",
+                "--use-gl=swiftshader",
+                "--disable-dev-shm-usage",
+                "--no-first-run",
+                f"--lang={identity.lang}",
+                "--window-size=1280,800",
+                "--window-position=0,0",
+                str(request["url"]),
+            ],
+            stdout=log,
+            stderr=log,
+            env=env,
+            start_new_session=True,
+        )
+        time.sleep(0.7)
         x11vnc_proc = subprocess.Popen(
             [
                 x11vnc,
@@ -202,20 +245,98 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
             env=env,
             start_new_session=True,
         )
+    return {
+        "mode": "identity",
+        "identity_id": identity.identity_id,
+        "display": display,
+        "xvfb_pid": xvfb_proc.pid,
+        "chrome_pid": chrome_proc.pid,
+        "x11vnc_pid": x11vnc_proc.pid,
+        "websockify_pid": websockify_proc.pid,
+        "websocket_port": websocket_port,
+        "vnc_port": vnc_port,
+        "password_file": str(password_file),
+        "started_at": int(time.time()),
+        "profile_dir": str(identity.profile_dir),
+    }
+
+
+def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901) -> dict[str, Any]:
+    request = get_auth_request(token)
+    if request["status"] not in {"pending", "complete"}:
+        raise AuthError(f"Auth request is {request['status']}")
+    x11vnc = shutil.which("x11vnc")
+    websockify = shutil.which("websockify")
+    if not x11vnc or not websockify:
+        raise AuthError("x11vnc or websockify is missing")
+    display = ""
+    auth_path = None
+    if not request.get("identity_id"):
+        display, auth_path = _authenticated_x_display()
+    runtime_dir = Path("/root/ax-browser-broker/state/vnc")
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    password_file = runtime_dir / f"{token}.passwd"
+    password = secrets.token_urlsafe(12)
+    password_file.write_text(password + "\n", encoding="utf-8")
+    os.chmod(password_file, 0o600)
+    log_path = runtime_dir / f"{token}.log"
+
+    stop_auth_vnc(token, missing_ok=True)
+    if request.get("identity_id"):
+        vnc_state = _start_identity_auth_vnc(request, websocket_port, vnc_port, password_file, log_path)
+        display = str(vnc_state["display"])
+    else:
+        env = os.environ.copy()
+        env["DISPLAY"] = display
+        if auth_path:
+            env["XAUTHORITY"] = auth_path
+        with log_path.open("ab") as log:
+            x11vnc_proc = subprocess.Popen(
+                [
+                    x11vnc,
+                    "-display",
+                    display,
+                    "-rfbport",
+                    str(vnc_port),
+                    "-localhost",
+                    "-forever",
+                    "-shared",
+                    "-passwdfile",
+                    str(password_file),
+                ],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+            websockify_proc = subprocess.Popen(
+                [
+                    websockify,
+                    "--web=/usr/share/novnc",
+                    f"127.0.0.1:{websocket_port}",
+                    f"127.0.0.1:{vnc_port}",
+                ],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+        vnc_state = {
+            "mode": "authenticated-chrome",
+            "x11vnc_pid": x11vnc_proc.pid,
+            "websockify_pid": websockify_proc.pid,
+            "websocket_port": websocket_port,
+            "vnc_port": vnc_port,
+            "display": display,
+            "password_file": str(password_file),
+            "started_at": int(time.time()),
+        }
 
     time.sleep(0.5)
     with locked_auth_state() as state:
         state_request = state["requests"].get(token)
         if state_request is not None:
-            state_request["vnc"] = {
-                "x11vnc_pid": x11vnc_proc.pid,
-                "websockify_pid": websockify_proc.pid,
-                "websocket_port": websocket_port,
-                "vnc_port": vnc_port,
-                "display": display,
-                "password_file": str(password_file),
-                "started_at": int(time.time()),
-            }
+            state_request["vnc"] = vnc_state
     return {
         "token": token,
         "display": display,
@@ -276,7 +397,7 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
         raise
     vnc = request.get("vnc") or {}
     stopped = []
-    for key in ("x11vnc_pid", "websockify_pid"):
+    for key in ("x11vnc_pid", "websockify_pid", "chrome_pid", "xvfb_pid"):
         pid = vnc.get(key)
         if not pid:
             continue

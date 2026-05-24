@@ -134,9 +134,9 @@ def auth_status() -> dict[str, Any]:
 
 
 @mcp.tool()
-def auth_request(owner: str, url: str, reason: str = "login_required") -> dict[str, Any]:
-    """Create a one-time human auth request when an agent hits a login wall."""
-    return _request("POST", "/auth/request", {"owner": owner, "url": url, "reason": reason})
+def auth_request(owner: str, url: str, reason: str = "login_required", identity_id: str | None = None) -> dict[str, Any]:
+    """Create a one-time human auth request when an agent hits a login wall. Pass identity_id to log into that profile."""
+    return _request("POST", "/auth/request", {"owner": owner, "url": url, "reason": reason, "identity_id": identity_id})
 
 
 @mcp.tool()
