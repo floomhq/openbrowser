@@ -28,6 +28,12 @@ For Federico's Mac Chrome people/profiles, import metadata into broker identitie
 /root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
 ```
 
+If the Mac reverse tunnel is absent, the Mac-side installer is:
+
+```bash
+curl -fsSL https://openbrowser-auth.floom.dev/mac/install-reverse-tunnel.sh | bash
+```
+
 The importer creates `chrome-*` identities with isolated AX41 profile directories and `slot: "auto"` so different profiles can run concurrently when free pool slots exist. Auto identities use free non-reserved slots; pinned/proxied identities such as `linkedin-main` keep their dedicated slot and are not overwritten by generic Chrome profile work. The importer copies no raw cookies, passwords, or tokens from macOS because macOS Chrome secret state is Keychain-backed and not portable Linux Chrome session state.
 
 Use `auth_request(..., identity_id="chrome-...")` once per imported identity to log in through local noVNC, then agents can lease that identity through the broker. If an auth handoff is refused or fails before VNC starts, the broker removes the temporary VNC password file. Successful handoff completion stops VNC/Chrome/Xvfb helper processes and removes the temporary password file.

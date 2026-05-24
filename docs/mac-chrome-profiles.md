@@ -54,6 +54,12 @@ If the Mac reverse tunnel is missing, reinstall the Mac launch agents from the M
 /root/ax-browser-broker/scripts/install-mac-reverse-tunnel.sh
 ```
 
+The same installer is also available through the public handoff domain for Federico to run on the Mac:
+
+```bash
+curl -fsSL https://openbrowser-auth.floom.dev/mac/install-reverse-tunnel.sh | bash
+```
+
 The installer creates:
 
 - `~/Library/LaunchAgents/dev.ax41.mac-reverse-ssh.plist`

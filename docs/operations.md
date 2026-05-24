@@ -58,7 +58,8 @@ systemctl restart browser-pool-supervisor.service authenticated-chrome.service
 
 - Public handoff hostname: `https://openbrowser-auth.floom.dev`.
 - Cloudflare Tunnel routes that hostname to `http://localhost:8768`.
-- nginx listens on `127.0.0.1:8768` and exposes only `/auth/*`, `/healthz`, and temporary noVNC traffic.
+- nginx listens on `127.0.0.1:8768` and exposes only `/auth/*`, `/healthz`, `/mac/install-reverse-tunnel.sh`, and temporary noVNC traffic.
+- `/mac/install-reverse-tunnel.sh` is a static no-secret Mac LaunchAgent installer for the reverse SSH/CDP route.
 - nginx access logging is disabled for this auth proxy because auth request paths contain one-time tokens.
 - The full broker API remains bound to `127.0.0.1:8767` and is not exposed through this hostname.
 - Cloudflare Access is not active for this hostname from AX41 because the available Cloudflare API credential cannot manage Zero Trust Access. The active protection is Cloudflare Tunnel, unguessable expiring broker tokens, and a temporary VNC password.
