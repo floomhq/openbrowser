@@ -1,5 +1,7 @@
 # Broker Adapters
 
+Canonical routing lives in `docs/browser-routing.md` and `broker_docs("routing")`.
+
 ## browser-use
 
 Use:
@@ -10,7 +12,7 @@ Use:
 /root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json eval 'document.body.innerText'
 ```
 
-The wrapper leases a broker slot, passes `--cdp-url` to browser-use, exports common CDP environment variables, then releases the lease when the command exits.
+The wrapper leases a broker slot, passes `--cdp-url` to browser-use, exports common CDP environment variables, then releases the lease when the command exits. This is the browser-use route on AX41.
 
 Use `--identity linkedin-main` for LinkedIn. That identity is exclusive, proxy-routed, and seeded with the LinkedIn session.
 
@@ -25,7 +27,9 @@ Use:
 
 The `status` command is broker-native and reports cookie presence by name only, never cookie values. Other OpenBrowser commands lease a broker slot and give OpenBrowser a temporary config whose `cdpPort` and `profileDir` point at the leased slot.
 
-OpenBrowser is best for session diagnostics. browser-use is better for task execution against a leased identity.
+OpenBrowser on AX41 is a broker-backed adapter, not a separate browser pool. Use `/root/ax-browser-broker/bin/ax-openbrowser`; do not run raw OpenBrowser against `9222`, `9223`, `9224`, or `9225`.
+
+OpenBrowser is useful for session diagnostics. browser-use is the task-execution adapter against a leased identity.
 
 ## Raw Lease
 

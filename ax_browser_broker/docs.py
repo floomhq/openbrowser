@@ -17,6 +17,48 @@ TOPICS: dict[str, dict[str, Any]] = {
             {"tool": "browser_release", "args": {"lease_id": "<lease_id>"}},
         ],
     },
+    "routing": {
+        "title": "Browser Tool Routing",
+        "default": "Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw CDP ports are exception paths.",
+        "routes": [
+            {
+                "route": "AX41 Browser Broker MCP",
+                "use_for": "Normal browser agents, authenticated identities, concurrent sessions, feedback, telemetry, and audits.",
+                "start": "broker_docs('routing'), browser_lease, browser_release, broker_audit",
+            },
+            {
+                "route": "ax-browser-use",
+                "use_for": "browser-use task execution against broker-leased browsers.",
+                "start": "/root/ax-browser-broker/bin/ax-browser-use --identity <id> ...",
+            },
+            {
+                "route": "ax-openbrowser",
+                "use_for": "OpenBrowser diagnostics and OpenBrowser MCP surface.",
+                "start": "/root/ax-browser-broker/bin/ax-openbrowser --identity <id> ...",
+                "note": "OpenBrowser is an adapter on top of broker leases, not a separate browser setup.",
+            },
+            {
+                "route": "gstack browse or disposable browser tools",
+                "use_for": "Anonymous QA, local dev-server screenshots, public pages, and work with no Federico account state.",
+                "start": "Use the relevant disposable browser skill or tool.",
+            },
+            {
+                "route": "shared authenticated Chrome / chrome-devtools / authenticated-browser",
+                "use_for": "Explicitly authorized dashboard exception, performance/network inspection, or migration fallback that requires the already logged-in shared Chrome profile.",
+                "start": "Use the named exception skill/tool, record telemetry, then run broker_audit.",
+            },
+        ],
+        "rules": [
+            "Use broker identities such as chrome-* or linkedin-main when account state is needed.",
+            "Use auth_request for login or password handoff.",
+            "Use /root/ax-browser-broker/bin/ax-openbrowser when a task names OpenBrowser.",
+            "Never aim raw OpenBrowser or custom scripts directly at 9222, 9223, 9224, or 9225 for normal agent work.",
+            "Raw pool CDP ports 9223, 9224, and 9225 belong to the broker lease manager.",
+        ],
+        "runbooks": [
+            "/root/ax-browser-broker/docs/browser-routing.md",
+        ],
+    },
     "identities": {
         "title": "Identities",
         "facts": [

@@ -8,6 +8,7 @@ from ax_browser_broker.docs import docs
 def test_docs_topics_and_quickstart() -> None:
     topics = docs("topics")
     assert "quickstart" in topics["topics"]
+    assert "routing" in topics["topics"]
     assert "telemetry" in topics["topics"]
     assert "audit" in topics["topics"]
 
@@ -24,6 +25,12 @@ def test_docs_topics_and_quickstart() -> None:
 
     auth = docs("auth")
     assert any("temporary VNC password file is removed" in item for item in auth["steps"])
+
+    routing = docs("routing")
+    assert routing["topic"] == "routing"
+    assert "browser-routing.md" in routing["runbooks"][0]
+    assert any("OpenBrowser is an adapter" in route.get("note", "") for route in routing["routes"])
+    assert any("9223" in rule and "broker lease manager" in rule for rule in routing["rules"])
 
 
 def test_docs_unknown_topic_lists_available_topics() -> None:

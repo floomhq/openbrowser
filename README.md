@@ -50,6 +50,7 @@ curl -fsS http://127.0.0.1:8767/health
 
 Operational verification and rollback notes live in `docs/operations.md`.
 Mac Chrome profile import and auth edge cases live in `docs/mac-chrome-profiles.md`.
+Browser tool routing lives in `docs/browser-routing.md`.
 
 ## Agent Docs And Feedback
 
@@ -57,6 +58,7 @@ Agents can call `broker_docs` through MCP for live runbook topics:
 
 - `topics`
 - `quickstart`
+- `routing`
 - `identities`
 - `browser-use`
 - `openbrowser`
