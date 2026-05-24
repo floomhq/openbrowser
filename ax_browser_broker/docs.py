@@ -38,6 +38,12 @@ TOPICS: dict[str, dict[str, Any]] = {
                 "note": "OpenBrowser is an adapter on top of broker leases, not a separate browser setup.",
             },
             {
+                "route": "discord-main identity",
+                "use_for": "Discord account work and QR login handoff.",
+                "start": "/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main ...",
+                "note": "Use the broker profile /root/browser-pool/profiles/discord-main; do not use shared authenticated Chrome for Discord login.",
+            },
+            {
                 "route": "gstack browse or disposable browser tools",
                 "use_for": "Anonymous QA, local dev-server screenshots, public pages, and work with no Federico account state.",
                 "start": "Use the relevant disposable browser skill or tool.",
@@ -51,6 +57,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "rules": [
             "Use broker identities such as chrome-* or linkedin-main when account state is needed.",
             "Use auth_request for login or password handoff.",
+            "Use identity_id discord-main for Discord account work.",
             "Use /root/ax-browser-broker/bin/ax-openbrowser when a task names OpenBrowser.",
             "Never aim raw OpenBrowser or custom scripts directly at 9222, 9223, 9224, or 9225 for normal agent work.",
             "Raw pool CDP ports 9223, 9224, and 9225 belong to the broker lease manager.",

@@ -13,6 +13,7 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 | AX41 Browser Broker MCP | Normal browser agents, authenticated identities, concurrent sessions, feedback, telemetry, audits | `broker_docs("routing")`, `browser_lease`, `browser_release`, `broker_audit` | Default route for agents. Leases isolate sessions and prevent agents from blocking each other. |
 | `ax-browser-use` | browser-use task execution against broker-leased browsers | `/root/ax-browser-broker/bin/ax-browser-use --identity <id> ...` | Wrapper leases a slot, injects CDP details, runs browser-use, then releases the slot. |
 | `ax-openbrowser` | OpenBrowser diagnostics and OpenBrowser MCP surface | `/root/ax-browser-broker/bin/ax-openbrowser --identity <id> ...` | OpenBrowser is an adapter on top of broker leases, not a separate browser setup. |
+| Discord identity | Discord account work and QR login handoff | `/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main ...` | Uses the broker profile `/root/browser-pool/profiles/discord-main`; do not use shared authenticated Chrome for Discord login. |
 | gstack `/browse` or disposable browser tools | Anonymous QA, local dev-server screenshots, public pages, no Federico account state | Skill/tool-specific command | Fast isolated browser lane. No saved personal cookies or account sessions. |
 | Shared authenticated Chrome / `chrome-devtools` / authenticated-browser | Explicitly authorized dashboard exception, performance/network inspection, migration fallback that requires the already logged-in shared Chrome profile | Only via the named skill/tool for that exception | Raw shared profile path. Record telemetry and run broker audit afterward. |
 | Raw pool CDP ports `9223`, `9224`, `9225` | Never directly from agents | Use broker lease instead | Pool slots belong to the broker lease manager. |
@@ -23,7 +24,8 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 2. If login or password entry appears, use `auth_request`; Federico completes login through the handoff portal.
 3. If the task is anonymous page QA or local UI screenshots, use disposable browser tooling such as gstack `/browse`.
 4. If the task names OpenBrowser, use `/root/ax-browser-broker/bin/ax-openbrowser`; never aim raw OpenBrowser at `9222`, `9223`, `9224`, or `9225`.
-5. If the task explicitly requires the shared logged-in Chrome session, record the exception in telemetry, use the authenticated-browser or chrome-devtools exception path, then run `broker_audit(hours=24)`.
+5. If the task is Discord, use identity `discord-main` and QR handoff in that profile.
+6. If the task explicitly requires the shared logged-in Chrome session, record the exception in telemetry, use the authenticated-browser or chrome-devtools exception path, then run `broker_audit(hours=24)`.
 
 ## Identity Examples
 
@@ -31,6 +33,7 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 /root/ax-browser-broker/bin/ax-browser-identity status
 /root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state
 /root/ax-browser-broker/bin/ax-openbrowser --identity chrome-depontefede status
+/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main status
 ```
 
 ## MCP Examples

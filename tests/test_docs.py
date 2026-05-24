@@ -30,7 +30,9 @@ def test_docs_topics_and_quickstart() -> None:
     assert routing["topic"] == "routing"
     assert "browser-routing.md" in routing["runbooks"][0]
     assert any("OpenBrowser is an adapter" in route.get("note", "") for route in routing["routes"])
+    assert any("discord-main" in route.get("start", "") for route in routing["routes"])
     assert any("9223" in rule and "broker lease manager" in rule for rule in routing["rules"])
+    assert any("discord-main" in rule for rule in routing["rules"])
 
 
 def test_docs_unknown_topic_lists_available_topics() -> None:
