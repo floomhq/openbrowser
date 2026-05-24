@@ -45,6 +45,16 @@ def test_agent_docs_endpoint() -> None:
     assert response.json()["topic"] == "feedback"
 
 
+def test_audit_endpoint(monkeypatch) -> None:
+    monkeypatch.setattr(api, "run_audit", lambda hours=24: {"score": 100, "window_hours": hours})
+    client = TestClient(api.app)
+
+    response = client.get("/audit?hours=3")
+
+    assert response.status_code == 200
+    assert response.json() == {"score": 100, "window_hours": 3}
+
+
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(feedback, "ISSUE_STATE_FILE", tmp_path / "issues.json")
     monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")

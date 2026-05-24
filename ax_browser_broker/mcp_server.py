@@ -39,8 +39,14 @@ def browser_status() -> dict[str, Any]:
 
 @mcp.tool()
 def broker_docs(topic: str = "quickstart") -> dict[str, Any]:
-    """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, telemetry, safety."""
+    """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, telemetry, audit, safety."""
     return _request("GET", f"/agent-docs?topic={urllib.parse.quote(topic)}")
+
+
+@mcp.tool()
+def broker_audit(hours: int = 24) -> dict[str, Any]:
+    """Audit whether agents used the broker correctly, including telemetry, issues, active leases, and session-log evidence."""
+    return _request("GET", f"/audit?hours={int(hours)}")
 
 
 @mcp.tool()

@@ -89,6 +89,21 @@ TOPICS: dict[str, dict[str, Any]] = {
             "State lives in /root/ax-browser-broker/state/telemetry.jsonl and is ignored by git.",
         ],
     },
+    "audit": {
+        "title": "Agent Usage Audit",
+        "steps": [
+            "Call broker_audit after browser-agent work to check correct broker usage.",
+            "The audit correlates telemetry, feedback issues, active leases, and session logs.",
+            "Findings flag direct CDP mentions, active leases, missing release telemetry, open issues, and broker failures without issues.",
+            "Use /root/ax-browser-broker/bin/ax-browser-audit --json for the same audit from shell.",
+        ],
+        "pass_criteria": [
+            "Score is 80 or higher.",
+            "No unexpected active leases remain.",
+            "No raw CDP bypass findings are present unless they are known documentation/test snippets.",
+            "Browser failures have linked feedback issues.",
+        ],
+    },
     "safety": {
         "title": "Safety Boundary",
         "rules": [

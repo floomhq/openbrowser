@@ -124,3 +124,25 @@ Severity values:
 - `critical`
 
 The broker records lease lifecycle, browser actions, auth requests, auth completion, issue creation, and issue updates. Agent-created telemetry accepts structured `data` and redacts sensitive keys before writing to disk.
+
+## Agent Usage Audit
+
+Run:
+
+```bash
+/root/ax-browser-broker/bin/ax-browser-audit --hours 24 --json
+```
+
+Or call MCP:
+
+- `broker_audit(hours=24)`
+
+The audit combines:
+
+- `/root/ax-browser-broker/state/telemetry.jsonl`
+- `/root/ax-browser-broker/state/issues.json`
+- `/root/browser-pool/state/leases.json`
+- Claude session JSONL under `/root/.claude/projects`
+- Codex history and TUI logs under `/root/.codex`
+
+Findings include direct CDP mentions, active leases, missing release telemetry, open issues, and broker failure mentions without issue reports.

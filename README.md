@@ -50,6 +50,7 @@ Agents can call `broker_docs` through MCP for live runbook topics:
 - `auth`
 - `feedback`
 - `telemetry`
+- `audit`
 - `safety`
 
 Agents can report issues through MCP:
@@ -67,6 +68,14 @@ Agents can record and inspect telemetry through MCP:
 - `telemetry_summary`
 
 The telemetry store is append-only JSONL at `/root/ax-browser-broker/state/telemetry.jsonl` and is ignored by git. Sensitive keys such as password, token, cookie, secret, authorization, and totp are redacted before storage. Browser typing telemetry stores text length, not typed text.
+
+Agents and operators can audit broker usage:
+
+- MCP: `broker_audit(hours=24)`
+- API: `GET /audit?hours=24`
+- CLI: `/root/ax-browser-broker/bin/ax-browser-audit --json`
+
+The audit checks telemetry, feedback issues, active leases, and session logs. It flags raw CDP mentions, unreleased leases, open issues, and broker failures that lack issue reports.
 
 ## Auth flow
 

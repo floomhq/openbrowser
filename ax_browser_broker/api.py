@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from .audit import run_audit
 from .auth import (
     AuthError,
     complete_auth_request,
@@ -149,6 +150,11 @@ async def get_status() -> dict[str, Any]:
 @app.get("/agent-docs")
 async def agent_docs(topic: str = "quickstart") -> dict[str, Any]:
     return docs(topic)
+
+
+@app.get("/audit")
+async def broker_audit(hours: int = 24) -> dict[str, Any]:
+    return run_audit(hours)
 
 
 @app.post("/lease")

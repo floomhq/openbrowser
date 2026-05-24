@@ -7,6 +7,7 @@ def test_docs_topics_and_quickstart() -> None:
     topics = docs("topics")
     assert "quickstart" in topics["topics"]
     assert "telemetry" in topics["topics"]
+    assert "audit" in topics["topics"]
 
     quickstart = docs("quickstart")
     assert quickstart["topic"] == "quickstart"
@@ -18,3 +19,4 @@ def test_docs_unknown_topic_lists_available_topics() -> None:
     assert "error" in result
     assert "feedback" in result["available_topics"]
     assert "telemetry" in result["available_topics"]
+    assert "audit" in result["available_topics"]
