@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -76,6 +77,12 @@ def run_openbrowser(args: list[str]) -> int:
     parsed, passthrough = parser.parse_known_args(args)
     lease = _lease("openbrowser", parsed.identity)
     print(f"leased {lease['name']} at {lease['cdp']} for openbrowser", file=sys.stderr)
+    if passthrough and passthrough[0] == "status":
+        try:
+            print(json.dumps(_openbrowser_status(lease), indent=2, sort_keys=True))
+            return 0
+        finally:
+            _release(lease["lease_id"])
     env = os.environ.copy()
     env["AX_BROWSER_LEASE_ID"] = lease["lease_id"]
     env["AX_BROWSER_CDP_URL"] = lease["cdp"]
@@ -97,6 +104,43 @@ def run_openbrowser(args: list[str]) -> int:
             return subprocess.call(["node", "/root/openbrowser/dist/index.js", *passthrough], env=env)
         finally:
             _release(lease["lease_id"])
+
+
+def _cookie_names(profile_dir: str, domain_like: str) -> list[str]:
+    cookie_db = Path(profile_dir) / "Default" / "Cookies"
+    if not cookie_db.exists():
+        return []
+    try:
+        with sqlite3.connect(f"file:{cookie_db}?mode=ro", uri=True, timeout=5) as connection:
+            rows = connection.execute(
+                "select distinct name from cookies where host_key like ? order by name",
+                (f"%{domain_like}",),
+            ).fetchall()
+    except sqlite3.Error:
+        return []
+    return [str(row[0]) for row in rows]
+
+
+def _openbrowser_status(lease: dict[str, Any]) -> dict[str, Any]:
+    linkedin_required = ["li_at", "JSESSIONID", "bcookie", "bscookie", "lidc"]
+    linkedin_names = _cookie_names(str(lease["profile_dir"]), "linkedin.com")
+    return {
+        "ok": True,
+        "adapter": "openbrowser",
+        "lease": {
+            "slot": lease.get("name"),
+            "identity_id": lease.get("identity_id"),
+            "profile_dir": lease.get("profile_dir"),
+            "cdp": lease.get("cdp"),
+        },
+        "cookies": {
+            "linkedin": {
+                "present": [name for name in linkedin_required if name in linkedin_names],
+                "missing": [name for name in linkedin_required if name not in linkedin_names],
+                "count": len(linkedin_names),
+            }
+        },
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

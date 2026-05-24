@@ -23,7 +23,7 @@ Use:
 /root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status
 ```
 
-The wrapper leases a broker slot and gives OpenBrowser a temporary config whose `cdpPort` and `profileDir` point at the leased slot.
+The `status` command is broker-native and reports cookie presence by name only, never cookie values. Other OpenBrowser commands lease a broker slot and give OpenBrowser a temporary config whose `cdpPort` and `profileDir` point at the leased slot.
 
 OpenBrowser is best for session diagnostics. browser-use is better for task execution against a leased identity.
 
