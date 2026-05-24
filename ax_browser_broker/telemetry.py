@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import re
 import time
 import uuid
 from collections import Counter
@@ -28,14 +29,52 @@ VALID_EVENT_TYPES = {
 SENSITIVE_KEY_PARTS = (
     "authorization",
     "cookie",
+    "file_path",
+    "filename",
     "passwd",
     "password",
+    "path",
     "secret",
     "token",
     "totp",
 )
 MAX_DATA_STRING = 2000
 MAX_EVENTS_RETURNED = 500
+OPENAI_PROJECT_PREFIX = "sk" + "-proj-"
+OPENAI_PREFIX = "s" + "k-"
+ANTHROPIC_PREFIX = "sk" + "-ant-"
+GITHUB_FINE_GRAINED_PREFIX = "github" + "_pat_"
+GITHUB_CLASSIC_PREFIXES = ("gh" + "p", "gh" + "o", "gh" + "u", "gh" + "s", "gh" + "r")
+SLACK_PREFIX = "xo" + "x"
+AWS_ACCESS_PREFIXES = ("AK" + "IA", "AS" + "IA")
+STRIPE_PREFIXES = ("s" + "k", "p" + "k")
+SUPABASE_PREFIX = "sb" + "p_"
+FLOOM_PREFIX = "flm" + "_v1_"
+GOOGLE_API_PREFIX = "AI" + "za"
+SECRET_TEXT_PATTERNS = (
+    re.compile(r"\b" + re.escape(OPENAI_PROJECT_PREFIX) + r"[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\b" + re.escape(OPENAI_PREFIX) + r"[A-Za-z0-9]{32,}\b"),
+    re.compile(r"\b" + re.escape(ANTHROPIC_PREFIX) + r"[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\b(?:" + "|".join(GITHUB_CLASSIC_PREFIXES) + r")_[A-Za-z0-9_]{30,}\b"),
+    re.compile(r"\b" + re.escape(GITHUB_FINE_GRAINED_PREFIX) + r"[A-Za-z0-9_]{30,}\b"),
+    re.compile(r"\b" + re.escape(SLACK_PREFIX) + r"[baprs]-[A-Za-z0-9-]{20,}\b"),
+    re.compile(r"\b(?:" + "|".join(AWS_ACCESS_PREFIXES) + r")[A-Z0-9]{16}\b"),
+    re.compile(r"\b(?:" + "|".join(STRIPE_PREFIXES) + r")_(?:live|test)_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\b" + re.escape(SUPABASE_PREFIX) + r"[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\b" + re.escape(FLOOM_PREFIX) + r"[A-Za-z0-9_-]{8,}_[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\b" + re.escape(GOOGLE_API_PREFIX) + r"[A-Za-z0-9_-]{35}\b"),
+    re.compile(r"\b(https?):\/\/([^\s/@:]+):([^\s/@]+)@([^\s]+)"),
+    re.compile(re.escape(OPENAI_PROJECT_PREFIX) + r"[A-Za-z0-9_-]*"),
+    re.compile(re.escape(ANTHROPIC_PREFIX) + r"[A-Za-z0-9_-]*"),
+    re.compile(re.escape(GITHUB_FINE_GRAINED_PREFIX) + r"[A-Za-z0-9_]*"),
+    re.compile(r"(?:" + "|".join(GITHUB_CLASSIC_PREFIXES) + r")_[A-Za-z0-9_]*"),
+    re.compile(re.escape(SLACK_PREFIX) + r"[baprs]-[A-Za-z0-9-]*"),
+    re.compile(r"(?:" + "|".join(AWS_ACCESS_PREFIXES) + r")[A-Z0-9]*"),
+    re.compile(r"(?:" + "|".join(STRIPE_PREFIXES) + r")_(?:live|test)_[A-Za-z0-9]*"),
+    re.compile(re.escape(SUPABASE_PREFIX) + r"[A-Za-z0-9]*"),
+    re.compile(re.escape(FLOOM_PREFIX) + r"[A-Za-z0-9_-]*"),
+    re.compile(re.escape(GOOGLE_API_PREFIX) + r"[A-Za-z0-9_-]*"),
+)
 
 
 class TelemetryError(RuntimeError):
@@ -52,6 +91,16 @@ def _is_sensitive_key(key: str) -> bool:
     return any(part in lowered for part in SENSITIVE_KEY_PARTS)
 
 
+def sanitize_text(value: str, max_length: int = MAX_DATA_STRING) -> str:
+    cleaned = value
+    for pattern in SECRET_TEXT_PATTERNS:
+        if pattern.pattern.startswith("\\b(https?)"):
+            cleaned = pattern.sub(r"\1://[redacted]@\4", cleaned)
+        else:
+            cleaned = pattern.sub("[redacted]", cleaned)
+    return cleaned[:max_length]
+
+
 def _sanitize(value: Any) -> Any:
     if isinstance(value, dict):
         cleaned: dict[str, Any] = {}
@@ -64,7 +113,7 @@ def _sanitize(value: Any) -> Any:
     if isinstance(value, tuple):
         return [_sanitize(item) for item in value[:100]]
     if isinstance(value, str):
-        return value[:MAX_DATA_STRING]
+        return sanitize_text(value)
     if value is None or isinstance(value, bool | int | float):
         return value
     return str(value)[:MAX_DATA_STRING]
@@ -101,14 +150,14 @@ def record_event(
     event = {
         "id": "axbt_" + uuid.uuid4().hex[:12],
         "created_at": int(time.time()),
-        "source": _clean_text(source, "unknown"),
+        "source": sanitize_text(_clean_text(source, "unknown"), 200),
         "event_type": normalized_type,
         "severity": normalized_severity,
-        "message": clean_message[:MAX_DATA_STRING],
+        "message": sanitize_text(clean_message),
         "lease_id": lease_id,
         "issue_id": issue_id,
-        "url": url,
-        "tags": [tag.strip() for tag in (tags or []) if tag.strip()][:25],
+        "url": sanitize_text(url, 500) if url else None,
+        "tags": [sanitize_text(tag.strip(), 120) for tag in (tags or []) if tag.strip()][:25],
         "data": _sanitize(data or {}),
     }
     path = _state_file()

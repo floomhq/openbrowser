@@ -7,6 +7,9 @@
 - Bind address: `127.0.0.1`
 - Runtime user: `root`
 - Hardening: `UMask=077`, `NoNewPrivileges=true`
+- Browser pool supervisor unit: `browser-pool-supervisor.service`
+- Browser pool supervisor script: `/root/ax-browser-broker/browser_pool/bin/supervisor.sh`
+- Browser pool launcher script: `/root/ax-browser-broker/browser_pool/bin/launch_chrome.sh`
 
 ## Verification Commands
 
@@ -53,6 +56,14 @@ systemctl restart browser-pool-supervisor.service authenticated-chrome.service
 
 ## Auth Portal Security
 
+- Public handoff hostname: `https://openbrowser-auth.floom.dev`.
+- Cloudflare Tunnel routes that hostname to `http://localhost:8768`.
+- nginx listens on `127.0.0.1:8768` and exposes only `/auth/*`, `/healthz`, and temporary noVNC traffic.
+- nginx access logging is disabled for this auth proxy because auth request paths contain one-time tokens.
+- The full broker API remains bound to `127.0.0.1:8767` and is not exposed through this hostname.
+- Cloudflare Access is not active for this hostname from AX41 because the available Cloudflare API credential cannot manage Zero Trust Access. The active protection is Cloudflare Tunnel, unguessable expiring broker tokens, and a temporary VNC password.
+- Identity auth writes per-slot maintenance markers under `/root/browser-pool/state/maintenance/` before stopping a headless pool Chrome. The pool supervisor and launcher skip marked slots until auth completion or marker expiry, preventing profile-lock collisions.
+- Identity auth Chrome honors the identity `proxy_ref` by starting a temporary local `ax-proxy-forwarder` and passing Chrome `--proxy-server=http://127.0.0.1:<port>`. Identities with no `proxy_ref` use direct AX41 egress.
 - noVNC starts only for an active auth request.
 - noVNC binds to `127.0.0.1`.
 - Completion calls `/auth/{token}/complete`.
@@ -91,6 +102,8 @@ Agents use MCP tools:
 - `feedback_update_issue`
 
 Issue creation and updates also emit telemetry events linked by `issue_id`.
+OpenBrowser and browser-use adapter wrappers automatically create high-severity issues when their subprocess exits nonzero.
+Issue text, URLs, tags, and notes are redacted for common secret-shaped strings before storage.
 
 ## Telemetry
 
@@ -124,6 +137,8 @@ Severity values:
 - `critical`
 
 The broker records lease lifecycle, browser actions, auth requests, auth completion, issue creation, and issue updates. Agent-created telemetry accepts structured `data` and redacts sensitive keys before writing to disk.
+Browser API failures emit `error` telemetry with the action name and lease id. OpenBrowser and browser-use wrappers emit adapter start, completion, failure, duration, and exit-code telemetry.
+Messages, URLs, tags, and string values are redacted for common secret-shaped strings before storage; browser typing records text length only.
 
 ## Agent Usage Audit
 
@@ -146,6 +161,7 @@ The audit combines:
 - Codex history and TUI logs under `/root/.codex`
 
 Findings include direct CDP mentions, active leases, missing release telemetry, open issues, and broker failure mentions without issue reports.
+Audit JSON includes `issue_log_contexts` for direct issue-specific session-log snippets by issue id, source, lease id, title, and tags. Check those snippets before resolving browser-tool issues.
 
 After a routing cleanup, baseline the already-reviewed historical raw-CDP findings once:
 

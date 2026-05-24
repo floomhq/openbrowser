@@ -75,6 +75,8 @@ Agents can report issues through MCP:
 - `feedback_update_issue`
 
 The issue store is local at `/root/ax-browser-broker/state/issues.json` and is ignored by git.
+OpenBrowser and browser-use wrapper failures file issues automatically when the adapter process exits nonzero.
+Issue title, details, URL, tags, and notes are sanitized before storage.
 
 Agents can record and inspect telemetry through MCP:
 
@@ -83,6 +85,7 @@ Agents can record and inspect telemetry through MCP:
 - `telemetry_summary`
 
 The telemetry store is append-only JSONL at `/root/ax-browser-broker/state/telemetry.jsonl` and is ignored by git. Sensitive keys such as password, token, cookie, secret, authorization, and totp are redacted before storage. Browser typing telemetry stores text length, not typed text.
+The broker also emits failure telemetry for browser API action exceptions. The OpenBrowser and browser-use wrappers emit adapter start/completion/failure telemetry with duration and exit code.
 
 Agents and operators can audit broker usage:
 
@@ -91,13 +94,16 @@ Agents and operators can audit broker usage:
 - CLI: `/root/ax-browser-broker/bin/ax-browser-audit --json`
 
 The audit checks telemetry, feedback issues, active leases, and session logs. It flags raw CDP mentions, unreleased leases, open issues, and broker failures that lack issue reports.
+Audit JSON includes `issue_log_contexts`, keyed by issue id, so an agent can inspect direct issue-specific Claude/Codex session-log snippets before fixing a browser-tool problem.
 
 ## Auth flow
 
 Agents create an auth request with `/auth/request` or `auth_request`.
-The broker returns a one-time portal URL.
-The portal can launch noVNC against authenticated Chrome for human login.
+The broker returns a one-time portal URL. On AX41 this is `https://openbrowser-auth.floom.dev/auth/<token>`; `local_portal_url` is kept only as a localhost diagnostic fallback.
+The public hostname is routed through Cloudflare Tunnel to a localhost-only nginx proxy that exposes `/auth/*` and the temporary noVNC surface, not the full broker API.
+The portal can launch noVNC against authenticated Chrome or an identity-specific temporary Chrome for human login.
 When `identity_id` is provided, the portal launches a temporary graphical Chrome using that identity's AX41 profile directory.
+Identity auth pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile. If that identity has `proxy_ref`, the temporary auth Chrome uses the same local proxy-forwarder path as pool Chrome.
 
 Normal tools do not return raw cookies or password data.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import threading
 import time
 import uuid
 import urllib.request
@@ -16,6 +17,9 @@ from .identities import active_identity_id, activate_identity, load_identities, 
 
 class LeaseError(RuntimeError):
     pass
+
+
+_STATE_THREAD_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -44,20 +48,21 @@ def healthy(port: int, timeout: float = 1.5) -> bool:
 def locked_state() -> Any:
     ensure_dirs()
     POOL_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if not POOL_STATE_FILE.exists():
-        POOL_STATE_FILE.write_text(json.dumps({"leases": {}}, indent=2), encoding="utf-8")
-    with POOL_STATE_FILE.open("r+", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        raw = handle.read().strip()
-        state = json.loads(raw) if raw else {"leases": {}}
-        state.setdefault("leases", {})
-        yield state
-        handle.seek(0)
-        handle.truncate(0)
-        json.dump(state, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-        handle.flush()
-        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    with _STATE_THREAD_LOCK:
+        if not POOL_STATE_FILE.exists():
+            POOL_STATE_FILE.write_text(json.dumps({"leases": {}}, indent=2), encoding="utf-8")
+        with POOL_STATE_FILE.open("r+", encoding="utf-8") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            raw = handle.read().strip()
+            state = json.loads(raw) if raw else {"leases": {}}
+            state.setdefault("leases", {})
+            yield state
+            handle.seek(0)
+            handle.truncate(0)
+            json.dump(state, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _slot_by_name(name: str) -> Slot | None:

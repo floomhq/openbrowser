@@ -6,19 +6,53 @@ import os
 import signal
 import secrets
 import shutil
+import socket
 import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from .config import AUTH_REQUEST_TTL_SECONDS, AUTH_STATE_FILE, BROKER_PORT, ensure_dirs
-from .identities import require_identity
+from .config import (
+    AUTH_REQUEST_TTL_SECONDS,
+    AUTH_STATE_FILE,
+    BROWSER_POOL_MAINTENANCE_DIR,
+    BROKER_PORT,
+    PUBLIC_AUTH_BASE_URL,
+    PUBLIC_NOVNC_BASE_URL,
+    SLOTS,
+    ensure_dirs,
+)
+from .identities import read_slot_config, require_identity
 from .pool import status as pool_status
 
 
 class AuthError(RuntimeError):
     pass
+
+
+def _url_from_base(base_url: str, path: str) -> str:
+    return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _local_auth_portal_url(token: str) -> str:
+    return f"http://127.0.0.1:{BROKER_PORT}/auth/{token}"
+
+
+def auth_portal_url(token: str) -> str:
+    if PUBLIC_AUTH_BASE_URL:
+        return _url_from_base(PUBLIC_AUTH_BASE_URL, f"auth/{token}")
+    return _local_auth_portal_url(token)
+
+
+def _local_novnc_url(websocket_port: int) -> str:
+    return f"http://127.0.0.1:{websocket_port}/vnc.html?autoconnect=1&resize=remote"
+
+
+def novnc_url(websocket_port: int) -> str:
+    if PUBLIC_NOVNC_BASE_URL:
+        return _url_from_base(PUBLIC_NOVNC_BASE_URL, "vnc.html?autoconnect=1&resize=remote")
+    return _local_novnc_url(websocket_port)
 
 
 @contextmanager
@@ -63,7 +97,8 @@ def create_auth_request(owner: str, url: str, reason: str = "login_required", id
         "status": "pending",
         "created_at": now,
         "expires_at": now + AUTH_REQUEST_TTL_SECONDS,
-        "portal_url": f"http://127.0.0.1:{BROKER_PORT}/auth/{token}",
+        "portal_url": auth_portal_url(token),
+        "local_portal_url": _local_auth_portal_url(token),
     }
     if identity_id:
         request["identity_id"] = identity_id
@@ -161,6 +196,124 @@ def _find_free_display(start: int = 870, end: int = 899) -> str:
     raise AuthError("No free X display found for identity auth")
 
 
+def _find_free_tcp_port(start: int = 18900, end: int = 18999) -> int:
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    raise AuthError("No free local proxy port found for identity auth")
+
+
+def _identity_auth_slots(identity_id: str, profile_dir: Path, configured_slot: str) -> list[str]:
+    slots: list[str] = []
+    if configured_slot != "auto":
+        slots.append(configured_slot)
+    for slot in SLOTS:
+        try:
+            config = read_slot_config(slot.name)
+        except Exception:
+            continue
+        if config.get("IDENTITY_ID") == identity_id or config.get("PROFILE_DIR") == str(profile_dir):
+            slots.append(slot.name)
+    return sorted(set(slots))
+
+
+def _write_auth_maintenance(slot_names: list[str], request: dict[str, Any]) -> list[str]:
+    ensure_dirs()
+    written: list[str] = []
+    now = int(time.time())
+    for slot_name in slot_names:
+        path = BROWSER_POOL_MAINTENANCE_DIR / f"{slot_name}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "slot": slot_name,
+            "reason": "identity_auth",
+            "identity_id": request.get("identity_id"),
+            "owner": request.get("owner"),
+            "created_at": now,
+            "expires_at": int(request.get("expires_at", now + AUTH_REQUEST_TTL_SECONDS)),
+        }
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        os.chmod(path, 0o600)
+        written.append(slot_name)
+    return written
+
+
+def _clear_auth_maintenance(slot_names: list[str]) -> list[str]:
+    cleared: list[str] = []
+    for slot_name in slot_names:
+        path = BROWSER_POOL_MAINTENANCE_DIR / f"{slot_name}.json"
+        try:
+            path.unlink(missing_ok=True)
+            cleared.append(slot_name)
+        except OSError:
+            pass
+    return cleared
+
+
+def _process_rows() -> list[tuple[int, str]]:
+    try:
+        output = subprocess.check_output(["ps", "-eo", "pid=,args="], text=True)
+    except subprocess.SubprocessError:
+        return []
+    rows: list[tuple[int, str]] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        pid_text, _, args = stripped.partition(" ")
+        try:
+            rows.append((int(pid_text), args))
+        except ValueError:
+            continue
+    return rows
+
+
+def _is_chrome_process(args: str) -> bool:
+    executable = Path(args.split(maxsplit=1)[0]).name if args else ""
+    return executable in {"chrome", "google-chrome", "google-chrome-stable"} or executable.startswith("chrome_crashpad")
+
+
+def _terminate_pids(pids: list[int]) -> None:
+    for pid in sorted(set(pids), reverse=True):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            continue
+
+
+def _kill_identity_pool_processes(_identity_id: str, profile_dir: Path, slot_names: list[str]) -> None:
+    rows = _process_rows()
+    profile_arg = f"--user-data-dir={profile_dir}"
+    profile_pids = [pid for pid, args in rows if profile_arg in args and _is_chrome_process(args)]
+    _terminate_pids(profile_pids)
+    for slot_name in slot_names:
+        slot = next((item for item in SLOTS if item.name == slot_name), None)
+        if slot is None:
+            continue
+        port_arg = f"--remote-debugging-port={slot.port}"
+        rows = _process_rows()
+        port_pids = [pid for pid, args in rows if port_arg in args and _is_chrome_process(args)]
+        _terminate_pids(port_pids)
+        proxy_pid_file = Path("/root/browser-pool/state") / f"{slot_name}.proxy.pid"
+        if proxy_pid_file.exists():
+            try:
+                proxy_pid = int(proxy_pid_file.read_text(encoding="utf-8").strip())
+                os.kill(proxy_pid, signal.SIGTERM)
+            except (OSError, ValueError):
+                pass
+            try:
+                proxy_pid_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _start_identity_auth_vnc(
     request: dict[str, Any],
     websocket_port: int,
@@ -180,13 +333,18 @@ def _start_identity_auth_vnc(
         raise AuthError(f"Identity is actively leased: {identity.identity_id}")
     if any(item.get("profile_dir") == str(identity.profile_dir) for item in active_leases.values()):
         raise AuthError(f"Identity profile is actively leased: {identity.identity_id}")
+    auth_slots = _identity_auth_slots(identity.identity_id, identity.profile_dir, identity.slot)
+    maintenance_slots = _write_auth_maintenance(auth_slots, request)
     identity.profile_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["pkill", "-f", "--", f"--user-data-dir={identity.profile_dir}"], check=False)
+    _kill_identity_pool_processes(identity.identity_id, identity.profile_dir, maintenance_slots)
     time.sleep(0.5)
     display = _find_free_display()
     env = os.environ.copy()
     env["DISPLAY"] = display
     started_pids: list[int] = []
+    proxy_pid = None
+    proxy_local_port = None
+    proxy_args: list[str] = []
     with log_path.open("ab") as log:
         try:
             xvfb_proc = subprocess.Popen(
@@ -198,6 +356,30 @@ def _start_identity_auth_vnc(
             )
             started_pids.append(xvfb_proc.pid)
             time.sleep(0.4)
+            if getattr(identity, "proxy_ref", None):
+                proxy_forwarder = Path("/root/ax-browser-broker/bin/ax-proxy-forwarder")
+                if not proxy_forwarder.exists():
+                    raise AuthError("ax-proxy-forwarder is missing")
+                proxy_local_port = _find_free_tcp_port()
+                proxy_proc = subprocess.Popen(
+                    [
+                        str(proxy_forwarder),
+                        "--proxy-ref",
+                        str(identity.proxy_ref),
+                        "--listen-host",
+                        "127.0.0.1",
+                        "--listen-port",
+                        str(proxy_local_port),
+                    ],
+                    stdout=log,
+                    stderr=log,
+                    env=env,
+                    start_new_session=True,
+                )
+                proxy_pid = proxy_proc.pid
+                started_pids.append(proxy_proc.pid)
+                proxy_args = [f"--proxy-server=http://127.0.0.1:{proxy_local_port}"]
+                time.sleep(0.4)
             chrome_proc = subprocess.Popen(
                 [
                     chrome,
@@ -212,6 +394,7 @@ def _start_identity_auth_vnc(
                     f"--lang={identity.lang}",
                     "--window-size=1280,800",
                     "--window-position=0,0",
+                    *proxy_args,
                     str(request["url"]),
                 ],
                 stdout=log,
@@ -255,15 +438,19 @@ def _start_identity_auth_vnc(
         except Exception:
             for pid in reversed(started_pids):
                 _terminate_process_group(pid)
+            _clear_auth_maintenance(maintenance_slots)
             raise
     return {
         "mode": "identity",
         "identity_id": identity.identity_id,
+        "maintenance_slots": maintenance_slots,
         "display": display,
         "xvfb_pid": xvfb_proc.pid,
         "chrome_pid": chrome_proc.pid,
         "x11vnc_pid": x11vnc_proc.pid,
         "websockify_pid": websockify_proc.pid,
+        "proxy_pid": proxy_pid,
+        "proxy_local_port": proxy_local_port,
         "websocket_port": websocket_port,
         "vnc_port": vnc_port,
         "password_file": str(password_file),
@@ -358,7 +545,8 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     return {
         "token": token,
         "display": display,
-        "websocket_url": f"http://127.0.0.1:{websocket_port}/vnc.html?autoconnect=1&resize=remote",
+        "websocket_url": novnc_url(websocket_port),
+        "local_websocket_url": _local_novnc_url(websocket_port),
         "websocket_port": websocket_port,
         "vnc_port": vnc_port,
         "password": password,
@@ -415,7 +603,7 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
         raise
     vnc = request.get("vnc") or {}
     stopped = []
-    for key in ("x11vnc_pid", "websockify_pid", "chrome_pid", "xvfb_pid"):
+    for key in ("x11vnc_pid", "websockify_pid", "chrome_pid", "xvfb_pid", "proxy_pid"):
         pid = vnc.get(key)
         if not pid:
             continue
@@ -428,9 +616,12 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
             Path(str(password_file)).unlink(missing_ok=True)
         except OSError:
             pass
+    maintenance_slots = [str(item) for item in vnc.get("maintenance_slots", [])]
+    cleared_maintenance = _clear_auth_maintenance(maintenance_slots)
     with locked_auth_state() as state:
         state_request = state["requests"].get(token)
         if state_request is not None and "vnc" in state_request:
             state_request["vnc"]["stopped_at"] = int(time.time())
             state_request["vnc"]["stopped_pids"] = stopped
-    return {"token": token, "stopped": stopped}
+            state_request["vnc"]["cleared_maintenance_slots"] = cleared_maintenance
+    return {"token": token, "stopped": stopped, "cleared_maintenance_slots": cleared_maintenance}

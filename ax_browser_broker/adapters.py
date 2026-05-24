@@ -7,14 +7,36 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from .config import BROKER_PORT
+from .feedback import report_issue
+from .telemetry import record_event
 
 
 BROKER_URL = f"http://127.0.0.1:{BROKER_PORT}"
+LEASE_RETRY_SECONDS = 15
+LEASE_RETRY_INTERVAL_SECONDS = 1
+SAFE_COMMAND_WORDS = {
+    "browser-use",
+    "help",
+    "login",
+    "node",
+    "openbrowser",
+    "run",
+    "status",
+}
+BOOLEAN_FLAGS = {
+    "-h",
+    "--help",
+    "--json",
+    "--verbose",
+    "--version",
+}
 
 
 def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -30,7 +52,18 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict
 
 
 def _lease(owner: str, identity_id: str | None = None) -> dict[str, Any]:
-    return _request("POST", "/lease", {"owner": owner, "ttl_seconds": 14400, "identity_id": identity_id})
+    deadline = time.monotonic() + LEASE_RETRY_SECONDS
+    while True:
+        try:
+            return _request("POST", "/lease", {"owner": owner, "ttl_seconds": 14400, "identity_id": identity_id})
+        except urllib.error.HTTPError as error:
+            if error.code != 409 or time.monotonic() >= deadline:
+                raise
+            time.sleep(LEASE_RETRY_INTERVAL_SECONDS)
+        except urllib.error.URLError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(LEASE_RETRY_INTERVAL_SECONDS)
 
 
 def _release(lease_id: str) -> None:
@@ -38,6 +71,65 @@ def _release(lease_id: str) -> None:
         _request("POST", f"/release/{lease_id}")
     except Exception as error:
         print(f"release failed for {lease_id}: {error}", file=sys.stderr)
+
+
+def _safe_record_event(**kwargs: Any) -> None:
+    try:
+        record_event(**kwargs)
+    except Exception:
+        return
+
+
+def _safe_report_issue(**kwargs: Any) -> dict[str, Any] | None:
+    try:
+        return report_issue(**kwargs)
+    except Exception:
+        return None
+
+
+def _command_shape(command: list[str]) -> list[str]:
+    shape: list[str] = []
+    redact_next = False
+    for index, raw_token in enumerate(command[:20]):
+        token = str(raw_token)
+        if index == 0:
+            shape.append(Path(token).name)
+            continue
+        if redact_next:
+            shape.append("[redacted]")
+            redact_next = False
+            continue
+        if token in BOOLEAN_FLAGS:
+            shape.append(token)
+            continue
+        if token.startswith("-"):
+            if "=" in token:
+                flag = token.split("=", 1)[0]
+                shape.append(f"{flag}=[redacted]")
+            else:
+                shape.append(token)
+                redact_next = True
+            continue
+        if token in SAFE_COMMAND_WORDS:
+            shape.append(token)
+            continue
+        if token.endswith(".js"):
+            shape.append(Path(token).name)
+            continue
+        shape.append("[redacted]")
+    return shape
+
+
+def _adapter_data(lease: dict[str, Any], identity_id: str | None, command: list[str] | None = None) -> dict[str, Any]:
+    data: dict[str, Any] = {
+        "slot": lease.get("name"),
+        "identity_id": identity_id or lease.get("identity_id"),
+        "port": lease.get("port"),
+    }
+    if command is not None:
+        data["command_shape"] = _command_shape(command)
+        data["argc"] = len(command)
+    return data
 
 
 def print_env(owner: str, identity_id: str | None = None) -> int:
@@ -65,8 +157,64 @@ def run_browser_use(args: list[str]) -> int:
         f"broker-{lease['lease_id']}",
         *passthrough,
     ]
+    started_at = time.monotonic()
+    _safe_record_event(
+        source="browser-use",
+        event_type="session",
+        message="browser-use adapter started",
+        lease_id=lease["lease_id"],
+        tags=["adapter", "browser-use", "start"],
+        data=_adapter_data(lease, parsed.identity, command),
+    )
     try:
-        return subprocess.call(command, env=env)
+        exit_code = subprocess.call(command, env=env)
+        duration_ms = int((time.monotonic() - started_at) * 1000)
+        failed = exit_code != 0
+        _safe_record_event(
+            source="browser-use",
+            event_type="error" if failed else "session",
+            message="browser-use adapter failed" if failed else "browser-use adapter completed",
+            severity="error" if failed else "info",
+            lease_id=lease["lease_id"],
+            tags=["adapter", "browser-use", "failure" if failed else "complete"],
+            data={**_adapter_data(lease, parsed.identity, command), "exit_code": exit_code, "duration_ms": duration_ms},
+        )
+        if failed:
+            issue = _safe_report_issue(
+                source="browser-use",
+                title="browser-use adapter exited nonzero",
+                details=f"browser-use exited with code {exit_code}. Run audit and inspect lease/session logs for this lease.",
+                severity="high",
+                lease_id=lease["lease_id"],
+                tags=["adapter", "browser-use", "nonzero-exit"],
+            )
+            if issue:
+                _safe_record_event(
+                    source="browser-use",
+                    event_type="issue",
+                    message="browser-use adapter issue filed",
+                    severity="error",
+                    lease_id=lease["lease_id"],
+                    issue_id=issue["id"],
+                    tags=["adapter", "browser-use", "issue"],
+                    data={"exit_code": exit_code},
+                )
+        return exit_code
+    except Exception as error:
+        _safe_record_event(
+            source="browser-use",
+            event_type="error",
+            message="browser-use adapter exception",
+            severity="error",
+            lease_id=lease["lease_id"],
+            tags=["adapter", "browser-use", "exception"],
+            data={
+                **_adapter_data(lease, parsed.identity, command),
+                "error": str(error),
+                "duration_ms": int((time.monotonic() - started_at) * 1000),
+            },
+        )
+        raise
     finally:
         _release(lease["lease_id"])
 
@@ -77,9 +225,26 @@ def run_openbrowser(args: list[str]) -> int:
     parsed, passthrough = parser.parse_known_args(args)
     lease = _lease("openbrowser", parsed.identity)
     print(f"leased {lease['name']} at {lease['cdp']} for openbrowser", file=sys.stderr)
+    started_at = time.monotonic()
+    _safe_record_event(
+        source="openbrowser",
+        event_type="session",
+        message="OpenBrowser adapter started",
+        lease_id=lease["lease_id"],
+        tags=["adapter", "openbrowser", "start"],
+        data=_adapter_data(lease, parsed.identity, ["openbrowser", *passthrough]),
+    )
     if passthrough and passthrough[0] == "status":
         try:
             print(json.dumps(_openbrowser_status(lease), indent=2, sort_keys=True))
+            _safe_record_event(
+                source="openbrowser",
+                event_type="session",
+                message="OpenBrowser status completed",
+                lease_id=lease["lease_id"],
+                tags=["adapter", "openbrowser", "status"],
+                data={**_adapter_data(lease, parsed.identity), "duration_ms": int((time.monotonic() - started_at) * 1000)},
+            )
             return 0
         finally:
             _release(lease["lease_id"])
@@ -100,8 +265,56 @@ def run_openbrowser(args: list[str]) -> int:
         }
         (config_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         env["HOME"] = str(home)
+        command = ["node", "/root/openbrowser/dist/index.js", *passthrough]
         try:
-            return subprocess.call(["node", "/root/openbrowser/dist/index.js", *passthrough], env=env)
+            exit_code = subprocess.call(command, env=env)
+            duration_ms = int((time.monotonic() - started_at) * 1000)
+            failed = exit_code != 0
+            _safe_record_event(
+                source="openbrowser",
+                event_type="error" if failed else "session",
+                message="OpenBrowser adapter failed" if failed else "OpenBrowser adapter completed",
+                severity="error" if failed else "info",
+                lease_id=lease["lease_id"],
+                tags=["adapter", "openbrowser", "failure" if failed else "complete"],
+                data={**_adapter_data(lease, parsed.identity, command), "exit_code": exit_code, "duration_ms": duration_ms},
+            )
+            if failed:
+                issue = _safe_report_issue(
+                    source="openbrowser",
+                    title="OpenBrowser adapter exited nonzero",
+                    details=f"OpenBrowser exited with code {exit_code}. Run audit and inspect lease/session logs for this lease.",
+                    severity="high",
+                    lease_id=lease["lease_id"],
+                    tags=["adapter", "openbrowser", "nonzero-exit"],
+                )
+                if issue:
+                    _safe_record_event(
+                        source="openbrowser",
+                        event_type="issue",
+                        message="OpenBrowser adapter issue filed",
+                        severity="error",
+                        lease_id=lease["lease_id"],
+                        issue_id=issue["id"],
+                        tags=["adapter", "openbrowser", "issue"],
+                        data={"exit_code": exit_code},
+                    )
+            return exit_code
+        except Exception as error:
+            _safe_record_event(
+                source="openbrowser",
+                event_type="error",
+                message="OpenBrowser adapter exception",
+                severity="error",
+                lease_id=lease["lease_id"],
+                tags=["adapter", "openbrowser", "exception"],
+                data={
+                    **_adapter_data(lease, parsed.identity, command),
+                    "error": str(error),
+                    "duration_ms": int((time.monotonic() - started_at) * 1000),
+                },
+            )
+            raise
         finally:
             _release(lease["lease_id"])
 

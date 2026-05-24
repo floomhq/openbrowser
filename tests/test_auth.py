@@ -8,10 +8,12 @@ from ax_browser_broker import auth
 def test_auth_request_lifecycle_uses_state_file(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "PUBLIC_AUTH_BASE_URL", "")
 
     request = auth.create_auth_request("tester", "https://example.com/login")
     assert request["status"] == "pending"
     assert request["portal_url"].endswith("/auth/" + request["token"])
+    assert request["portal_url"] == request["local_portal_url"]
 
     listed = auth.list_auth_requests()
     assert request["token"] in listed["requests"]
@@ -21,6 +23,29 @@ def test_auth_request_lifecycle_uses_state_file(tmp_path, monkeypatch) -> None:
 
     raw = json.loads(state_file.read_text())
     assert raw["requests"][request["token"]]["status"] == "complete"
+
+
+def test_auth_request_uses_public_portal_url_when_configured(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "PUBLIC_AUTH_BASE_URL", "https://openbrowser-auth.floom.dev/")
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+
+    assert request["portal_url"] == f"https://openbrowser-auth.floom.dev/auth/{request['token']}"
+    assert request["local_portal_url"] == f"http://127.0.0.1:{auth.BROKER_PORT}/auth/{request['token']}"
+
+
+def test_novnc_url_uses_public_url_when_configured(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "PUBLIC_NOVNC_BASE_URL", "https://openbrowser-auth.floom.dev")
+
+    assert auth.novnc_url(6081) == "https://openbrowser-auth.floom.dev/vnc.html?autoconnect=1&resize=remote"
+
+
+def test_novnc_url_falls_back_to_localhost(monkeypatch) -> None:
+    monkeypatch.setattr(auth, "PUBLIC_NOVNC_BASE_URL", "")
+
+    assert auth.novnc_url(6081) == "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=remote"
 
 
 def test_stop_auth_vnc_removes_password_file(tmp_path, monkeypatch) -> None:
@@ -70,17 +95,23 @@ def test_auth_request_can_target_identity(tmp_path, monkeypatch) -> None:
 
 def test_stop_auth_vnc_terminates_identity_auth_process_groups(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
+    maintenance_dir = tmp_path / "maintenance"
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "BROWSER_POOL_MAINTENANCE_DIR", maintenance_dir)
     terminated = []
     monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
 
     request = auth.create_auth_request("tester", "https://example.com")
+    marker = maintenance_dir / "pool-b.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("{}\n", encoding="utf-8")
     data = json.loads(state_file.read_text())
     data["requests"][request["token"]]["vnc"] = {
         "x11vnc_pid": 123,
         "websockify_pid": 456,
         "chrome_pid": 789,
         "xvfb_pid": 987,
+        "maintenance_slots": ["pool-b"],
     }
     state_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -88,6 +119,8 @@ def test_stop_auth_vnc_terminates_identity_auth_process_groups(tmp_path, monkeyp
 
     assert terminated == [123, 456, 789, 987]
     assert result["stopped"] == [123, 456, 789, 987]
+    assert result["cleared_maintenance_slots"] == ["pool-b"]
+    assert not marker.exists()
 
 
 def test_stop_auth_vnc_removes_password_file_when_helper_termination_fails(tmp_path, monkeypatch) -> None:
@@ -168,6 +201,7 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
         identity_id = "chrome-openpaper"
         profile_dir = tmp_path / "chrome-openpaper"
         lang = "en-US"
+        slot = "pool-b"
 
     class FakeProc:
         def __init__(self, pid: int) -> None:
@@ -175,6 +209,7 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
 
     pids = iter([111, 222, 333])
     terminated = []
+    killed_pool_pids = []
 
     def fake_popen(args, **_kwargs):
         if str(args[0]).endswith("websockify"):
@@ -183,9 +218,19 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
 
     monkeypatch.setattr(auth, "require_identity", lambda _identity_id: Identity())
     monkeypatch.setattr(auth, "pool_status", lambda: {"leases": {}})
+    monkeypatch.setattr(auth, "read_slot_config", lambda slot_name: {"IDENTITY_ID": "chrome-openpaper"} if slot_name == "pool-b" else {})
+    monkeypatch.setattr(auth, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
     monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
-    monkeypatch.setattr(auth.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        auth,
+        "_process_rows",
+        lambda: [
+            (444, f"/usr/bin/google-chrome-stable --headless=new --user-data-dir={tmp_path / 'chrome-openpaper'} --remote-debugging-port=9224"),
+            (555, "python3 unrelated --user-data-dir=/tmp/chrome-openpaper --remote-debugging-port=9224"),
+        ],
+    )
+    monkeypatch.setattr(auth, "_terminate_pids", lambda pids: killed_pool_pids.extend(pids))
     monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
@@ -204,3 +249,51 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
         raise AssertionError("expected partial start failure")
 
     assert terminated == [333, 222, 111]
+    assert killed_pool_pids == [444, 444]
+    assert not (tmp_path / "maintenance" / "pool-b.json").exists()
+
+
+def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, monkeypatch) -> None:
+    class Identity:
+        identity_id = "linkedin-main"
+        profile_dir = tmp_path / "linkedin-main"
+        lang = "en-US"
+        slot = "pool-c"
+        proxy_ref = "iproyal:linkedin-main"
+
+    class FakeProc:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+    popen_calls = []
+    pids = iter([111, 222, 333, 444, 555])
+
+    def fake_popen(args, **_kwargs):
+        popen_calls.append(args)
+        return FakeProc(next(pids))
+
+    monkeypatch.setattr(auth, "require_identity", lambda _identity_id: Identity())
+    monkeypatch.setattr(auth, "pool_status", lambda: {"leases": {}})
+    monkeypatch.setattr(auth, "read_slot_config", lambda _slot_name: {})
+    monkeypatch.setattr(auth, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
+    monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
+    monkeypatch.setattr(auth, "_find_free_tcp_port", lambda: 18901)
+    monkeypatch.setattr(auth, "_process_rows", lambda: [])
+    monkeypatch.setattr(auth, "_terminate_pids", lambda _pids: None)
+    monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
+
+    result = auth._start_identity_auth_vnc(
+        {"identity_id": "linkedin-main", "url": "https://example.com"},
+        6081,
+        5901,
+        tmp_path / "passwd",
+        tmp_path / "auth.log",
+    )
+
+    assert result["proxy_pid"] == 222
+    assert result["proxy_local_port"] == 18901
+    assert any("/root/ax-browser-broker/bin/ax-proxy-forwarder" in str(call[0]) for call in popen_calls)
+    chrome_call = next(call for call in popen_calls if call[0] == "/usr/bin/google-chrome-stable")
+    assert "--proxy-server=http://127.0.0.1:18901" in chrome_call

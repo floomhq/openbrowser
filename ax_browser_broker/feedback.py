@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from .config import ISSUE_STATE_FILE, ensure_dirs
+from .telemetry import sanitize_text
 
 
 VALID_SEVERITIES = {"low", "medium", "high", "blocker"}
@@ -50,8 +51,8 @@ def report_issue(
     normalized = severity.strip().lower()
     if normalized not in VALID_SEVERITIES:
         raise FeedbackError(f"Invalid severity {severity!r}; use one of {sorted(VALID_SEVERITIES)}")
-    clean_title = title.strip()
-    clean_details = details.strip()
+    clean_title = sanitize_text(title.strip(), 300)
+    clean_details = sanitize_text(details.strip(), 5000)
     if not clean_title:
         raise FeedbackError("Issue title is required")
     if not clean_details:
@@ -62,12 +63,12 @@ def report_issue(
         "id": issue_id,
         "status": "open",
         "severity": normalized,
-        "source": source.strip() or "unknown",
+        "source": sanitize_text(source.strip() or "unknown", 200),
         "title": clean_title,
         "details": clean_details,
         "lease_id": lease_id,
-        "url": url,
-        "tags": [tag.strip() for tag in (tags or []) if tag.strip()],
+        "url": sanitize_text(url, 500) if url else None,
+        "tags": [sanitize_text(tag.strip(), 120) for tag in (tags or []) if tag.strip()],
         "created_at": now,
         "updated_at": now,
         "notes": [],
@@ -101,6 +102,6 @@ def update_issue(issue_id: str, status: str | None = None, note: str | None = No
         if normalized_status:
             issue["status"] = normalized_status
         if note and note.strip():
-            issue.setdefault("notes", []).append({"text": note.strip(), "created_at": now})
+            issue.setdefault("notes", []).append({"text": sanitize_text(note.strip(), 5000), "created_at": now})
         issue["updated_at"] = now
         return issue

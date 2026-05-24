@@ -138,6 +138,18 @@ def _safe_record_event(**kwargs: Any) -> None:
         return
 
 
+def _record_browser_failure(request: LeaseIdRequest, action: str, error: Exception, data: dict[str, Any] | None = None) -> None:
+    _safe_record_event(
+        source="broker-api",
+        event_type="error",
+        message=f"Browser {action} failed",
+        severity="error",
+        lease_id=request.lease_id,
+        tags=["browser", action, "failure"],
+        data={"error": str(error), **(data or {})},
+    )
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "broker": f"http://{BROKER_HOST}:{BROKER_PORT}", "pool": status()}
@@ -212,6 +224,15 @@ async def heartbeat_lease(lease_id: str) -> dict[str, Any]:
         )
         return lease_obj.__dict__
     except Exception as error:
+        _safe_record_event(
+            source="broker-api",
+            event_type="error",
+            message="Lease heartbeat failed",
+            severity="error",
+            lease_id=lease_id,
+            tags=["lease", "heartbeat", "failure"],
+            data={"error": str(error)},
+        )
         raise _http_error(error) from error
 
 
@@ -231,6 +252,7 @@ async def browser_navigate(request: NavigateRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "navigate", error, {"url": request.url, "wait_until": request.wait_until})
         raise _http_error(error) from error
 
 
@@ -250,6 +272,7 @@ async def browser_snapshot(request: LeaseIdRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "snapshot", error)
         raise _http_error(error) from error
 
 
@@ -268,6 +291,7 @@ async def browser_screenshot(request: ScreenshotRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "screenshot", error, {"full_page": request.full_page})
         raise _http_error(error) from error
 
 
@@ -287,6 +311,7 @@ async def browser_click(request: ClickRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "click", error, {"selector": request.selector})
         raise _http_error(error) from error
 
 
@@ -305,6 +330,12 @@ async def browser_type(request: TypeRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(
+            request,
+            "type",
+            error,
+            {"selector": request.selector, "submitted": request.submit, "text_length": len(request.text)},
+        )
         raise _http_error(error) from error
 
 
@@ -323,6 +354,7 @@ async def browser_wait(request: WaitRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "wait", error, {"selector": request.selector, "timeout_ms": request.timeout_ms})
         raise _http_error(error) from error
 
 
@@ -341,6 +373,7 @@ async def browser_tabs(request: LeaseIdRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "tabs", error)
         raise _http_error(error) from error
 
 
@@ -360,6 +393,7 @@ async def browser_new_tab(request: NewTabRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "new-tab", error, {"url": request.url})
         raise _http_error(error) from error
 
 
@@ -379,6 +413,7 @@ async def browser_switch_tab(request: SwitchTabRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "switch-tab", error, {"index": request.index})
         raise _http_error(error) from error
 
 
@@ -397,6 +432,7 @@ async def browser_upload(request: UploadRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _record_browser_failure(request, "upload", error, {"selector": request.selector, "path": request.path})
         raise _http_error(error) from error
 
 
@@ -466,14 +502,16 @@ async def auth_start_vnc(token: str) -> str:
         vnc = start_auth_vnc(token)
     except AuthError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    safe_websocket_url = html.escape(str(vnc["websocket_url"]), quote=True)
+    safe_password = html.escape(str(vnc["password"]))
     return f"""
 <!doctype html>
 <html>
   <head><meta charset="utf-8"><title>AX41 noVNC</title></head>
   <body style="font-family: system-ui, sans-serif; margin: 40px">
     <h1>Login view ready</h1>
-    <p>Open <a href="{vnc["websocket_url"]}">{vnc["websocket_url"]}</a>.</p>
-    <p>VNC password: <code>{vnc["password"]}</code></p>
+    <p>Open <a href="{safe_websocket_url}">{safe_websocket_url}</a>.</p>
+    <p>VNC password: <code>{safe_password}</code></p>
     <p>After login, return to the auth page and mark the request complete.</p>
   </body>
 </html>

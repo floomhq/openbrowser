@@ -140,7 +140,7 @@ def test_activate_identity_writes_slot_config_and_launches_profile(tmp_path, mon
     monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
     monkeypatch.setattr(identities, "BROWSER_POOL_DIR", tmp_path / "browser-pool")
     monkeypatch.setattr(identities, "_healthy", lambda _port: True)
-    monkeypatch.setattr(identities.subprocess, "run", lambda args, check=False: calls.append(args) or type("Result", (), {"returncode": 1})())
+    monkeypatch.setattr(identities.subprocess, "run", lambda args, check=False: calls.append((args, check)) or type("Result", (), {"returncode": 1})())
 
     result = identities.activate_identity("chrome-openpaper")
 
@@ -148,7 +148,40 @@ def test_activate_identity_writes_slot_config_and_launches_profile(tmp_path, mon
     assert result["active"] is True
     assert profile_dir.exists()
     assert (pool_config_dir / "pool-a.env").exists()
-    assert [str(tmp_path / "browser-pool" / "bin" / "launch_chrome.sh"), "pool-a", "9223"] in calls
+    assert ([str(tmp_path / "browser-pool" / "bin" / "launch_chrome.sh"), "pool-a", "9223"], True) in calls
+
+
+def test_activate_auto_identity_clears_duplicate_slot_config(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    pool_config_dir = tmp_path / "pool-config"
+    browser_pool = tmp_path / "browser-pool"
+    profile_dir = tmp_path / "discord-main"
+    pool_config_dir.mkdir()
+    (pool_config_dir / "pool-a.env").write_text(
+        f"IDENTITY_ID='discord-main'\nPROFILE_DIR={str(profile_dir)!r}\nCHROME_LANG='en-US'\n",
+        encoding="utf-8",
+    )
+    identity_file.write_text(
+        json.dumps({"identities": {"discord-main": {"slot": "auto", "profile_dir": str(profile_dir)}}}),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(json.dumps({"proxies": {}}), encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", browser_pool)
+    monkeypatch.setattr(identities, "_healthy", lambda _port: True)
+    monkeypatch.setattr(identities.subprocess, "run", lambda args, check=False: calls.append((args, check)) or type("Result", (), {"returncode": 1})())
+
+    result = identities.activate_identity("discord-main", "pool-b")
+
+    assert result["slot"] == "pool-b"
+    assert not (pool_config_dir / "pool-a.env").exists()
+    assert (pool_config_dir / "pool-b.env").exists()
+    assert ([str(browser_pool / "bin" / "launch_chrome.sh"), "pool-a", "9223"], True) in calls
+    assert ([str(browser_pool / "bin" / "launch_chrome.sh"), "pool-b", "9224"], True) in calls
 
 
 def test_activate_identity_refuses_active_slot(tmp_path, monkeypatch) -> None:

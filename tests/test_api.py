@@ -72,6 +72,21 @@ def test_lease_failure_records_telemetry(monkeypatch) -> None:
     assert events[0]["data"]["identity_id"] == "chrome-openpaper"
 
 
+def test_browser_action_failure_records_telemetry(monkeypatch) -> None:
+    events = []
+    monkeypatch.setattr(api, "require_lease", lambda *_args, **_kwargs: (_ for _ in ()).throw(api.LeaseError("Lease not found")))
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post("/browser/click", json={"lease_id": "missing-lease", "selector": "#submit"})
+
+    assert response.status_code == 409
+    assert events[0]["event_type"] == "error"
+    assert events[0]["message"] == "Browser click failed"
+    assert events[0]["lease_id"] == "missing-lease"
+    assert events[0]["data"]["selector"] == "#submit"
+
+
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(feedback, "ISSUE_STATE_FILE", tmp_path / "issues.json")
     monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")

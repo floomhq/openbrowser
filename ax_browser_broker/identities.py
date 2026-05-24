@@ -241,6 +241,24 @@ def write_slot_config(identity_id: str, local_proxy_port: int = 18801, slot_name
     return path
 
 
+def clear_auto_identity_from_other_slots(identity: BrowserIdentity, target_slot: str) -> list[str]:
+    if identity.slot != "auto":
+        return []
+    cleared: list[str] = []
+    for slot in SLOTS:
+        if slot.name == target_slot:
+            continue
+        if active_identity_id(slot.name) != identity.identity_id:
+            continue
+        if _slot_has_active_lease(slot.name):
+            raise IdentityError(f"Identity {identity.identity_id} also has an active lease on {slot.name}")
+        config_path = POOL_CONFIG_DIR / f"{slot.name}.env"
+        if config_path.exists():
+            config_path.unlink()
+        cleared.append(slot.name)
+    return cleared
+
+
 def activate_identity(identity_id: str, slot_name: str | None = None, check_leases: bool = True) -> dict[str, Any]:
     identity = require_identity(identity_id)
     target_slot = slot_name or identity.slot
@@ -252,6 +270,7 @@ def activate_identity(identity_id: str, slot_name: str | None = None, check_leas
     if check_leases and _slot_has_active_lease(target_slot):
         raise IdentityError(f"Slot has an active lease: {target_slot}")
     local_proxy_port = local_proxy_port_for_slot(target_slot)
+    cleared_slots = clear_auto_identity_from_other_slots(identity, target_slot)
     write_slot_config(identity_id, local_proxy_port, target_slot)
     identity.profile_dir.mkdir(parents=True, exist_ok=True)
     supervisor_was_active = subprocess.run(
@@ -261,13 +280,19 @@ def activate_identity(identity_id: str, slot_name: str | None = None, check_leas
     try:
         if supervisor_was_active:
             subprocess.run(["systemctl", "stop", "browser-pool-supervisor.service"], check=True)
+        health_ports = [slot.port]
+        for cleared_slot in cleared_slots:
+            cleared = _slot_by_name(cleared_slot)
+            if cleared is not None:
+                subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), cleared.name, str(cleared.port)], check=True)
+                health_ports.append(cleared.port)
         subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), target_slot, str(slot.port)], check=True)
     finally:
         if supervisor_was_active:
             subprocess.run(["systemctl", "start", "browser-pool-supervisor.service"], check=False)
     deadline = time.time() + 10
     while time.time() < deadline:
-        if _healthy(slot.port):
+        if all(_healthy(port) for port in health_ports):
             return {
                 "identity_id": identity.identity_id,
                 "slot": target_slot,
@@ -275,7 +300,7 @@ def activate_identity(identity_id: str, slot_name: str | None = None, check_leas
                 "active": True,
             }
         time.sleep(0.2)
-    raise IdentityError(f"Activated {identity_id}, but slot {identity.slot} did not become healthy")
+    raise IdentityError(f"Activated {identity_id}, but slot {target_slot} did not become healthy")
 
 
 def check_proxy(ref: str, timeout: float = 20.0) -> dict[str, Any]:

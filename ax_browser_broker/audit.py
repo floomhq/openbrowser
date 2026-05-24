@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import AUDIT_BASELINE_FILE, ISSUE_STATE_FILE, POOL_STATE_FILE, TELEMETRY_STATE_FILE
+from .telemetry import sanitize_text
 
 
 DEFAULT_SESSION_PATHS = (
@@ -20,10 +21,13 @@ DEFAULT_SESSION_PATHS = (
 RAW_CDP_PATTERN = re.compile(r"(127\.0\.0\.1|localhost):(?:9222|9223|9224|9225)\b|--remote-debugging-port=(?:9222|9223|9224|9225)\b")
 BROKER_PATTERN = re.compile(r"ax-browser-broker|ax-browser-mcp|ax-browser-use|ax-openbrowser|browser_lease|/lease|telemetry_|feedback_", re.I)
 FAILURE_PATTERN = re.compile(r"\b(error|failed|failure|traceback|exception|blocked|timeout|not found|refused)\b", re.I)
+ISSUE_CONTEXT_PATTERN = re.compile(r"openbrowser|browser-use|browser|lease-[A-Za-z0-9_-]+|axbt_|issue-|failed|failure|error|exception|timeout", re.I)
 RAW_CDP_BYPASS_PATTERN = re.compile(r"connect_?over_?cdp|curl\s+-[^\n]*https?://(?:127\.0\.0\.1|localhost):9222|chrome-devtools MCP connects to CDP", re.I)
 RAW_CDP_REFERENCE_PATTERN = re.compile(r"SKILL\.md|README|docs/|description|Relevant context|attachment|broker_docs|ax-browser-broker", re.I)
 MAX_LOG_MATCHES = 50
+MAX_ISSUE_CANDIDATES = 200
 MAX_SESSION_BYTES = 2_000_000
+MAX_ISSUE_CONTEXT_HITS = 8
 
 
 def _hit_fingerprint(hit: dict[str, Any]) -> str:
@@ -130,6 +134,7 @@ def _scan_session_logs(paths: list[Path], since_ts: int) -> dict[str, Any]:
     raw_cdp_reference: list[dict[str, Any]] = []
     broker_mentions: list[dict[str, Any]] = []
     failure_mentions: list[dict[str, Any]] = []
+    issue_context_mentions: list[dict[str, Any]] = []
     for file_path in files:
         try:
             stat = file_path.stat()
@@ -153,7 +158,7 @@ def _scan_session_logs(paths: list[Path], since_ts: int) -> dict[str, Any]:
                 hit = {
                     "file": str(file_path),
                     "line": line_no,
-                    "snippet": text[:500],
+                    "snippet": sanitize_text(text, 500),
                 }
                 if RAW_CDP_PATTERN.search(text):
                     if file_path.name == "codex-tui.log":
@@ -168,12 +173,15 @@ def _scan_session_logs(paths: list[Path], since_ts: int) -> dict[str, Any]:
                     broker_mentions.append(hit)
                 if BROKER_PATTERN.search(text) and FAILURE_PATTERN.search(text) and len(failure_mentions) < MAX_LOG_MATCHES:
                     failure_mentions.append(hit)
+                if ISSUE_CONTEXT_PATTERN.search(text) and len(issue_context_mentions) < MAX_ISSUE_CANDIDATES:
+                    issue_context_mentions.append(hit)
     return {
         "files_scanned": len(files),
         "raw_cdp_bypass_mentions": raw_cdp_bypass,
         "raw_cdp_reference_mentions": raw_cdp_reference,
         "broker_mentions": broker_mentions,
         "broker_failure_mentions": failure_mentions,
+        "issue_context_mentions": issue_context_mentions,
     }
 
 
@@ -185,6 +193,122 @@ def _issues(since_ts: int) -> list[dict[str, Any]]:
     data = _read_json(ISSUE_STATE_FILE, {"issues": {}})
     issues = list(data.get("issues", {}).values()) if isinstance(data, dict) else []
     return [issue for issue in issues if int(issue.get("created_at", 0)) >= since_ts or int(issue.get("updated_at", 0)) >= since_ts]
+
+
+def _issue_terms(issue: dict[str, Any]) -> list[str]:
+    terms = [
+        str(issue.get("id") or ""),
+        str(issue.get("lease_id") or ""),
+        str(issue.get("source") or ""),
+        str(issue.get("title") or ""),
+    ]
+    terms.extend(str(tag) for tag in issue.get("tags", []) if tag)
+    return [term.lower() for term in terms if len(term.strip()) >= 4]
+
+
+def _issue_log_context(issue: dict[str, Any], session_scan: dict[str, Any]) -> list[dict[str, Any]]:
+    terms = _issue_terms(issue)
+    if not terms:
+        return []
+    hits: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    buckets = (
+        "broker_failure_mentions",
+        "issue_context_mentions",
+        "broker_mentions",
+        "raw_cdp_bypass_mentions",
+        "raw_cdp_reference_mentions",
+        "baselined_raw_cdp_bypass_mentions",
+    )
+    for bucket in buckets:
+        for hit in session_scan.get(bucket, []):
+            text = " ".join(str(hit.get(key, "")) for key in ("file", "snippet")).lower()
+            if not any(term in text for term in terms):
+                continue
+            marker = (str(hit.get("file", "")), int(hit.get("line", 0)))
+            if marker in seen:
+                continue
+            seen.add(marker)
+            hits.append({**hit, "bucket": bucket})
+            if len(hits) >= MAX_ISSUE_CONTEXT_HITS:
+                return hits
+    return hits
+
+
+def _scan_issue_log_contexts(paths: list[Path], since_ts: int, issues: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    issue_terms = {str(issue.get("id", "")): _issue_terms(issue) for issue in issues if issue.get("id")}
+    issue_terms = {issue_id: terms for issue_id, terms in issue_terms.items() if terms}
+    if not issue_terms:
+        return {}
+
+    contexts: dict[str, list[dict[str, Any]]] = {issue_id: [] for issue_id in issue_terms}
+    seen: dict[str, set[tuple[str, int]]] = {issue_id: set() for issue_id in issue_terms}
+    files = _iter_session_files(paths)
+    for file_path in files:
+        if all(len(hits) >= MAX_ISSUE_CONTEXT_HITS for hits in contexts.values()):
+            break
+        try:
+            stat = file_path.stat()
+        except OSError:
+            continue
+        if since_ts and int(stat.st_mtime) < since_ts:
+            continue
+        try:
+            raw_handle = file_path.open("rb")
+        except OSError:
+            continue
+        with raw_handle:
+            if stat.st_size > MAX_SESSION_BYTES:
+                raw_handle.seek(-MAX_SESSION_BYTES, 2)
+                raw_handle.readline()
+            raw_lines = raw_handle.readlines()
+            for line_no, raw_line in enumerate(raw_lines, start=1):
+                text = _line_text(raw_line.decode("utf-8", errors="replace"))
+                if not text:
+                    continue
+                lowered = text.lower()
+                for issue_id, terms in issue_terms.items():
+                    if len(contexts[issue_id]) >= MAX_ISSUE_CONTEXT_HITS:
+                        continue
+                    if not any(term in lowered for term in terms):
+                        continue
+                    marker = (str(file_path), line_no)
+                    if marker in seen[issue_id]:
+                        continue
+                    seen[issue_id].add(marker)
+                    contexts[issue_id].append(
+                        {
+                            "file": str(file_path),
+                            "line": line_no,
+                            "snippet": sanitize_text(text, 500),
+                            "bucket": "issue_specific_scan",
+                        }
+                    )
+    return contexts
+
+
+def _issue_log_contexts(issues: list[dict[str, Any]], session_scan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    contexts: dict[str, list[dict[str, Any]]] = {}
+    for issue in issues:
+        issue_id = str(issue.get("id", ""))
+        if issue_id:
+            contexts[issue_id] = _issue_log_context(issue, session_scan)
+    return contexts
+
+
+def _merge_issue_contexts(*context_sets: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    merged: dict[str, list[dict[str, Any]]] = {}
+    seen: dict[str, set[tuple[str, int]]] = defaultdict(set)
+    for contexts in context_sets:
+        for issue_id, hits in contexts.items():
+            bucket = merged.setdefault(issue_id, [])
+            for hit in hits:
+                marker = (str(hit.get("file", "")), int(hit.get("line", 0)))
+                if marker in seen[issue_id] or len(bucket) >= MAX_ISSUE_CONTEXT_HITS:
+                    continue
+                seen[issue_id].add(marker)
+                bucket.append(hit)
+    return merged
 
 
 def _active_leases() -> dict[str, Any]:
@@ -219,6 +343,10 @@ def run_audit(
     session_scan["raw_cdp_bypass_mentions"] = active_raw_cdp_bypass
     session_scan["baselined_raw_cdp_bypass_mentions"] = baselined_raw_cdp_bypass
     session_scan["raw_cdp_bypass_mentions_total"] = len(all_raw_cdp_bypass)
+    issue_log_contexts = _merge_issue_contexts(
+        _issue_log_contexts(issues, session_scan),
+        _scan_issue_log_contexts(paths, since_ts, issues),
+    )
 
     by_source = Counter(str(event.get("source", "unknown")) for event in events)
     by_type = Counter(str(event.get("event_type", "unknown")) for event in events)
@@ -287,6 +415,7 @@ def run_audit(
                 "message": str(issue.get("title", "Open browser broker issue")),
                 "issue_id": issue.get("id"),
                 "source": issue.get("source"),
+                "log_context_count": len(issue_log_contexts.get(str(issue.get("id")), [])),
             }
         )
         score -= 10 if issue.get("severity") != "blocker" else 20
@@ -314,6 +443,7 @@ def run_audit(
         "by_source": dict(by_source),
         "by_event_type": dict(by_type),
         "findings": findings,
+        "issue_log_contexts": issue_log_contexts,
         "session_logs": session_scan,
     }
 
