@@ -26,6 +26,10 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Identity leases are exclusive; a second lease for the same identity returns a conflict.",
             "Imported Mac Chrome people use chrome-* identities, isolated AX41 profile directories, and auto slot selection.",
             "When a chrome-* identity is leased, the broker activates the identity on a free non-reserved slot before returning the lease.",
+            "Auto Chrome identities do not overwrite pinned/proxied identities such as linkedin-main.",
+            "Mac Keychain-backed cookies/passwords/tokens are not copied; auth state is established on AX41 through human auth handoff or Chrome sync.",
+            "Failed or contended identity lease attempts are recorded as error telemetry.",
+            "Lease selection runs under the broker lease-state lock and rechecks browser health before returning a lease.",
         ],
         "commands": [
             "/root/ax-browser-broker/bin/ax-browser-identity status",
@@ -33,6 +37,9 @@ TOPICS: dict[str, dict[str, Any]] = {
             "/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles --dry-run",
             "/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state",
             "/root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status",
+        ],
+        "runbooks": [
+            "/root/ax-browser-broker/docs/mac-chrome-profiles.md",
         ],
     },
     "browser-use": {
@@ -67,6 +74,8 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Send the returned local portal URL to the human operator.",
             "The portal starts local-only noVNC for login and marks completion.",
             "After completion, lease the same identity_id; the saved AX41 profile state is reused.",
+            "If an identity auth handoff is refused before VNC starts, the temporary VNC password file is removed.",
+            "When completion runs, the broker stops VNC/websockify/Chrome/Xvfb helper processes and removes the temporary password file.",
         ],
         "examples": [
             {"tool": "auth_request", "args": {"owner": "agent-name", "url": "https://accounts.google.com/", "reason": "google_profile_login", "identity_id": "chrome-openpaper"}},
@@ -118,6 +127,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "title": "Safety Boundary",
         "rules": [
             "No raw cookie or proxy password exposure.",
+            "No raw macOS Chrome cookie, password, or token database copying.",
             "No CAPTCHA bypass or ban-circumvention tooling.",
             "Use human auth handoff for passwords and login challenges.",
             "One LinkedIn identity lease at a time.",

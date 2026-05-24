@@ -173,6 +173,14 @@ async def create_lease(request: LeaseRequest) -> dict[str, Any]:
         )
         return result
     except Exception as error:
+        _safe_record_event(
+            source=request.owner,
+            event_type="error",
+            message="Lease failed",
+            severity="error",
+            tags=["lease", "failure"],
+            data={"identity_id": request.identity_id, "error": str(error), "ttl_seconds": request.ttl_seconds},
+        )
         raise _http_error(error) from error
 
 

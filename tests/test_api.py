@@ -55,6 +55,23 @@ def test_audit_endpoint(monkeypatch) -> None:
     assert response.json() == {"score": 100, "window_hours": 3}
 
 
+def test_lease_failure_records_telemetry(monkeypatch) -> None:
+    events = []
+    monkeypatch.setattr(api, "lease", lambda *_args, **_kwargs: (_ for _ in ()).throw(api.LeaseError("No healthy free browser slots")))
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/lease",
+        json={"owner": "pytest", "identity_id": "chrome-openpaper", "ttl_seconds": 120},
+    )
+
+    assert response.status_code == 409
+    assert events[0]["event_type"] == "error"
+    assert events[0]["message"] == "Lease failed"
+    assert events[0]["data"]["identity_id"] == "chrome-openpaper"
+
+
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(feedback, "ISSUE_STATE_FILE", tmp_path / "issues.json")
     monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")
