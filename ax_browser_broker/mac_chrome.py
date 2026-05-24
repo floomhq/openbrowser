@@ -110,7 +110,7 @@ def identity_id_for(profile: MacChromeProfile, prefix: str = "chrome") -> str:
     return f"{slugify(prefix, 'chrome')}-{slugify(base, slugify(profile.profile_dir_name))}"
 
 
-def build_identity_entry(profile: MacChromeProfile, identity_id: str, slot: str = "pool-a") -> dict[str, Any]:
+def build_identity_entry(profile: MacChromeProfile, identity_id: str, slot: str = "auto") -> dict[str, Any]:
     return {
         "label": profile.label or profile.profile_dir_name,
         "slot": slot,
@@ -140,10 +140,10 @@ def import_profiles(
     chrome_dir: str | Path | None = None,
     identities_path: Path | None = None,
     prefix: str = "chrome",
-    slot: str = "pool-a",
+    slot: str = "auto",
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    if slot not in _slot_names():
+    if slot != "auto" and slot not in _slot_names():
         raise ValueError(f"Unknown slot: {slot}")
     path = identities_path or IDENTITIES_FILE
     raw = _read_json(path, {"identities": {}})

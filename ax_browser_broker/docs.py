@@ -24,8 +24,8 @@ TOPICS: dict[str, dict[str, Any]] = {
             "linkedin-main uses /root/browser-pool/profiles/linkedin-main.",
             "linkedin-main routes Chrome through local proxy http://127.0.0.1:18803.",
             "Identity leases are exclusive; a second lease for the same identity returns a conflict.",
-            "Imported Mac Chrome people use chrome-* identities and isolated AX41 profile directories.",
-            "When a chrome-* identity is leased, the broker activates its matching slot before returning the lease.",
+            "Imported Mac Chrome people use chrome-* identities, isolated AX41 profile directories, and auto slot selection.",
+            "When a chrome-* identity is leased, the broker activates the identity on a free non-reserved slot before returning the lease.",
         ],
         "commands": [
             "/root/ax-browser-broker/bin/ax-browser-identity status",

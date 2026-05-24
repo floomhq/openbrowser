@@ -70,6 +70,22 @@ def test_import_profiles_creates_secret_free_identity_config(tmp_path, monkeypat
     assert stat.S_IMODE(identity_file.stat().st_mode) == 0o600
 
 
+def test_import_profiles_defaults_to_auto_slot(tmp_path, monkeypatch) -> None:
+    chrome_dir = tmp_path / "Chrome"
+    (chrome_dir / "Profile 1").mkdir(parents=True)
+    (chrome_dir / "Local State").write_text(
+        json.dumps({"profile": {"info_cache": {"Profile 1": {"name": "OpenPaper", "user_name": "openpaper@example.com"}}}}),
+        encoding="utf-8",
+    )
+    identity_file = tmp_path / "identities.json"
+    monkeypatch.setattr(mac_chrome, "BROWSER_POOL_DIR", tmp_path / "browser-pool")
+
+    mac_chrome.import_profiles(chrome_dir, identity_file)
+
+    data = json.loads(identity_file.read_text(encoding="utf-8"))
+    assert data["identities"]["chrome-openpaper"]["slot"] == "auto"
+
+
 def test_redacted_inventory_masks_email(tmp_path) -> None:
     chrome_dir = tmp_path / "Chrome"
     (chrome_dir / "Default").mkdir(parents=True)

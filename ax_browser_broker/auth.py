@@ -178,6 +178,8 @@ def _start_identity_auth_vnc(
     active_leases = pool_status().get("leases", {})
     if any(item.get("identity_id") == identity.identity_id for item in active_leases.values()):
         raise AuthError(f"Identity is actively leased: {identity.identity_id}")
+    if any(item.get("profile_dir") == str(identity.profile_dir) for item in active_leases.values()):
+        raise AuthError(f"Identity profile is actively leased: {identity.identity_id}")
     identity.profile_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(["pkill", "-f", "--", f"--user-data-dir={identity.profile_dir}"], check=False)
     time.sleep(0.5)
@@ -282,55 +284,62 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     log_path = runtime_dir / f"{token}.log"
 
     stop_auth_vnc(token, missing_ok=True)
-    if request.get("identity_id"):
-        vnc_state = _start_identity_auth_vnc(request, websocket_port, vnc_port, password_file, log_path)
-        display = str(vnc_state["display"])
-    else:
-        env = os.environ.copy()
-        env["DISPLAY"] = display
-        if auth_path:
-            env["XAUTHORITY"] = auth_path
-        with log_path.open("ab") as log:
-            x11vnc_proc = subprocess.Popen(
-                [
-                    x11vnc,
-                    "-display",
-                    display,
-                    "-rfbport",
-                    str(vnc_port),
-                    "-localhost",
-                    "-forever",
-                    "-shared",
-                    "-passwdfile",
-                    str(password_file),
-                ],
-                stdout=log,
-                stderr=log,
-                env=env,
-                start_new_session=True,
-            )
-            websockify_proc = subprocess.Popen(
-                [
-                    websockify,
-                    "--web=/usr/share/novnc",
-                    f"127.0.0.1:{websocket_port}",
-                    f"127.0.0.1:{vnc_port}",
-                ],
-                stdout=log,
-                stderr=log,
-                env=env,
-                start_new_session=True,
-            )
-        vnc_state = {
-            "mode": "authenticated-chrome",
-            "x11vnc_pid": x11vnc_proc.pid,
-            "websockify_pid": websockify_proc.pid,
-            "websocket_port": websocket_port,
-            "vnc_port": vnc_port,
-            "display": display,
-            "password_file": str(password_file),
-            "started_at": int(time.time()),
-        }
+    try:
+        if request.get("identity_id"):
+            vnc_state = _start_identity_auth_vnc(request, websocket_port, vnc_port, password_file, log_path)
+            display = str(vnc_state["display"])
+        else:
+            env = os.environ.copy()
+            env["DISPLAY"] = display
+            if auth_path:
+                env["XAUTHORITY"] = auth_path
+            with log_path.open("ab") as log:
+                x11vnc_proc = subprocess.Popen(
+                    [
+                        x11vnc,
+                        "-display",
+                        display,
+                        "-rfbport",
+                        str(vnc_port),
+                        "-localhost",
+                        "-forever",
+                        "-shared",
+                        "-passwdfile",
+                        str(password_file),
+                    ],
+                    stdout=log,
+                    stderr=log,
+                    env=env,
+                    start_new_session=True,
+                )
+                websockify_proc = subprocess.Popen(
+                    [
+                        websockify,
+                        "--web=/usr/share/novnc",
+                        f"127.0.0.1:{websocket_port}",
+                        f"127.0.0.1:{vnc_port}",
+                    ],
+                    stdout=log,
+                    stderr=log,
+                    env=env,
+                    start_new_session=True,
+                )
+            vnc_state = {
+                "mode": "authenticated-chrome",
+                "x11vnc_pid": x11vnc_proc.pid,
+                "websockify_pid": websockify_proc.pid,
+                "websocket_port": websocket_port,
+                "vnc_port": vnc_port,
+                "display": display,
+                "password_file": str(password_file),
+                "started_at": int(time.time()),
+            }
+    except Exception:
+        try:
+            password_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
     time.sleep(0.5)
     with locked_auth_state() as state:

@@ -71,6 +71,35 @@ def test_load_identity_rejects_unknown_slot(tmp_path, monkeypatch) -> None:
         identities.load_identities()
 
 
+def test_load_identity_accepts_auto_slot(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    identity_file.write_text(
+        json.dumps({"identities": {"chrome-openpaper": {"slot": "auto"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+
+    loaded = identities.load_identities()
+
+    assert loaded["chrome-openpaper"].slot == "auto"
+
+
+def test_write_slot_config_requires_concrete_slot_for_auto_identity(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    profile_dir = tmp_path / "chrome-openpaper"
+    identity_file.write_text(
+        json.dumps({"identities": {"chrome-openpaper": {"slot": "auto", "profile_dir": str(profile_dir)}}}),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(json.dumps({"proxies": {}}), encoding="utf-8")
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+
+    with pytest.raises(identities.IdentityError):
+        identities.write_slot_config("chrome-openpaper")
+
+
 def test_save_proxy_writes_secret_file_0600(tmp_path) -> None:
     path = tmp_path / "proxies.json"
 
@@ -120,3 +149,27 @@ def test_activate_identity_writes_slot_config_and_launches_profile(tmp_path, mon
     assert profile_dir.exists()
     assert (pool_config_dir / "pool-a.env").exists()
     assert [str(tmp_path / "browser-pool" / "bin" / "launch_chrome.sh"), "pool-a", "9223"] in calls
+
+
+def test_activate_identity_refuses_active_slot(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    pool_config_dir = tmp_path / "pool-config"
+    browser_pool = tmp_path / "browser-pool"
+    (browser_pool / "state").mkdir(parents=True)
+    (browser_pool / "state" / "leases.json").write_text(
+        json.dumps({"leases": {"lease-1": {"name": "pool-a"}}}),
+        encoding="utf-8",
+    )
+    identity_file.write_text(
+        json.dumps({"identities": {"chrome-openpaper": {"slot": "auto", "profile_dir": str(tmp_path / "profile")}}}),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(json.dumps({"proxies": {}}), encoding="utf-8")
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", browser_pool)
+
+    with pytest.raises(identities.IdentityError):
+        identities.activate_identity("chrome-openpaper", "pool-a")

@@ -115,3 +115,27 @@ def test_identity_auth_refuses_active_identity_lease(tmp_path, monkeypatch) -> N
         assert "actively leased" in str(error)
     else:
         raise AssertionError("expected active identity lease to be refused")
+
+
+def test_start_auth_vnc_removes_password_file_when_identity_start_fails(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "require_identity", lambda identity_id: identity_id)
+    monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(
+        auth,
+        "_start_identity_auth_vnc",
+        lambda *args, **kwargs: (_ for _ in ()).throw(auth.AuthError("refused")),
+    )
+
+    request = auth.create_auth_request("tester", "https://example.com", identity_id="chrome-openpaper")
+    password_file = auth.Path("/root/ax-browser-broker/state/vnc") / f"{request['token']}.passwd"
+
+    try:
+        auth.start_auth_vnc(request["token"])
+    except auth.AuthError as error:
+        assert "refused" in str(error)
+    else:
+        raise AssertionError("expected identity start failure")
+
+    assert not password_file.exists()

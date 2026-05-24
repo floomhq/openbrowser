@@ -42,3 +42,46 @@ def test_identity_lease_is_exclusive(monkeypatch) -> None:
             raise AssertionError("expected duplicate identity lease to fail")
     finally:
         pool.release(lease.lease_id)
+
+
+def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "leases.json"
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": "linkedin-main"}
+    activations = []
+
+    class Identity:
+        def __init__(self, identity_id: str, slot: str, profile_dir: str, proxy_ref: str | None = None) -> None:
+            self.identity_id = identity_id
+            self.slot = slot
+            self.profile_dir = profile_dir
+            self.proxy_ref = proxy_ref
+
+    identities = {
+        "chrome-one": Identity("chrome-one", "auto", str(tmp_path / "chrome-one")),
+        "chrome-two": Identity("chrome-two", "auto", str(tmp_path / "chrome-two")),
+        "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
+    }
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+        activations.append((identity_id, slot_name, check_leases))
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", state_file)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda identity_id: identities[identity_id])
+    monkeypatch.setattr(pool, "load_identities", lambda: identities)
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+
+    first = pool.lease("test-auto-1", identity_id="chrome-one")
+    second = pool.lease("test-auto-2", identity_id="chrome-two")
+
+    try:
+        assert first.name == "pool-a"
+        assert second.name == "pool-b"
+        assert ("chrome-two", "pool-b", False) in activations
+        assert all(item[1] != "pool-c" for item in activations)
+    finally:
+        pool.release(first.lease_id)
+        pool.release(second.lease_id)

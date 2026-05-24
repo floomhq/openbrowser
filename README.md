@@ -26,7 +26,7 @@ For Federico's Mac Chrome people/profiles, import metadata into broker identitie
 /root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles
 ```
 
-The importer creates `chrome-*` identities with isolated AX41 profile directories. It copies no raw cookies, passwords, or tokens from macOS. Use `auth_request(..., identity_id="chrome-...")` once per imported identity to log in through local noVNC, then agents can lease that identity through the broker.
+The importer creates `chrome-*` identities with isolated AX41 profile directories and `slot: "auto"` so different profiles can run concurrently when free pool slots exist. It copies no raw cookies, passwords, or tokens from macOS. Use `auth_request(..., identity_id="chrome-...")` once per imported identity to log in through local noVNC, then agents can lease that identity through the broker.
 
 ## Commands
 
