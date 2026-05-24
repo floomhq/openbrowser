@@ -19,6 +19,8 @@ from .auth import (
 )
 from .browser import controller
 from .config import BROKER_HOST, BROKER_PORT, ensure_dirs
+from .docs import docs
+from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 
@@ -81,6 +83,21 @@ class SeedSlotRequest(BaseModel):
     force: bool = False
 
 
+class FeedbackIssueRequest(BaseModel):
+    source: str = "agent"
+    title: str
+    details: str
+    severity: str = "medium"
+    lease_id: str | None = None
+    url: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class FeedbackUpdateRequest(BaseModel):
+    status: str | None = None
+    note: str | None = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_dirs()
@@ -107,6 +124,11 @@ async def health() -> dict[str, Any]:
 @app.get("/status")
 async def get_status() -> dict[str, Any]:
     return status()
+
+
+@app.get("/agent-docs")
+async def agent_docs(topic: str = "quickstart") -> dict[str, Any]:
+    return docs(topic)
 
 
 @app.post("/lease")
@@ -315,4 +337,36 @@ async def profiles_seed_slot(request: SeedSlotRequest) -> dict[str, Any]:
     try:
         return seed_slot(request.slot, request.force)
     except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/feedback/issues")
+async def feedback_issues(status: str = "open", limit: int = 50) -> dict[str, Any]:
+    try:
+        return list_issues(status, limit)
+    except FeedbackError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/feedback/issues")
+async def feedback_create_issue(request: FeedbackIssueRequest) -> dict[str, Any]:
+    try:
+        return report_issue(
+            source=request.source,
+            title=request.title,
+            details=request.details,
+            severity=request.severity,
+            lease_id=request.lease_id,
+            url=request.url,
+            tags=request.tags,
+        )
+    except FeedbackError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/feedback/issues/{issue_id}")
+async def feedback_update(issue_id: str, request: FeedbackUpdateRequest) -> dict[str, Any]:
+    try:
+        return update_issue(issue_id, request.status, request.note)
+    except FeedbackError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

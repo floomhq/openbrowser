@@ -32,6 +32,7 @@ AUTHENTICATED_PROFILE_DIR = Path("/root/.config/authenticated-chrome")
 POOL_STATE_FILE = BROWSER_POOL_DIR / "state" / "leases.json"
 POOL_CONFIG_DIR = BROWSER_POOL_DIR / "config"
 AUTH_STATE_FILE = STATE_DIR / "auth_requests.json"
+ISSUE_STATE_FILE = STATE_DIR / "issues.json"
 IDENTITIES_FILE = CONFIG_DIR / "identities.local.json"
 PROXIES_FILE = SECRET_DIR / "proxies.json"
 BROKER_HOST = "127.0.0.1"

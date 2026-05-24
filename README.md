@@ -16,12 +16,16 @@ Local browser automation broker for AX41 agents.
 
 All action endpoints validate the lease before touching a browser.
 
+For authenticated LinkedIn work, pass `identity_id: "linkedin-main"` to `browser_lease` or `--identity linkedin-main` to the wrappers. This pins the work to `pool-c`, `/root/browser-pool/profiles/linkedin-main`, and the configured US ISP proxy.
+
 ## Commands
 
 ```bash
 /root/ax-browser-broker/bin/ax-browser-lease --owner manual
 /root/ax-browser-broker/bin/ax-browser-use --json open https://example.com
+/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state
 /root/ax-browser-broker/bin/ax-openbrowser status --format json
+/root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status
 /root/ax-browser-broker/bin/ax-browser-mcp
 ```
 
@@ -33,6 +37,27 @@ curl -fsS http://127.0.0.1:8767/health
 ```
 
 Operational verification and rollback notes live in `docs/operations.md`.
+
+## Agent Docs And Feedback
+
+Agents can call `broker_docs` through MCP for live runbook topics:
+
+- `topics`
+- `quickstart`
+- `identities`
+- `browser-use`
+- `openbrowser`
+- `auth`
+- `feedback`
+- `safety`
+
+Agents can report issues through MCP:
+
+- `feedback_report_issue`
+- `feedback_list_issues`
+- `feedback_update_issue`
+
+The issue store is local at `/root/ax-browser-broker/state/issues.json` and is ignored by git.
 
 ## Auth flow
 

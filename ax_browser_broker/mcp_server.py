@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -34,6 +35,12 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict
 def browser_status() -> dict[str, Any]:
     """Return broker, pool, slot, and active lease status."""
     return _request("GET", "/status")
+
+
+@mcp.tool()
+def broker_docs(topic: str = "quickstart") -> dict[str, Any]:
+    """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, safety."""
+    return _request("GET", f"/agent-docs?topic={urllib.parse.quote(topic)}")
 
 
 @mcp.tool()
@@ -130,6 +137,44 @@ def auth_request(owner: str, url: str, reason: str = "login_required") -> dict[s
 def profile_status() -> dict[str, Any]:
     """Return authenticated and golden profile status without exposing cookies."""
     return _request("GET", "/profiles/status")
+
+
+@mcp.tool()
+def feedback_report_issue(
+    source: str,
+    title: str,
+    details: str,
+    severity: str = "medium",
+    lease_id: str | None = None,
+    url: str | None = None,
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Report browser broker feedback or a task issue into the shared local issue tracker."""
+    return _request(
+        "POST",
+        "/feedback/issues",
+        {
+            "source": source,
+            "title": title,
+            "details": details,
+            "severity": severity,
+            "lease_id": lease_id,
+            "url": url,
+            "tags": tags or [],
+        },
+    )
+
+
+@mcp.tool()
+def feedback_list_issues(status: str = "open", limit: int = 50) -> dict[str, Any]:
+    """List browser broker feedback issues. Status can be open, resolved, or all."""
+    return _request("GET", f"/feedback/issues?status={urllib.parse.quote(status)}&limit={int(limit)}")
+
+
+@mcp.tool()
+def feedback_update_issue(issue_id: str, status: str | None = None, note: str | None = None) -> dict[str, Any]:
+    """Update a browser broker feedback issue by adding a note and/or changing status."""
+    return _request("POST", f"/feedback/issues/{urllib.parse.quote(issue_id)}", {"status": status, "note": note})
 
 
 def main() -> None:

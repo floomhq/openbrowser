@@ -19,6 +19,23 @@ ss -ltnp '( sport = :8767 or sport = :6081 or sport = :5901 )'
 find /root/ax-browser-broker/profiles/golden /root/browser-pool/profiles -name .totp-secret -type f -print
 ```
 
+## LinkedIn Identity Verification
+
+```bash
+/root/ax-browser-broker/bin/ax-browser-identity status
+/root/ax-browser-broker/bin/ax-browser-identity check-proxy iproyal:linkedin-main
+/root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status
+/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json open 'https://api.ipify.org?format=json'
+/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json eval 'document.body.innerText'
+```
+
+Expected facts:
+
+- `linkedin-main` is on `pool-c`.
+- The local proxy forwarder listens on `127.0.0.1:18803`.
+- Chrome on `pool-c` launches with `--proxy-server=http://127.0.0.1:18803`.
+- LinkedIn session is active in OpenBrowser status.
+
 ## Rollback
 
 ```bash
@@ -62,3 +79,13 @@ Google and LinkedIn sessions are active in the seeded pool profiles. GitHub is m
 3. Snapshot golden profile.
 4. Seed pool profiles.
 5. Verify with `/root/ax-browser-broker/bin/ax-openbrowser status --format json`.
+
+## Issue Tracking
+
+Issue state lives at `/root/ax-browser-broker/state/issues.json`.
+
+Agents use MCP tools:
+
+- `feedback_report_issue`
+- `feedback_list_issues`
+- `feedback_update_issue`
