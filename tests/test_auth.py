@@ -90,6 +90,28 @@ def test_stop_auth_vnc_terminates_identity_auth_process_groups(tmp_path, monkeyp
     assert result["stopped"] == [123, 456, 789, 987]
 
 
+def test_stop_auth_vnc_removes_password_file_when_helper_termination_fails(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    password_file = tmp_path / "vnc.passwd"
+    password_file.write_text("secret\n", encoding="utf-8")
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda _pid: False)
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["vnc"] = {
+        "x11vnc_pid": 123,
+        "websockify_pid": 456,
+        "password_file": str(password_file),
+    }
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    result = auth.stop_auth_vnc(request["token"])
+
+    assert result["stopped"] == []
+    assert not password_file.exists()
+
+
 def test_identity_auth_refuses_active_identity_lease(tmp_path, monkeypatch) -> None:
     class Identity:
         identity_id = "chrome-openpaper"
@@ -139,3 +161,46 @@ def test_start_auth_vnc_removes_password_file_when_identity_start_fails(tmp_path
         raise AssertionError("expected identity start failure")
 
     assert not password_file.exists()
+
+
+def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path, monkeypatch) -> None:
+    class Identity:
+        identity_id = "chrome-openpaper"
+        profile_dir = tmp_path / "chrome-openpaper"
+        lang = "en-US"
+
+    class FakeProc:
+        def __init__(self, pid: int) -> None:
+            self.pid = pid
+
+    pids = iter([111, 222, 333])
+    terminated = []
+
+    def fake_popen(args, **_kwargs):
+        if str(args[0]).endswith("websockify"):
+            raise OSError("websockify failed")
+        return FakeProc(next(pids))
+
+    monkeypatch.setattr(auth, "require_identity", lambda _identity_id: Identity())
+    monkeypatch.setattr(auth, "pool_status", lambda: {"leases": {}})
+    monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
+    monkeypatch.setattr(auth.subprocess, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
+
+    try:
+        auth._start_identity_auth_vnc(
+            {"identity_id": "chrome-openpaper", "url": "https://example.com"},
+            6081,
+            5901,
+            tmp_path / "passwd",
+            tmp_path / "auth.log",
+        )
+    except OSError as error:
+        assert "websockify failed" in str(error)
+    else:
+        raise AssertionError("expected partial start failure")
+
+    assert terminated == [333, 222, 111]

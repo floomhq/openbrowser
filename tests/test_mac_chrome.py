@@ -86,6 +86,28 @@ def test_import_profiles_defaults_to_auto_slot(tmp_path, monkeypatch) -> None:
     assert data["identities"]["chrome-openpaper"]["slot"] == "auto"
 
 
+def test_import_profiles_does_not_copy_raw_secret_databases(tmp_path, monkeypatch) -> None:
+    chrome_dir = tmp_path / "Chrome"
+    profile_dir = chrome_dir / "Profile 1"
+    default_dir = profile_dir / "Default"
+    default_dir.mkdir(parents=True)
+    for filename in ("Cookies", "Login Data", "Login Data For Account"):
+        (default_dir / filename).write_text("secret-db", encoding="utf-8")
+    (chrome_dir / "Local State").write_text(
+        json.dumps({"profile": {"info_cache": {"Profile 1": {"name": "OpenPaper", "user_name": "openpaper@example.com"}}}}),
+        encoding="utf-8",
+    )
+    identity_file = tmp_path / "identities.json"
+    browser_pool = tmp_path / "browser-pool"
+    monkeypatch.setattr(mac_chrome, "BROWSER_POOL_DIR", browser_pool)
+
+    mac_chrome.import_profiles(chrome_dir, identity_file)
+
+    dest_profile = browser_pool / "profiles" / "chrome-openpaper"
+    assert not dest_profile.exists()
+    assert "secret-db" not in identity_file.read_text(encoding="utf-8")
+
+
 def test_redacted_inventory_masks_email(tmp_path) -> None:
     chrome_dir = tmp_path / "Chrome"
     (chrome_dir / "Default").mkdir(parents=True)

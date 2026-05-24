@@ -186,67 +186,76 @@ def _start_identity_auth_vnc(
     display = _find_free_display()
     env = os.environ.copy()
     env["DISPLAY"] = display
+    started_pids: list[int] = []
     with log_path.open("ab") as log:
-        xvfb_proc = subprocess.Popen(
-            [xvfb, display, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
-            stdout=log,
-            stderr=log,
-            env=env,
-            start_new_session=True,
-        )
-        time.sleep(0.4)
-        chrome_proc = subprocess.Popen(
-            [
-                chrome,
-                f"--user-data-dir={identity.profile_dir}",
-                "--no-sandbox",
-                "--disable-gpu",
-                "--disable-gpu-sandbox",
-                "--in-process-gpu",
-                "--use-gl=swiftshader",
-                "--disable-dev-shm-usage",
-                "--no-first-run",
-                f"--lang={identity.lang}",
-                "--window-size=1280,800",
-                "--window-position=0,0",
-                str(request["url"]),
-            ],
-            stdout=log,
-            stderr=log,
-            env=env,
-            start_new_session=True,
-        )
-        time.sleep(0.7)
-        x11vnc_proc = subprocess.Popen(
-            [
-                x11vnc,
-                "-display",
-                display,
-                "-rfbport",
-                str(vnc_port),
-                "-localhost",
-                "-forever",
-                "-shared",
-                "-passwdfile",
-                str(password_file),
-            ],
-            stdout=log,
-            stderr=log,
-            env=env,
-            start_new_session=True,
-        )
-        websockify_proc = subprocess.Popen(
-            [
-                websockify,
-                "--web=/usr/share/novnc",
-                f"127.0.0.1:{websocket_port}",
-                f"127.0.0.1:{vnc_port}",
-            ],
-            stdout=log,
-            stderr=log,
-            env=env,
-            start_new_session=True,
-        )
+        try:
+            xvfb_proc = subprocess.Popen(
+                [xvfb, display, "-screen", "0", "1280x800x24", "-nolisten", "tcp"],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+            started_pids.append(xvfb_proc.pid)
+            time.sleep(0.4)
+            chrome_proc = subprocess.Popen(
+                [
+                    chrome,
+                    f"--user-data-dir={identity.profile_dir}",
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-gpu-sandbox",
+                    "--in-process-gpu",
+                    "--use-gl=swiftshader",
+                    "--disable-dev-shm-usage",
+                    "--no-first-run",
+                    f"--lang={identity.lang}",
+                    "--window-size=1280,800",
+                    "--window-position=0,0",
+                    str(request["url"]),
+                ],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+            started_pids.append(chrome_proc.pid)
+            time.sleep(0.7)
+            x11vnc_proc = subprocess.Popen(
+                [
+                    x11vnc,
+                    "-display",
+                    display,
+                    "-rfbport",
+                    str(vnc_port),
+                    "-localhost",
+                    "-forever",
+                    "-shared",
+                    "-passwdfile",
+                    str(password_file),
+                ],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+            started_pids.append(x11vnc_proc.pid)
+            websockify_proc = subprocess.Popen(
+                [
+                    websockify,
+                    "--web=/usr/share/novnc",
+                    f"127.0.0.1:{websocket_port}",
+                    f"127.0.0.1:{vnc_port}",
+                ],
+                stdout=log,
+                stderr=log,
+                env=env,
+                start_new_session=True,
+            )
+        except Exception:
+            for pid in reversed(started_pids):
+                _terminate_process_group(pid)
+            raise
     return {
         "mode": "identity",
         "identity_id": identity.identity_id,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from ax_browser_broker.docs import docs
 
 
@@ -30,3 +32,12 @@ def test_docs_unknown_topic_lists_available_topics() -> None:
     assert "feedback" in result["available_topics"]
     assert "telemetry" in result["available_topics"]
     assert "audit" in result["available_topics"]
+
+
+def test_mac_chrome_runbook_documents_keychain_fallback_and_no_raw_token_path() -> None:
+    text = Path("/root/ax-browser-broker/docs/mac-chrome-profiles.md").read_text(encoding="utf-8")
+
+    assert "macOS Keychain material" in text
+    assert "no raw-token fallback path by design" in text
+    assert "human auth into the AX41 profile" in text
+    assert "Chrome Sync" in text
