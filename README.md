@@ -26,6 +26,7 @@ For Federico's Mac Chrome people/profiles, import metadata into broker identitie
 /root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles
 /root/ax-browser-broker/bin/ax-mac-profile-sync status
 /root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
+/root/ax-browser-broker/bin/ax-mac-profile-autosync
 ```
 
 If the Mac reverse tunnel is absent, the Mac-side installer is:

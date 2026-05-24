@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export PYTHONPATH="/root/ax-browser-broker:${PYTHONPATH:-}"
+
+receipt_dir="/root/ax-browser-broker/state/mac-profile-sync"
+receipt="${receipt_dir}/latest.json"
+mkdir -p "$receipt_dir"
+
+status_json="$(mktemp)"
+sync_json="$(mktemp)"
+trap 'rm -f "$status_json" "$sync_json"' EXIT
+
+if ! /root/ax-browser-broker/bin/ax-mac-profile-sync status >"$status_json"; then
+  python3 - "$status_json" "$receipt" <<'PY'
+import json
+import pathlib
+import sys
+import time
+
+status = json.loads(pathlib.Path(sys.argv[1]).read_text())
+receipt = pathlib.Path(sys.argv[2])
+payload = {
+    "ok": False,
+    "stage": "status",
+    "checked_at": int(time.time()),
+    "status": status,
+}
+receipt.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+print(json.dumps(payload, indent=2, sort_keys=True))
+PY
+  exit 0
+fi
+
+if ! /root/ax-browser-broker/bin/ax-mac-profile-sync sync >"$sync_json"; then
+  python3 - "$sync_json" "$receipt" <<'PY'
+import json
+import pathlib
+import sys
+import time
+
+sync = json.loads(pathlib.Path(sys.argv[1]).read_text())
+payload = {
+    "ok": False,
+    "stage": "sync",
+    "checked_at": int(time.time()),
+    "sync": sync,
+}
+pathlib.Path(sys.argv[2]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+print(json.dumps(payload, indent=2, sort_keys=True))
+PY
+  exit 0
+fi
+
+python3 - "$sync_json" "$receipt" <<'PY'
+import json
+import pathlib
+import sys
+import time
+
+sync = json.loads(pathlib.Path(sys.argv[1]).read_text())
+payload = {
+    "ok": True,
+    "stage": "complete",
+    "checked_at": int(time.time()),
+    "mirrored_count": sync.get("mirror", {}).get("mirrored_count"),
+    "skipped_count": sync.get("mirror", {}).get("skipped_count"),
+    "sync": sync,
+}
+pathlib.Path(sys.argv[2]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+print(json.dumps(payload, indent=2, sort_keys=True))
+PY

@@ -40,6 +40,7 @@ Use the profile sync wrapper for the whole Mac dependency chain:
 /root/ax-browser-broker/bin/ax-mac-profile-sync status
 /root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
 /root/ax-browser-broker/bin/ax-mac-profile-sync sync --report-issue
+/root/ax-browser-broker/bin/ax-mac-profile-autosync
 ```
 
 The wrapper verifies:
@@ -66,6 +67,15 @@ The installer creates:
 - `~/Library/LaunchAgents/dev.ax41.chrome-cdp.plist`
 
 The reverse SSH agent exposes Mac SSH only on AX41 localhost, not publicly. The Chrome CDP launch agent uses `~/.hermes/chrome-cdp-clone` and port `9333` on the Mac; AX41 then connects through `/root/.codex/scripts/mac-chrome-cdp ensure`.
+
+On AX41, enable the autosync timer so the mirror runs as soon as the Mac tunnel reconnects:
+
+```bash
+cp /root/ax-browser-broker/systemd/ax-mac-profile-autosync.* /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ax-mac-profile-autosync.timer
+cat /root/ax-browser-broker/state/mac-profile-sync/latest.json
+```
 
 ## Slot Behavior
 

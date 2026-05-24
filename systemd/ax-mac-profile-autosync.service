@@ -1,0 +1,11 @@
+[Unit]
+Description=AX41 Mac Chrome profile autosync
+After=network-online.target ax-browser-broker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/root/ax-browser-broker/bin/ax-mac-profile-autosync
+Nice=5
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

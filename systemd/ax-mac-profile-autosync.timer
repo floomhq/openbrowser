@@ -1,0 +1,10 @@
+[Unit]
+Description=Run AX41 Mac Chrome profile autosync every minute
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=60
+AccuracySec=10
+
+[Install]
+WantedBy=timers.target
