@@ -13,7 +13,8 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 | AX41 Browser Broker MCP | Normal browser agents, authenticated identities, concurrent sessions, feedback, telemetry, audits | `broker_docs("routing")`, `browser_lease`, `browser_release`, `broker_audit` | Default route for agents. Leases isolate sessions and prevent agents from blocking each other. |
 | `ax-browser-use` | browser-use task execution against broker-leased browsers | `/root/ax-browser-broker/bin/ax-browser-use --identity <id> ...` | Wrapper leases a slot, injects CDP details, runs browser-use, then releases the slot. |
 | `ax-openbrowser` | OpenBrowser diagnostics and OpenBrowser MCP surface | `/root/ax-browser-broker/bin/ax-openbrowser --identity <id> ...` | OpenBrowser is an adapter on top of broker leases, not a separate browser setup. |
-| Discord identity | Discord account work and QR login handoff | `/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main ...` | Uses the broker profile `/root/browser-pool/profiles/discord-main`; do not use shared authenticated Chrome for Discord login. |
+| Discord identity | Discord account work after Federico accepts a dedicated Discord profile | `/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main ...` | Uses `/root/browser-pool/profiles/discord-main`. This is separate from Federico's personal Chrome profile. |
+| Federico Chrome identity | Work that must look like Federico's personal Chrome profile or needs SSO continuity | `/root/ax-browser-broker/bin/ax-openbrowser --identity chrome-depontefede ...` | Uses `/root/browser-pool/profiles/chrome-depontefede`. Imported Mac profile metadata does not include Mac Keychain cookies/passwords/tokens. |
 | gstack `/browse` or disposable browser tools | Anonymous QA, local dev-server screenshots, public pages, no Federico account state | Skill/tool-specific command | Fast isolated browser lane. No saved personal cookies or account sessions. |
 | Shared authenticated Chrome / `chrome-devtools` / authenticated-browser | Explicitly authorized dashboard exception, performance/network inspection, migration fallback that requires the already logged-in shared Chrome profile | Only via the named skill/tool for that exception | Raw shared profile path. Record telemetry and run broker audit afterward. |
 | Raw pool CDP ports `9223`, `9224`, `9225` | Never directly from agents | Use broker lease instead | Pool slots belong to the broker lease manager. |
@@ -24,8 +25,14 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 2. If login or password entry appears, use `auth_request`; Federico completes login through the handoff portal.
 3. If the task is anonymous page QA or local UI screenshots, use disposable browser tooling such as gstack `/browse`.
 4. If the task names OpenBrowser, use `/root/ax-browser-broker/bin/ax-openbrowser`; never aim raw OpenBrowser at `9222`, `9223`, `9224`, or `9225`.
-5. If the task is Discord, use identity `discord-main` and QR handoff in that profile.
+5. If the task is Discord, choose the identity explicitly: `chrome-depontefede` when Federico expects his normal personal Chrome profile; `discord-main` only when a separate Discord profile is acceptable.
 6. If the task explicitly requires the shared logged-in Chrome session, record the exception in telemetry, use the authenticated-browser or chrome-devtools exception path, then run `broker_audit(hours=24)`.
+
+## Auth Verification
+
+- After QR, password, passkey, or 2FA, verify the page is past the login wall and verify expected site cookies exist without printing cookie values.
+- If a QR scan returns to the login screen, record a feedback issue and leave the auth request uncompleted. Do not describe this as logged in.
+- Proxy routing is identity-specific. `linkedin-main` has `iproyal:linkedin-main`; `discord-main` currently has no `proxy_ref` unless `ax-browser-identity status` says otherwise.
 
 ## Identity Examples
 
