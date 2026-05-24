@@ -332,6 +332,10 @@ def main(argv: list[str] | None = None) -> int:
     mac_import.add_argument("--prefix", default="chrome")
     mac_import.add_argument("--slot", default="auto")
     mac_import.add_argument("--dry-run", action="store_true")
+    mac_mirror = sub.add_parser("mirror-mac-profiles")
+    mac_mirror.add_argument("--chrome-dir")
+    mac_mirror.add_argument("--prefix", default="chrome")
+    mac_mirror.add_argument("--dry-run", action="store_true")
     configure = sub.add_parser("configure-slot")
     configure.add_argument("identity_id")
     configure.add_argument("--local-proxy-port", type=int, default=18801)
@@ -366,6 +370,19 @@ def main(argv: list[str] | None = None) -> int:
                 indent=2,
             )
         )
+    elif args.cmd == "mirror-mac-profiles":
+        from .mac_chrome import MacChromeAccessError, mirror_profiles
+
+        try:
+            result = mirror_profiles(
+                chrome_dir=args.chrome_dir,
+                prefix=args.prefix,
+                dry_run=args.dry_run,
+            )
+        except MacChromeAccessError as exc:
+            print(json.dumps({"ok": False, "error": str(exc)}, indent=2))
+            return 2
+        print(json.dumps(result, indent=2))
     elif args.cmd == "configure-slot":
         print(
             json.dumps(

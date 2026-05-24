@@ -6,6 +6,7 @@ import re
 import shlex
 import stat
 import subprocess
+import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,19 @@ from .config import BROWSER_POOL_DIR, IDENTITIES_FILE, SLOTS, ensure_dirs
 
 
 DEFAULT_MAC_CHROME_DIR = Path("/Users/federicodeponte/Library/Application Support/Google/Chrome")
+MAC_SSH_ARGS = [
+    "ssh",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=5",
+    "-o",
+    "ServerAliveCountMax=1",
+    "mac",
+]
+MAC_RSYNC_SSH = "ssh -o BatchMode=yes -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=1"
 
 
 @dataclass(frozen=True)
@@ -26,27 +40,55 @@ class MacChromeProfile:
     exists: bool
 
 
+class MacChromeAccessError(RuntimeError):
+    pass
+
+
 def _chrome_dir(path: str | Path | None = None) -> Path:
     if path:
         return Path(path)
     return Path(os.environ.get("AX_MAC_CHROME_DIR", str(DEFAULT_MAC_CHROME_DIR)))
 
 
+def _mac_ssh_output(command: str, timeout: float = 10) -> str:
+    try:
+        return subprocess.check_output(MAC_SSH_ARGS + [command], text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise MacChromeAccessError(f"Mac SSH command timed out after {timeout:g}s") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr.strip() if isinstance(exc.stderr, str) else ""
+        detail = stderr or f"exit {exc.returncode}"
+        raise MacChromeAccessError(f"Mac SSH command failed: {detail}") from exc
+
+
 def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
+    mac_home = "/Users/federicodeponte/"
+    path_text = str(path)
+    if path_text.startswith(mac_home):
+        code = r"""
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if not path.exists():
+    print("__MISSING__")
+else:
+    print(path.read_text(), end="")
+"""
+        output = _mac_ssh_output(f"python3 -c {shlex.quote(code)} {shlex.quote(path_text)}", timeout=10)
+        if output == "__MISSING__\n":
+            return default
+        return json.loads(output)
     if not path.exists():
         return default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except PermissionError:
-        mac_home = "/Users/federicodeponte/"
-        path_text = str(path)
         if not path_text.startswith(mac_home):
             raise
         code = "import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(), end='')"
-        output = subprocess.check_output(
-            ["ssh", "mac", f"python3 -c {shlex.quote(code)} {shlex.quote(path_text)}"],
-            text=True,
-        )
+        output = _mac_ssh_output(f"python3 -c {shlex.quote(code)} {shlex.quote(path_text)}", timeout=10)
         return json.loads(output)
 
 
@@ -66,8 +108,54 @@ def mask_email(value: str) -> str:
     return f"{masked_local}@{domain}"
 
 
+def _remote_mac_inventory(root: Path) -> list[MacChromeProfile]:
+    code = r"""
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+local_state = root / "Local State"
+if not local_state.exists():
+    print("[]")
+    raise SystemExit
+raw = json.loads(local_state.read_text(errors="ignore"))
+info_cache = raw.get("profile", {}).get("info_cache", {})
+rows = []
+for profile_dir_name, item in sorted(info_cache.items()):
+    path = root / profile_dir_name
+    label = str(item.get("name") or profile_dir_name).strip()
+    account_email = str(item.get("user_name") or "").strip()
+    gaia_name = str(item.get("gaia_name") or "").strip()
+    rows.append({
+        "profile_dir_name": str(profile_dir_name),
+        "label": label,
+        "account_email": account_email,
+        "gaia_name": gaia_name,
+        "path": str(path),
+        "exists": path.exists(),
+    })
+print(json.dumps(rows))
+"""
+    output = _mac_ssh_output(f"python3 -c {shlex.quote(code)} {shlex.quote(str(root))}", timeout=30)
+    rows = json.loads(output)
+    return [
+        MacChromeProfile(
+            profile_dir_name=str(item["profile_dir_name"]),
+            label=str(item["label"]),
+            account_email=str(item["account_email"]),
+            gaia_name=str(item["gaia_name"]),
+            path=Path(str(item["path"])),
+            exists=bool(item["exists"]),
+        )
+        for item in rows
+    ]
+
+
 def inventory(chrome_dir: str | Path | None = None) -> list[MacChromeProfile]:
     root = _chrome_dir(chrome_dir)
+    if str(root).startswith("/Users/federicodeponte/"):
+        return _remote_mac_inventory(root)
     local_state = root / "Local State"
     raw = _read_json(local_state, {})
     info_cache = raw.get("profile", {}).get("info_cache", {})
@@ -77,6 +165,13 @@ def inventory(chrome_dir: str | Path | None = None) -> list[MacChromeProfile]:
         account_email = str(item.get("user_name") or "").strip()
         gaia_name = str(item.get("gaia_name") or "").strip()
         path = root / profile_dir_name
+        prefs = _read_json(path / "Preferences", {})
+        account_info = prefs.get("account_info", [])
+        if isinstance(account_info, list):
+            first_account = next((entry for entry in account_info if isinstance(entry, dict)), {})
+            account_email = str(first_account.get("email") or account_email).strip()
+            gaia_name = str(first_account.get("full_name") or gaia_name).strip()
+        label = str(prefs.get("profile", {}).get("name") or label).strip()
         profiles.append(
             MacChromeProfile(
                 profile_dir_name=str(profile_dir_name),
@@ -187,5 +282,108 @@ def import_profiles(
             "copied_raw_cookies": False,
             "copied_raw_passwords": False,
             "copied_raw_tokens": False,
+        },
+    }
+
+
+MIRROR_EXCLUDES = [
+    "Singleton*",
+    ".com.google.Chrome.*",
+    "Crashpad",
+    "BrowserMetrics*",
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "ShaderCache",
+    "GrShaderCache",
+    "DawnCache",
+    "component_crx_cache",
+    "*/LOCK",
+    "*.log",
+    "Cookies",
+    "Cookies-journal",
+    "Login Data",
+    "Login Data-journal",
+    "Login Data For Account",
+    "Login Data For Account-journal",
+    "Web Data",
+    "Web Data-journal",
+    "Network/Cookies",
+    "Network/Cookies-journal",
+]
+
+
+def _rsync_profile(source: Path, dest: Path) -> None:
+    is_remote_mac_source = str(source).startswith("/Users/federicodeponte/")
+    if not is_remote_mac_source and not source.exists():
+        raise RuntimeError(f"Profile source not found: {source}")
+    dest.mkdir(parents=True, exist_ok=True)
+    args = ["rsync", "-a", "-e", MAC_RSYNC_SSH, "--delete", "--delete-excluded"]
+    for pattern in MIRROR_EXCLUDES:
+        args.extend(["--exclude", pattern])
+    source_arg = f"mac:{shlex.quote(str(source) + '/')}" if is_remote_mac_source else str(source) + "/"
+    args.extend([source_arg, str(dest) + "/"])
+    subprocess.run(args, check=True)
+
+
+def mirror_profiles(
+    chrome_dir: str | Path | None = None,
+    identities_path: Path | None = None,
+    prefix: str = "chrome",
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    import_result = import_profiles(chrome_dir=chrome_dir, identities_path=identities_path, prefix=prefix, dry_run=dry_run)
+    path = identities_path or IDENTITIES_FILE
+    raw = _read_json(path, {"identities": {}})
+    profiles = inventory(chrome_dir)
+    mirrored: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    identities = raw.get("identities", {})
+    for profile in profiles:
+        identity_id = None
+        for candidate_id, item in identities.items():
+            source = item.get("source", {})
+            if source.get("type") == "mac-chrome-profile" and source.get("profile_dir_name") == profile.profile_dir_name:
+                identity_id = candidate_id
+                break
+        if not identity_id:
+            skipped.append({"profile_dir_name": profile.profile_dir_name, "reason": "identity_missing"})
+            continue
+        dest = Path(str(identities[identity_id].get("profile_dir") or BROWSER_POOL_DIR / "profiles" / identity_id))
+        if not dry_run:
+            _rsync_profile(profile.path, dest)
+            stamp = {
+                "source": str(profile.path),
+                "identity_id": identity_id,
+                "mirrored_at": int(time.time()),
+                "copied_raw_cookies": False,
+                "copied_raw_passwords": False,
+                "copied_raw_tokens": False,
+                "note": "Mac Keychain-backed cookies/passwords/tokens are not portable to AX41 Linux Chrome.",
+            }
+            (dest / ".mac-profile-mirror.json").write_text(json.dumps(stamp, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        mirrored.append(
+            {
+                "identity_id": identity_id,
+                "profile_dir_name": profile.profile_dir_name,
+                "label": profile.label,
+                "account_email": mask_email(profile.account_email),
+                "dest": str(dest),
+            }
+        )
+    return {
+        "ok": True,
+        "dry_run": dry_run,
+        "chrome_dir": str(_chrome_dir(chrome_dir)),
+        "import": import_result,
+        "mirrored_count": len(mirrored),
+        "skipped_count": len(skipped),
+        "mirrored": mirrored,
+        "skipped": skipped,
+        "safety": {
+            "copied_raw_cookies": False,
+            "copied_raw_passwords": False,
+            "copied_raw_tokens": False,
+            "secret_copying": "disabled",
         },
     }

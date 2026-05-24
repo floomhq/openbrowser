@@ -41,10 +41,23 @@ Use AX41 Browser Broker for agent browser work. Raw authenticated Chrome and raw
 
 ```bash
 /root/ax-browser-broker/bin/ax-browser-identity status
+/root/ax-browser-broker/bin/ax-browser-identity mirror-mac-profiles
 /root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state
 /root/ax-browser-broker/bin/ax-openbrowser --identity chrome-depontefede status
 /root/ax-browser-broker/bin/ax-openbrowser --identity discord-main status
 ```
+
+## Mac Profile Mirror
+
+`mirror-mac-profiles` creates AX41 broker identities for Federico's Mac Chrome profiles and copies safe profile files into `/root/browser-pool/profiles/chrome-*`.
+
+```bash
+/root/ax-browser-broker/bin/ax-browser-identity mirror-mac-profiles --dry-run
+/root/ax-browser-broker/bin/ax-browser-identity mirror-mac-profiles
+/root/ax-browser-broker/bin/ax-browser-identity activate chrome-depontefede --slot pool-a
+```
+
+The mirror excludes raw cookie, password, token, and keychain-backed browser databases. Site login state that Chrome stores only in the Mac Keychain remains available through Mac depontefede CDP, not through Linux profile files.
 
 ## MCP Examples
 
