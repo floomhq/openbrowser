@@ -146,3 +146,11 @@ The audit combines:
 - Codex history and TUI logs under `/root/.codex`
 
 Findings include direct CDP mentions, active leases, missing release telemetry, open issues, and broker failure mentions without issue reports.
+
+After a routing cleanup, baseline the already-reviewed historical raw-CDP findings once:
+
+```bash
+/root/ax-browser-broker/bin/ax-browser-audit --hours 24 --baseline-current --replace-baseline --json
+```
+
+Later audits ignore those exact historical entries, keep counting them under `baselined_raw_cdp_bypass_count`, and still fail on any new raw-CDP bypass.

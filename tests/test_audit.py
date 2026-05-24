@@ -90,3 +90,86 @@ def test_audit_flags_raw_cdp_and_active_lease(tmp_path, monkeypatch) -> None:
     assert result["score"] < 100
     assert "raw_cdp_bypass_mentions" in codes
     assert "active_lease" in codes
+
+
+def test_audit_baseline_ignores_known_raw_cdp(tmp_path, monkeypatch) -> None:
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    issue_file = tmp_path / "issues.json"
+    lease_file = tmp_path / "leases.json"
+    baseline_file = tmp_path / "audit_baseline.json"
+    session_file = tmp_path / "session.jsonl"
+    telemetry_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "created_at": 100,
+                        "source": "agent-a",
+                        "event_type": "lease",
+                        "message": "Lease created",
+                        "lease_id": "lease-a",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "created_at": 101,
+                        "source": "broker-api",
+                        "event_type": "lease",
+                        "message": "Lease released",
+                        "lease_id": "lease-a",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_file.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    lease_file.write_text(json.dumps({"leases": {}}), encoding="utf-8")
+    session_file.write_text(json.dumps({"content": "connect_over_cdp http://127.0.0.1:9222"}) + "\n", encoding="utf-8")
+    monkeypatch.setattr(audit, "TELEMETRY_STATE_FILE", telemetry_file)
+    monkeypatch.setattr(audit, "ISSUE_STATE_FILE", issue_file)
+    monkeypatch.setattr(audit, "POOL_STATE_FILE", lease_file)
+    monkeypatch.setattr(audit, "AUDIT_BASELINE_FILE", baseline_file)
+
+    baseline = audit.baseline_current_raw_cdp(hours=1, session_paths=[session_file], now=200)
+    result = audit.run_audit(hours=1, session_paths=[session_file], now=200)
+
+    assert baseline["added"] == 1
+    assert result["score"] == 100
+    assert result["baselined_raw_cdp_bypass_count"] == 1
+    assert result["findings"] == []
+
+
+def test_audit_treats_codex_tui_raw_cdp_as_reference(tmp_path, monkeypatch) -> None:
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    issue_file = tmp_path / "issues.json"
+    lease_file = tmp_path / "leases.json"
+    session_file = tmp_path / "codex-tui.log"
+    telemetry_file.write_text(
+        json.dumps(
+            {
+                "created_at": 100,
+                "source": "agent-a",
+                "event_type": "smoke",
+                "message": "Audit smoke",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_file.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    lease_file.write_text(json.dumps({"leases": {}}), encoding="utf-8")
+    session_file.write_text(
+        'ToolCall: exec_command {"cmd":"rg -n \\"connect_over_cdp http://127.0.0.1:9222\\" /root"}\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audit, "TELEMETRY_STATE_FILE", telemetry_file)
+    monkeypatch.setattr(audit, "ISSUE_STATE_FILE", issue_file)
+    monkeypatch.setattr(audit, "POOL_STATE_FILE", lease_file)
+
+    result = audit.run_audit(hours=1, session_paths=[session_file], now=200, use_baseline=False)
+
+    assert result["score"] == 100
+    assert result["session_logs"]["raw_cdp_reference_mentions"]
+    assert result["session_logs"]["raw_cdp_bypass_mentions"] == []

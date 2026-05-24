@@ -96,11 +96,13 @@ TOPICS: dict[str, dict[str, Any]] = {
             "The audit correlates telemetry, feedback issues, active leases, and session logs.",
             "Findings flag direct CDP mentions, active leases, missing release telemetry, open issues, and broker failures without issues.",
             "Use /root/ax-browser-broker/bin/ax-browser-audit --json for the same audit from shell.",
+            "After remediation, use /root/ax-browser-broker/bin/ax-browser-audit --baseline-current --replace-baseline --json once to mark old findings as historical; new raw-CDP hits still fail later audits.",
         ],
         "pass_criteria": [
             "Score is 80 or higher.",
             "No unexpected active leases remain.",
             "No raw CDP bypass findings are present unless they are known documentation/test snippets.",
+            "Known historical bypasses are counted under baselined_raw_cdp_bypass_count, not active findings.",
             "Browser failures have linked feedback issues.",
         ],
     },
