@@ -97,6 +97,9 @@ class IPRoyalClient:
         query = urllib.parse.urlencode({"product_id": product_id, "page": 1, "per_page": 50})
         return self.request("GET", f"/orders?{query}")
 
+    def order(self, order_id: int) -> dict[str, Any]:
+        return self.request("GET", f"/orders/{int(order_id)}")
+
     def calculate_pricing(
         self,
         product_location_id: int,
@@ -172,6 +175,29 @@ def extract_proxy_records(payload: Any) -> list[dict[str, Any]]:
 
     def walk(value: Any) -> None:
         if isinstance(value, dict):
+            proxy_data = value.get("proxy_data")
+            if isinstance(proxy_data, dict):
+                ports = proxy_data.get("ports")
+                proxies = proxy_data.get("proxies")
+                http_port = None
+                if isinstance(ports, dict):
+                    http_port = ports.get("http|https") or ports.get("http") or ports.get("https")
+                if http_port and isinstance(proxies, list):
+                    for item in proxies:
+                        if isinstance(item, dict):
+                            host = item.get("host") or item.get("hostname") or item.get("ip") or item.get("address")
+                            username = item.get("username") or item.get("user") or item.get("login")
+                            password = item.get("password") or item.get("pass")
+                            if host and username and password:
+                                records.append(
+                                    {
+                                        "scheme": "http",
+                                        "host": str(host),
+                                        "port": int(http_port),
+                                        "username": str(username),
+                                        "password": str(password),
+                                    }
+                                )
             host = value.get("host") or value.get("hostname") or value.get("ip") or value.get("address")
             port = value.get("port") or value.get("http_port") or value.get("socks5_port")
             username = value.get("username") or value.get("user") or value.get("login")
@@ -203,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("isp-summary")
     orders = sub.add_parser("orders")
     orders.add_argument("--product-id", type=int, default=ISP_DEDICATED_PRODUCT_ID)
+    order = sub.add_parser("order")
+    order.add_argument("order_id", type=int)
+    order.add_argument("--store-ref")
+    order.add_argument("--country")
     pricing = sub.add_parser("pricing")
     pricing.add_argument("--location-id", type=int, required=True)
     pricing.add_argument("--quantity", type=int, default=1)
@@ -220,7 +250,22 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "isp-summary":
         print(json.dumps(isp_dedicated_summary(client.products()), indent=2))
     elif args.cmd == "orders":
-        print(json.dumps(client.orders(args.product_id), indent=2))
+        print(json.dumps(redact_payload(client.orders(args.product_id)), indent=2))
+    elif args.cmd == "order":
+        order_data = client.order(args.order_id)
+        if args.store_ref:
+            from .identities import save_proxy
+
+            records = extract_proxy_records(order_data)
+            if not records:
+                raise IPRoyalError("No proxy credentials were found in the order response")
+            proxy = records[0]
+            if args.country:
+                proxy["country"] = args.country
+            save_proxy(args.store_ref, proxy)
+            print(json.dumps({"stored_ref": args.store_ref, "order": redact_payload(order_data)}, indent=2))
+        else:
+            print(json.dumps(redact_payload(order_data), indent=2))
     elif args.cmd == "pricing":
         print(json.dumps(client.calculate_pricing(args.location_id, args.quantity), indent=2))
     elif args.cmd == "buy-isp-30d":

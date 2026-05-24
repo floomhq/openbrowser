@@ -10,7 +10,7 @@
       "lang": "en-US",
       "geo": {
         "country": "US",
-        "city": ""
+        "city": "Springfield, MA"
       },
       "policy": {
         "max_parallel_sessions": 1,

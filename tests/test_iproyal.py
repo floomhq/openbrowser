@@ -69,6 +69,25 @@ def test_extract_proxy_records_from_nested_payload() -> None:
     ]
 
 
+def test_extract_proxy_records_from_iproyal_order_shape() -> None:
+    payload = {
+        "proxy_data": {
+            "ports": {"socks5": 12324, "http|https": 12323},
+            "proxies": [{"username": "user", "password": "pass", "ip": "203.0.113.10"}],
+        }
+    }
+
+    assert extract_proxy_records(payload) == [
+        {
+            "scheme": "http",
+            "host": "203.0.113.10",
+            "port": 12323,
+            "username": "user",
+            "password": "pass",
+        }
+    ]
+
+
 def test_redact_payload_masks_proxy_credentials() -> None:
     payload = {"proxy": {"username": "user-secret", "password": "pass-secret", "host": "203.0.113.10"}}
 

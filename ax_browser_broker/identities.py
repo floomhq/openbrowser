@@ -204,6 +204,9 @@ def main(argv: list[str] | None = None) -> int:
     configure = sub.add_parser("configure-slot")
     configure.add_argument("identity_id")
     configure.add_argument("--local-proxy-port", type=int, default=18801)
+    seed = sub.add_parser("seed-profile")
+    seed.add_argument("identity_id")
+    seed.add_argument("--force", action="store_true")
     check = sub.add_parser("check-proxy")
     check.add_argument("proxy_ref")
     args = parser.parse_args(argv)
@@ -212,6 +215,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(redacted_status(), indent=2))
     elif args.cmd == "configure-slot":
         print(json.dumps({"slot_config": str(write_slot_config(args.identity_id, args.local_proxy_port))}, indent=2))
+    elif args.cmd == "seed-profile":
+        from .profiles import seed_identity
+
+        print(json.dumps(seed_identity(args.identity_id, args.force), indent=2))
     elif args.cmd == "check-proxy":
         print(json.dumps(check_proxy(args.proxy_ref), indent=2))
     return 0
