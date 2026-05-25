@@ -14,6 +14,7 @@ def test_status_shape() -> None:
 
 def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     lease = pool.lease("test-pool")
@@ -25,6 +26,40 @@ def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
     finally:
         released = pool.release(lease.lease_id)
     assert released["released"] == lease.lease_id
+
+
+def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+
+    lease = pool.lease("generic-public-task")
+    try:
+        assert lease.name == "pool-b"
+        assert lease.identity_id is None
+    finally:
+        pool.release(lease.lease_id)
+
+
+def test_generic_lease_fails_when_only_identity_slots_are_free(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+
+    neutral = pool.lease("neutral-task")
+    try:
+        try:
+            pool.lease("generic-task")
+        except pool.LeaseError as error:
+            assert "No healthy free browser slots" in str(error)
+        else:
+            raise AssertionError("expected generic lease to fail instead of using identity-active slot")
+    finally:
+        pool.release(neutral.lease_id)
 
 
 def test_identity_lease_is_exclusive(tmp_path, monkeypatch) -> None:

@@ -124,6 +124,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
             if slot.name in in_use:
                 continue
             active_identity = active_identity_id(slot.name)
+            if not identity_id and active_identity:
+                continue
             if identity_id and identity and identity.slot == "auto" and active_identity and active_identity != identity_id:
                 active_config = identities.get(active_identity)
                 if active_config and active_config.slot != "auto":
