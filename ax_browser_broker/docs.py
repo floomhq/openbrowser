@@ -38,10 +38,22 @@ TOPICS: dict[str, dict[str, Any]] = {
                 "note": "OpenBrowser is an adapter on top of broker leases, not a separate browser setup.",
             },
             {
-                "route": "discord-main identity",
-                "use_for": "Discord account work and QR login handoff.",
+                "route": "Mac depontefede CDP",
+                "use_for": "Federico explicitly expects Mac Chrome, Mac IP, saved passwords, or already-open personal sessions.",
+                "start": "/root/.codex/scripts/mac-chrome-cdp ensure, then connect to http://127.0.0.1:19333",
+                "note": "User-explicit exception path only; this is not an AX41 persistent broker profile.",
+            },
+            {
+                "route": "Federico Chrome identity",
+                "use_for": "AX41 work that must look like Federico's personal Chrome profile or needs SSO continuity.",
+                "start": "/root/ax-browser-broker/bin/ax-openbrowser --identity chrome-depontefede ...",
+                "note": "Uses /root/browser-pool/profiles/chrome-depontefede. Imported Mac profile metadata does not include Mac Keychain cookies/passwords/tokens.",
+            },
+            {
+                "route": "Discord identity",
+                "use_for": "Discord account work only after Federico accepts a separate dedicated Discord profile.",
                 "start": "/root/ax-browser-broker/bin/ax-openbrowser --identity discord-main ...",
-                "note": "Use the broker profile /root/browser-pool/profiles/discord-main; do not use shared authenticated Chrome for Discord login.",
+                "note": "Separate from Federico's personal Chrome profile. For normal personal-profile continuity, use chrome-depontefede instead.",
             },
             {
                 "route": "gstack browse or disposable browser tools",
@@ -57,7 +69,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "rules": [
             "Use broker identities such as chrome-* or linkedin-main when account state is needed.",
             "Use auth_request for login or password handoff.",
-            "Use identity_id discord-main for Discord account work.",
+            "For Discord, use chrome-depontefede when Federico expects his normal personal browser; use discord-main only for a separate Discord-only profile.",
             "Use /root/ax-browser-broker/bin/ax-openbrowser when a task names OpenBrowser.",
             "Never aim raw OpenBrowser or custom scripts directly at 9222, 9223, 9224, or 9225 for normal agent work.",
             "Raw pool CDP ports 9223, 9224, and 9225 belong to the broker lease manager.",
