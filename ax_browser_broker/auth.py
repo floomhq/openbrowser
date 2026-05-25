@@ -475,12 +475,14 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     runtime_dir = Path("/root/ax-browser-broker/state/vnc")
     runtime_dir.mkdir(parents=True, exist_ok=True)
     password_file = runtime_dir / f"{token}.passwd"
-    password = secrets.token_urlsafe(12)
-    password_file.write_text(password + "\n", encoding="utf-8")
-    os.chmod(password_file, 0o600)
     log_path = runtime_dir / f"{token}.log"
 
     stop_auth_vnc(token, missing_ok=True)
+
+    password = secrets.token_urlsafe(12)
+    password_file.write_text(password + "\n", encoding="utf-8")
+    os.chmod(password_file, 0o600)
+
     try:
         if request.get("identity_id"):
             vnc_state = _start_identity_auth_vnc(request, websocket_port, vnc_port, password_file, log_path)

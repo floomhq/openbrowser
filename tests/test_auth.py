@@ -81,6 +81,49 @@ def test_stop_auth_vnc_terminates_recorded_process_groups(tmp_path, monkeypatch)
     assert result["stopped"] == [123, 456]
 
 
+def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    old_password_file = tmp_path / "old.passwd"
+    old_password_file.write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "_authenticated_x_display", lambda: (":99", None))
+    monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda _pid: True)
+
+    popen_calls = []
+
+    class FakePopen:
+        next_pid = 1000
+
+        def __init__(self, args, **_kwargs):
+            self.args = args
+            self.pid = FakePopen.next_pid
+            FakePopen.next_pid += 1
+            popen_calls.append(args)
+            if args[0] == "/usr/bin/x11vnc":
+                password_path = args[args.index("-passwdfile") + 1]
+                assert auth.Path(password_path).exists()
+
+    monkeypatch.setattr(auth.subprocess, "Popen", FakePopen)
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["vnc"] = {
+        "x11vnc_pid": 123,
+        "websockify_pid": 456,
+        "password_file": str(old_password_file),
+    }
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    result = auth.start_auth_vnc(request["token"])
+
+    assert not old_password_file.exists()
+    assert result["password"]
+    assert any(call[0] == "/usr/bin/x11vnc" for call in popen_calls)
+    assert any(call[0] == "/usr/bin/websockify" for call in popen_calls)
+
+
 def test_auth_request_can_target_identity(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
