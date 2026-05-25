@@ -55,6 +55,49 @@ def test_audit_endpoint(monkeypatch) -> None:
     assert response.json() == {"score": 100, "window_hours": 3}
 
 
+def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    client = TestClient(api.app)
+
+    missing = client.get("/openbrowser/v1/docs")
+    wrong = client.get("/openbrowser/v1/docs", headers={"authorization": "Bearer wrong"})
+    ok = client.get("/openbrowser/v1/docs", headers={"authorization": "Bearer test-openbrowser-key"})
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+    assert ok.status_code == 200
+    assert ok.json()["service"] == "openbrowser"
+
+
+def test_openbrowser_open_releases_lease_on_navigation_failure(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    released = []
+
+    async def fake_create_lease(_request):
+        return {"lease_id": "lease-open", "name": "pool-b"}
+
+    async def fake_browser_navigate(_request):
+        raise api.LeaseError("navigation failed")
+
+    async def fake_release(lease_id):
+        released.append(lease_id)
+        return {"released": lease_id, "slot": "pool-b"}
+
+    monkeypatch.setattr(api, "create_lease", fake_create_lease)
+    monkeypatch.setattr(api, "browser_navigate", fake_browser_navigate)
+    monkeypatch.setattr(api, "release_lease", fake_release)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/open",
+        json={"owner": "pytest", "url": "https://example.com"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 409
+    assert released == ["lease-open"]
+
+
 def test_lease_failure_records_telemetry(monkeypatch) -> None:
     events = []
     monkeypatch.setattr(api, "lease", lambda *_args, **_kwargs: (_ for _ in ()).throw(api.LeaseError("No healthy free browser slots")))

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import hmac
 import html
+import json
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -19,7 +22,7 @@ from .auth import (
     stop_auth_vnc,
 )
 from .browser import controller
-from .config import BROKER_HOST, BROKER_PORT, ensure_dirs
+from .config import BROKER_HOST, BROKER_PORT, OPENBROWSER_API_KEYS_FILE, PUBLIC_OPENBROWSER_BASE_URL, ensure_dirs
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
@@ -113,6 +116,14 @@ class TelemetryEventRequest(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class OpenBrowserOpenRequest(BaseModel):
+    owner: str = "openbrowser-api"
+    url: str
+    identity_id: str | None = None
+    ttl_seconds: int = Field(default=300, ge=60, le=14400)
+    wait_until: str = "domcontentloaded"
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_dirs()
@@ -150,6 +161,41 @@ def _record_browser_failure(request: LeaseIdRequest, action: str, error: Excepti
     )
 
 
+def _configured_openbrowser_keys() -> list[str]:
+    keys: list[str] = []
+    for raw in (os.environ.get("OPENBROWSER_API_KEYS", ""), os.environ.get("AX_OPENBROWSER_API_KEYS", "")):
+        keys.extend(item.strip() for item in raw.split(",") if item.strip())
+    if OPENBROWSER_API_KEYS_FILE.exists():
+        try:
+            data = json.loads(OPENBROWSER_API_KEYS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        if isinstance(data.get("keys"), list):
+            keys.extend(str(item).strip() for item in data["keys"] if str(item).strip())
+        if isinstance(data.get("tokens"), dict):
+            keys.extend(str(item).strip() for item in data["tokens"].values() if str(item).strip())
+    return keys
+
+
+def require_openbrowser_api_key(
+    authorization: str | None = Header(default=None),
+    x_openbrowser_key: str | None = Header(default=None),
+) -> str:
+    token = ""
+    if authorization:
+        scheme, _, value = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            token = value.strip()
+    if not token and x_openbrowser_key:
+        token = x_openbrowser_key.strip()
+    configured = _configured_openbrowser_keys()
+    if not configured:
+        raise HTTPException(status_code=503, detail="OpenBrowser API keys are not configured")
+    if token and any(hmac.compare_digest(token, key) for key in configured):
+        return "openbrowser-api"
+    raise HTTPException(status_code=401, detail="Unauthorized", headers={"WWW-Authenticate": "Bearer"})
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"ok": True, "broker": f"http://{BROKER_HOST}:{BROKER_PORT}", "pool": status()}
@@ -168,6 +214,121 @@ async def agent_docs(topic: str = "quickstart") -> dict[str, Any]:
 @app.get("/audit")
 async def broker_audit(hours: int = 24) -> dict[str, Any]:
     return run_audit(hours)
+
+
+@app.get("/openbrowser/v1/health")
+async def openbrowser_health(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return {
+        "ok": True,
+        "service": "openbrowser",
+        "base_url": PUBLIC_OPENBROWSER_BASE_URL + "/openbrowser/v1" if PUBLIC_OPENBROWSER_BASE_URL else "/openbrowser/v1",
+        "pool": status(),
+    }
+
+
+@app.get("/openbrowser/v1/docs")
+async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return {
+        "service": "openbrowser",
+        "version": "v1",
+        "auth": "Authorization: Bearer <OPENBROWSER_API_KEY>",
+        "endpoints": {
+            "health": "GET /openbrowser/v1/health",
+            "lease": "POST /openbrowser/v1/leases",
+            "release": "POST /openbrowser/v1/leases/{lease_id}/release",
+            "heartbeat": "POST /openbrowser/v1/leases/{lease_id}/heartbeat",
+            "open": "POST /openbrowser/v1/open",
+            "navigate": "POST /openbrowser/v1/browser/navigate",
+            "snapshot": "POST /openbrowser/v1/browser/snapshot",
+            "screenshot": "POST /openbrowser/v1/browser/screenshot",
+            "click": "POST /openbrowser/v1/browser/click",
+            "type": "POST /openbrowser/v1/browser/type",
+            "wait": "POST /openbrowser/v1/browser/wait",
+            "tabs": "POST /openbrowser/v1/browser/tabs",
+            "new_tab": "POST /openbrowser/v1/browser/new-tab",
+            "switch_tab": "POST /openbrowser/v1/browser/switch-tab",
+        },
+        "identities": {
+            "generic": "omit identity_id for a neutral non-account browser",
+            "chrome-depontefede": "Federico AX41 Chrome profile with persisted Google/Discord login",
+            "linkedin-main": "LinkedIn identity with its configured proxy",
+        },
+    }
+
+
+@app.post("/openbrowser/v1/leases")
+async def openbrowser_create_lease(request: LeaseRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await create_lease(request)
+
+
+@app.post("/openbrowser/v1/leases/{lease_id}/release")
+async def openbrowser_release_lease(lease_id: str, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await release_lease(lease_id)
+
+
+@app.post("/openbrowser/v1/leases/{lease_id}/heartbeat")
+async def openbrowser_heartbeat_lease(lease_id: str, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await heartbeat_lease(lease_id)
+
+
+@app.post("/openbrowser/v1/open")
+async def openbrowser_open(request: OpenBrowserOpenRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    lease_obj = await create_lease(LeaseRequest(owner=request.owner, ttl_seconds=request.ttl_seconds, identity_id=request.identity_id))
+    try:
+        navigation = await browser_navigate(
+            NavigateRequest(lease_id=lease_obj["lease_id"], url=request.url, wait_until=request.wait_until)
+        )
+    except Exception as error:
+        await release_lease(str(lease_obj["lease_id"]))
+        if isinstance(error, HTTPException):
+            raise
+        raise _http_error(error) from error
+    return {"lease": lease_obj, "navigation": navigation}
+
+
+@app.post("/openbrowser/v1/browser/navigate")
+async def openbrowser_navigate(request: NavigateRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_navigate(request)
+
+
+@app.post("/openbrowser/v1/browser/snapshot")
+async def openbrowser_snapshot(request: LeaseIdRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_snapshot(request)
+
+
+@app.post("/openbrowser/v1/browser/screenshot")
+async def openbrowser_screenshot(request: ScreenshotRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_screenshot(request)
+
+
+@app.post("/openbrowser/v1/browser/click")
+async def openbrowser_click(request: ClickRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_click(request)
+
+
+@app.post("/openbrowser/v1/browser/type")
+async def openbrowser_type(request: TypeRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_type(request)
+
+
+@app.post("/openbrowser/v1/browser/wait")
+async def openbrowser_wait(request: WaitRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_wait(request)
+
+
+@app.post("/openbrowser/v1/browser/tabs")
+async def openbrowser_tabs(request: LeaseIdRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_tabs(request)
+
+
+@app.post("/openbrowser/v1/browser/new-tab")
+async def openbrowser_new_tab(request: NewTabRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_new_tab(request)
+
+
+@app.post("/openbrowser/v1/browser/switch-tab")
+async def openbrowser_switch_tab(request: SwitchTabRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_switch_tab(request)
 
 
 @app.post("/lease")

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import base64
+import json
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 
 from playwright.async_api import Browser, Page, async_playwright
+import websockets
 
 from .config import MAX_SNAPSHOT_CHARS, SCREENSHOT_DIR, ensure_dirs
 from .pool import Lease
@@ -97,14 +101,61 @@ class BrowserController:
         page = await self.page(lease)
         stamp = int(time.time() * 1000)
         path = SCREENSHOT_DIR / f"{lease.name}-{stamp}.png"
-        data = await page.screenshot(path=str(path), full_page=full_page, type="png")
+        fallback = False
+        try:
+            data = await asyncio.wait_for(
+                page.screenshot(path=str(path), full_page=full_page, type="png", timeout=8000),
+                timeout=12,
+            )
+        except Exception:
+            data = await asyncio.wait_for(self._capture_screenshot_cdp(lease, page, path, full_page), timeout=12)
+            fallback = True
         return {
             "lease_id": lease.lease_id,
             "slot": lease.name,
             "path": str(path),
             "mime_type": "image/png",
             "base64": base64.b64encode(data).decode("ascii"),
+            "fallback": fallback,
         }
+
+    async def _capture_screenshot_cdp(self, lease: Lease, page: Page, path: Path, full_page: bool) -> bytes:
+        page_url = page.url
+
+        def load_tabs() -> list[dict[str, Any]]:
+            with urllib.request.urlopen(f"http://127.0.0.1:{lease.port}/json/list", timeout=5) as response:
+                return json.loads(response.read().decode("utf-8"))
+
+        tabs = await asyncio.to_thread(load_tabs)
+        pages = [tab for tab in tabs if tab.get("type") == "page" and tab.get("webSocketDebuggerUrl")]
+        if not pages:
+            raise RuntimeError(f"No page CDP target available on {lease.name}")
+        target = next((tab for tab in pages if tab.get("url") == page_url), pages[0])
+        ws_url = str(target["webSocketDebuggerUrl"])
+        async with websockets.connect(ws_url, open_timeout=5, close_timeout=1, max_size=16 * 1024 * 1024) as ws:
+            await ws.send(
+                json.dumps(
+                    {
+                        "id": 1,
+                        "method": "Page.captureScreenshot",
+                        "params": {
+                            "format": "png",
+                            "fromSurface": True,
+                            "captureBeyondViewport": bool(full_page),
+                        },
+                    }
+                )
+            )
+            while True:
+                raw = await asyncio.wait_for(ws.recv(), timeout=10)
+                message = json.loads(raw)
+                if message.get("id") != 1:
+                    continue
+                if "error" in message:
+                    raise RuntimeError(str(message["error"]))
+                data = base64.b64decode(str(message["result"]["data"]))
+                path.write_bytes(data)
+                return data
 
     async def click(self, lease: Lease, selector: str) -> dict[str, Any]:
         page = await self.page(lease)

@@ -15,6 +15,7 @@ def test_status_shape() -> None:
 def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     lease = pool.lease("test-pool")
@@ -33,6 +34,7 @@ def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> Non
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     lease = pool.lease("generic-public-task")
@@ -43,11 +45,52 @@ def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> Non
         pool.release(lease.lease_id)
 
 
-def test_generic_lease_fails_when_only_identity_slots_are_free(tmp_path, monkeypatch) -> None:
+def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch) -> None:
     active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
+    reclaimed = []
+
+    class Identity:
+        def __init__(self, proxy_ref: str | None) -> None:
+            self.proxy_ref = proxy_ref
+
+    identities = {
+        "chrome-depontefede": Identity(None),
+        "linkedin-main": Identity("iproyal:linkedin-main"),
+    }
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "load_identities", lambda: identities)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    def activate_neutral(slot):
+        reclaimed.append(slot.name)
+        active[slot.name] = None
+        return True
+
+    monkeypatch.setattr(pool, "_activate_neutral_slot", activate_neutral)
+
+    neutral = pool.lease("neutral-task")
+    try:
+        reclaimed_lease = pool.lease("generic-task")
+        try:
+            assert reclaimed_lease.name == "pool-c"
+            assert reclaimed_lease.identity_id is None
+            assert reclaimed == ["pool-c"]
+        finally:
+            pool.release(reclaimed_lease.lease_id)
+    finally:
+        pool.release(neutral.lease_id)
+
+
+def test_generic_lease_does_not_reclaim_personal_non_proxy_identity(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "discord-main"}
+
+    class Identity:
+        proxy_ref = None
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-depontefede": Identity(), "discord-main": Identity()})
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     neutral = pool.lease("neutral-task")
@@ -57,7 +100,7 @@ def test_generic_lease_fails_when_only_identity_slots_are_free(tmp_path, monkeyp
         except pool.LeaseError as error:
             assert "No healthy free browser slots" in str(error)
         else:
-            raise AssertionError("expected generic lease to fail instead of using identity-active slot")
+            raise AssertionError("expected generic lease to fail instead of reclaiming a non-proxy identity")
     finally:
         pool.release(neutral.lease_id)
 

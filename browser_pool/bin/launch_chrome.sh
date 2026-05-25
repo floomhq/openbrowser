@@ -76,12 +76,11 @@ if [[ "${CHROME_DISABLE_SYNC:-1}" != "0" ]]; then
 fi
 
 nohup /usr/bin/google-chrome-stable \
-  --headless=new \
+  --headless \
   --user-data-dir="$PROFILE_DIR" \
   --no-sandbox \
   --disable-gpu \
   --disable-gpu-sandbox \
-  --use-angle=swiftshader \
   --disable-dev-shm-usage \
   --disable-extensions \
   --disable-component-extensions-with-background-pages \

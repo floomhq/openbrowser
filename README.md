@@ -85,6 +85,16 @@ Agents can report issues through MCP:
 
 The issue store is local at `/root/ax-browser-broker/state/issues.json` and is ignored by git.
 OpenBrowser and browser-use wrapper failures file issues automatically when the adapter process exits nonzero.
+
+## Remote OpenBrowser API
+
+OpenBrowser is also exposed as a bearer-token-protected remote API at:
+
+```text
+https://openbrowser-auth.floom.dev/openbrowser/v1
+```
+
+Use it from any trusted machine with `Authorization: Bearer <OPENBROWSER_API_KEY>`. It supports leases, navigation, snapshots, screenshots, tabs, clicks, typing, waits, and one-shot `open` calls. See `docs/openbrowser-api.md`.
 Issue title, details, URL, tags, and notes are sanitized before storage.
 
 Agents can record and inspect telemetry through MCP:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import subprocess
 import threading
 import time
 import uuid
@@ -11,7 +12,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import LEASE_TTL_SECONDS, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
+from .config import BROWSER_POOL_DIR, LEASE_TTL_SECONDS, POOL_CONFIG_DIR, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
 from .identities import active_identity_id, activate_identity, load_identities, require_identity
 
 
@@ -102,6 +103,30 @@ def gc_leases(state: dict[str, Any]) -> list[str]:
     return expired
 
 
+def _can_reclaim_for_generic(active_identity: str | None, identities: dict[str, Any]) -> bool:
+    if not active_identity:
+        return False
+    identity = identities.get(active_identity)
+    return bool(identity and getattr(identity, "proxy_ref", None))
+
+
+def _wait_healthy(port: int, timeout_seconds: float = 10.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if healthy(port):
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def _activate_neutral_slot(slot: Slot) -> bool:
+    config_path = POOL_CONFIG_DIR / f"{slot.name}.env"
+    if config_path.exists():
+        config_path.unlink()
+    subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), slot.name, str(slot.port)], check=True)
+    return _wait_healthy(slot.port)
+
+
 def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None) -> Lease:
     now = int(time.time())
     effective_ttl = max(60, min(int(ttl_seconds), LEASE_TTL_SECONDS))
@@ -117,7 +142,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
         if identity_id and any(item.get("identity_id") == identity_id for item in state["leases"].values()):
             raise LeaseError(f"Identity already leased: {identity_id}")
         in_use = {str(item["name"]) for item in state["leases"].values()}
-        identities = load_identities() if identity_id else {}
+        identities = load_identities()
+        reclaimable_slots: list[Slot] = []
         for slot in SLOTS:
             if allowed_slot and slot.name != allowed_slot:
                 continue
@@ -125,6 +151,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 continue
             active_identity = active_identity_id(slot.name)
             if not identity_id and active_identity:
+                if _can_reclaim_for_generic(active_identity, identities):
+                    reclaimable_slots.append(slot)
                 continue
             if identity_id and identity and identity.slot == "auto" and active_identity and active_identity != identity_id:
                 active_config = identities.get(active_identity)
@@ -149,6 +177,24 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
             if identity_profile_dir:
                 state["leases"][lease_id]["profile_dir"] = identity_profile_dir
             return _lease_from_state(lease_id, state["leases"][lease_id])
+        if not identity_id:
+            for slot in reclaimable_slots:
+                if slot.name in in_use:
+                    continue
+                if not _activate_neutral_slot(slot):
+                    continue
+                lease_id = str(uuid.uuid4())
+                state["leases"][lease_id] = {
+                    "name": slot.name,
+                    "port": slot.port,
+                    "owner": owner,
+                    "ts": now,
+                    "created_at": now,
+                    "heartbeat_at": now,
+                    "ttl_seconds": effective_ttl,
+                    "profile_dir": str(slot.profile_dir),
+                }
+                return _lease_from_state(lease_id, state["leases"][lease_id])
     raise LeaseError("No healthy free browser slots")
 
 
