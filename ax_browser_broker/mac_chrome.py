@@ -4,8 +4,10 @@ import json
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -298,6 +300,7 @@ MIRROR_EXCLUDES = [
     "GrShaderCache",
     "DawnCache",
     "component_crx_cache",
+    "Shared Dictionary",
     "*/LOCK",
     "*.log",
     "Cookies",
@@ -318,12 +321,44 @@ def _rsync_profile(source: Path, dest: Path) -> None:
     if not is_remote_mac_source and not source.exists():
         raise RuntimeError(f"Profile source not found: {source}")
     dest.mkdir(parents=True, exist_ok=True)
+    if is_remote_mac_source:
+        _copy_remote_mac_profile(source, dest)
+        return
     args = ["rsync", "-a", "-e", MAC_RSYNC_SSH, "--delete", "--delete-excluded"]
     for pattern in MIRROR_EXCLUDES:
         args.extend(["--exclude", pattern])
-    source_arg = f"mac:{shlex.quote(str(source) + '/')}" if is_remote_mac_source else str(source) + "/"
-    args.extend([source_arg, str(dest) + "/"])
+    args.extend([str(source) + "/", str(dest) + "/"])
     subprocess.run(args, check=True)
+
+
+def _copy_remote_mac_profile(source: Path, dest: Path) -> None:
+    tmp_root = Path(tempfile.mkdtemp(prefix=f".{dest.name}.", dir=str(dest.parent)))
+    try:
+        extract_dir = tmp_root / "profile"
+        extract_dir.mkdir()
+        tar_args = " ".join(shlex.quote(f"--exclude={pattern}") for pattern in MIRROR_EXCLUDES)
+        remote_command = f"cd {shlex.quote(str(source))} && tar {tar_args} -cf - ."
+        ssh = subprocess.Popen(MAC_SSH_ARGS + [remote_command], stdout=subprocess.PIPE)
+        try:
+            extract = subprocess.run(
+                ["tar", "--warning=no-unknown-keyword", "-xf", "-", "-C", str(extract_dir)],
+                stdin=ssh.stdout,
+                check=False,
+            )
+        finally:
+            if ssh.stdout:
+                ssh.stdout.close()
+        ssh_return = ssh.wait()
+        if ssh_return != 0:
+            raise subprocess.CalledProcessError(ssh_return, MAC_SSH_ARGS + [remote_command])
+        if extract.returncode != 0:
+            raise subprocess.CalledProcessError(
+                extract.returncode,
+                ["tar", "--warning=no-unknown-keyword", "-xf", "-", "-C", str(extract_dir)],
+            )
+        subprocess.run(["rsync", "-a", "--delete", str(extract_dir) + "/", str(dest) + "/"], check=True)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 def mirror_profiles(

@@ -80,6 +80,11 @@ EOF
 
 launchctl bootout "gui/$(id -u)" "${SSH_PLIST}" >/dev/null 2>&1 || true
 launchctl bootout "gui/$(id -u)" "${CHROME_PLIST}" >/dev/null 2>&1 || true
+for key in GEMINI_API_KEY GOOGLE_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY GROQ_API_KEY OPENROUTER_API_KEY NVIDIA_API_KEY; do
+  unset "${key}" || true
+  launchctl unsetenv "${key}" >/dev/null 2>&1 || true
+  launchctl asuser "$(id -u)" launchctl unsetenv "${key}" >/dev/null 2>&1 || true
+done
 launchctl bootstrap "gui/$(id -u)" "${SSH_PLIST}"
 launchctl bootstrap "gui/$(id -u)" "${CHROME_PLIST}"
 launchctl enable "gui/$(id -u)/dev.ax41.mac-reverse-ssh"

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from .feedback import report_issue
@@ -18,6 +20,7 @@ MAC_CDP_LOCAL_URL = "http://127.0.0.1:19333"
 MAC_CDP_REMOTE_PORT = 9333
 MAC_CHROME_CDP_HELPER = "/root/.codex/scripts/mac-chrome-cdp"
 AX41_HOST = "65.21.90.216"
+SYNC_LOCK = Path("/root/ax-browser-broker/state/mac-profile-sync/sync.lock")
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,16 @@ def status() -> dict[str, Any]:
 
 
 def sync_profiles(dry_run: bool = False, report: bool = False) -> dict[str, Any]:
+    SYNC_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    with SYNC_LOCK.open("w", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return {"ok": False, "stage": "lock", "error": "Mac profile sync already running"}
+        return _sync_profiles_unlocked(dry_run=dry_run, report=report)
+
+
+def _sync_profiles_unlocked(dry_run: bool = False, report: bool = False) -> dict[str, Any]:
     ssh = check_ssh()
     if not ssh.ok:
         result = {

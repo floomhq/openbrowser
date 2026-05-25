@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import stat
+import subprocess
 
 from ax_browser_broker import mac_chrome
 
@@ -208,3 +209,44 @@ def test_read_json_falls_back_to_mac_ssh_for_mount_permission_error(monkeypatch)
     data = mac_chrome._read_json(FakePath("/Users/federicodeponte/Library/Application Support/Google/Chrome/Local State"), {})
 
     assert data == {"profile": {"info_cache": {}}}
+
+
+def test_remote_mac_profile_copy_uses_shell_cd_for_paths_with_spaces(tmp_path, monkeypatch) -> None:
+    commands = []
+
+    class FakeStdout:
+        def close(self) -> None:
+            pass
+
+    class FakePopen:
+        def __init__(self, args, stdout=None) -> None:
+            commands.append(args)
+            self.stdout = FakeStdout()
+
+        def wait(self) -> int:
+            return 0
+
+    def fake_run(args, stdin=None, check=False):
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(mac_chrome.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(mac_chrome.subprocess, "run", fake_run)
+    def fake_mkdtemp(prefix, dir):
+        path = tmp_path / "tmp-copy"
+        path.mkdir()
+        return str(path)
+
+    monkeypatch.setattr(mac_chrome.tempfile, "mkdtemp", fake_mkdtemp)
+
+    dest = tmp_path / "dest"
+    dest.mkdir()
+    mac_chrome._copy_remote_mac_profile(
+        mac_chrome.DEFAULT_MAC_CHROME_DIR / "Profile 3",
+        dest,
+    )
+
+    ssh_args = commands[0]
+    assert ssh_args[-1].startswith("cd '/Users/federicodeponte/Library/Application Support/Google/Chrome/Profile 3'")
+    assert "--exclude=Cookies" in ssh_args[-1]
+    assert commands[-1][:3] == ["rsync", "-a", "--delete"]
