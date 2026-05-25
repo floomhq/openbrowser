@@ -81,9 +81,10 @@ nohup /usr/bin/google-chrome-stable \
   --no-sandbox \
   --disable-gpu \
   --disable-gpu-sandbox \
-  --in-process-gpu \
-  --use-gl=swiftshader \
+  --use-angle=swiftshader \
   --disable-dev-shm-usage \
+  --disable-extensions \
+  --disable-component-extensions-with-background-pages \
   --remote-debugging-port="$PORT" \
   --remote-debugging-address=127.0.0.1 \
   --disable-background-timer-throttling \

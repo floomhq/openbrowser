@@ -249,4 +249,6 @@ def test_remote_mac_profile_copy_uses_shell_cd_for_paths_with_spaces(tmp_path, m
     ssh_args = commands[0]
     assert ssh_args[-1].startswith("cd '/Users/federicodeponte/Library/Application Support/Google/Chrome/Profile 3'")
     assert "--exclude=Cookies" in ssh_args[-1]
+    assert "--exclude=Extensions" in ssh_args[-1]
+    assert "--exclude=Local Extension Settings" in ssh_args[-1]
     assert commands[-1][:3] == ["rsync", "-a", "--delete"]

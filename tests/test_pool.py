@@ -12,7 +12,10 @@ def test_status_shape() -> None:
     assert {slot["name"] for slot in data["slots"]} == {"pool-a", "pool-b", "pool-c"}
 
 
-def test_lease_release_round_trip() -> None:
+def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+
     lease = pool.lease("test-pool")
     try:
         assert lease.lease_id
@@ -24,13 +27,15 @@ def test_lease_release_round_trip() -> None:
     assert released["released"] == lease.lease_id
 
 
-def test_identity_lease_is_exclusive(monkeypatch) -> None:
+def test_identity_lease_is_exclusive(tmp_path, monkeypatch) -> None:
     class Identity:
         slot = "pool-c"
         profile_dir = "/tmp/linkedin-main"
 
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "require_identity", lambda _identity_id: Identity())
     monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: "linkedin-main")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     lease = pool.lease("test-identity", identity_id="linkedin-main")
     try:
