@@ -210,6 +210,7 @@ def redacted_status() -> dict[str, Any]:
 
 def write_slot_config(identity_id: str, local_proxy_port: int = 18801, slot_name: str | None = None) -> Path:
     identity = require_identity(identity_id)
+    raw_identity = _read_json(IDENTITIES_FILE, {"identities": {}}).get("identities", {}).get(identity_id, {})
     target_slot = slot_name or identity.slot
     if target_slot == "auto":
         raise IdentityError(f"Identity {identity_id} uses auto slot; pass a concrete slot")
@@ -229,6 +230,8 @@ def write_slot_config(identity_id: str, local_proxy_port: int = 18801, slot_name
     ]
     if identity.timezone:
         lines.append(f"TZ={identity.timezone!r}")
+    if raw_identity.get("source", {}).get("type") == "mac-chrome-profile":
+        lines.append("CHROME_DISABLE_SYNC='0'")
     if identity.proxy_ref:
         lines.extend(
             [

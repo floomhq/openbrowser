@@ -30,7 +30,7 @@ The supported fallback is human auth into the AX41 profile:
 4. Chrome stores the resulting session in that AX41 identity profile.
 5. Agents later lease the same `identity_id`.
 
-If Chrome Sync is enabled during human login, Chrome-managed passwords/bookmarks/extensions may sync through Google's normal Chrome account flow. Website login sessions still depend on the website and normally require login on AX41.
+During human login, imported `chrome-*` identities are launched without the pool's normal `--disable-sync` flag. Chrome Sync can sync Chrome-managed passwords/bookmarks/extensions through Google's normal Chrome account flow when Federico enables Sync in the AX41 Chrome profile. Website login sessions still depend on the website and normally require login on AX41.
 
 ## Mirror And Tunnel Verification
 

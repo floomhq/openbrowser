@@ -9,6 +9,7 @@ LOG="/root/browser-pool/logs/${NAME}.log"
 MAINTENANCE_FILE="/root/browser-pool/state/maintenance/${NAME}.json"
 PROXY_PID_FILE="/root/browser-pool/state/${NAME}.proxy.pid"
 PROXY_ARGS=()
+SYNC_ARGS=()
 CHROME_LANG="en-US"
 
 if [[ -f "$CONFIG_FILE" ]]; then
@@ -70,6 +71,10 @@ if [[ -n "${PROXY_REF:-}" ]]; then
   PROXY_ARGS=(--proxy-server="http://127.0.0.1:${PROXY_LOCAL_PORT}")
 fi
 
+if [[ "${CHROME_DISABLE_SYNC:-1}" != "0" ]]; then
+  SYNC_ARGS=(--disable-sync)
+fi
+
 nohup /usr/bin/google-chrome-stable \
   --headless=new \
   --user-data-dir="$PROFILE_DIR" \
@@ -85,7 +90,7 @@ nohup /usr/bin/google-chrome-stable \
   --disable-renderer-backgrounding \
   --disable-backgrounding-occluded-windows \
   --no-first-run \
-  --disable-sync \
+  "${SYNC_ARGS[@]}" \
   --lang="$CHROME_LANG" \
   --window-size=1280,800 \
   --window-position=0,0 \

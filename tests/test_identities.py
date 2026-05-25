@@ -59,6 +59,35 @@ def test_write_slot_config_uses_local_proxy_without_secret(tmp_path, monkeypatch
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
+def test_write_slot_config_enables_sync_for_imported_mac_profile(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    pool_config_dir = tmp_path / "pool-config"
+    profile_dir = tmp_path / "chrome-depontefede"
+    identity_file.write_text(
+        json.dumps(
+            {
+                "identities": {
+                    "chrome-depontefede": {
+                        "slot": "pool-b",
+                        "profile_dir": str(profile_dir),
+                        "source": {"type": "mac-chrome-profile", "profile_dir_name": "Profile 3"},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(json.dumps({"proxies": {}}), encoding="utf-8")
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+
+    path = identities.write_slot_config("chrome-depontefede")
+
+    assert "CHROME_DISABLE_SYNC='0'" in path.read_text(encoding="utf-8")
+
+
 def test_load_identity_rejects_unknown_slot(tmp_path, monkeypatch) -> None:
     identity_file = tmp_path / "identities.json"
     identity_file.write_text(
