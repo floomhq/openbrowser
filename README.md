@@ -6,7 +6,7 @@ Local browser automation broker for AX41 agents.
 
 - API: `http://127.0.0.1:8767`
 - MCP stdio command: `/root/ax-browser-broker/bin/ax-browser-mcp`
-- Pool slots: `9223`, `9224`, `9225`
+- Pool slots: `9223` through `9230` (`pool-a` through `pool-h`)
 
 ## Core flow
 
@@ -95,6 +95,7 @@ https://openbrowser-auth.floom.dev/openbrowser/v1
 ```
 
 Use it from any trusted machine with `Authorization: Bearer <OPENBROWSER_API_KEY>`. It supports leases, navigation, snapshots, screenshots, tabs, clicks, typing, waits, and one-shot `open` calls. See `docs/openbrowser-api.md`.
+Logged-in Chrome identities can also opt into controlled parallel sessions with `policy.max_parallel_sessions`. Parallel identity leases use per-slot profile replicas under `/root/browser-pool/profiles/.replicas/`, so Chrome profile locks do not block separate agents.
 Issue title, details, URL, tags, and notes are sanitized before storage.
 
 Agents can record and inspect telemetry through MCP:

@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SLOTS=("pool-a:9223" "pool-b:9224" "pool-c:9225")
+SLOTS=(
+  "pool-a:9223"
+  "pool-b:9224"
+  "pool-c:9225"
+  "pool-d:9226"
+  "pool-e:9227"
+  "pool-f:9228"
+  "pool-g:9229"
+  "pool-h:9230"
+)
 
 maintenance_active() {
   local file="$1"

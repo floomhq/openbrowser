@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import BROWSER_POOL_DIR, LEASE_TTL_SECONDS, POOL_CONFIG_DIR, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
-from .identities import active_identity_id, activate_identity, load_identities, require_identity
+from .identities import active_identity_id, activate_identity, identity_replica_profile_dir, load_identities, read_slot_config, require_identity
 
 
 class LeaseError(RuntimeError):
@@ -127,6 +127,30 @@ def _activate_neutral_slot(slot: Slot) -> bool:
     return _wait_healthy(slot.port)
 
 
+def _identity_lease_count(state: dict[str, Any], identity_id: str) -> int:
+    return sum(1 for item in state["leases"].values() if item.get("identity_id") == identity_id)
+
+
+def _identity_profile_for_slot(identity_id: str, identity: Any, slot: Slot, existing_count: int, active_identity: str | None) -> str:
+    config = read_slot_config(slot.name)
+    configured_profile = config.get("PROFILE_DIR")
+    if active_identity == identity_id and configured_profile:
+        return configured_profile
+    if getattr(identity, "max_parallel_sessions", 1) > 1 and existing_count > 0:
+        return str(identity_replica_profile_dir(identity, slot.name))
+    return str(identity.profile_dir)
+
+
+def _is_replica_profile(profile_dir: str | None) -> bool:
+    if not profile_dir:
+        return False
+    try:
+        Path(profile_dir).resolve().relative_to((BROWSER_POOL_DIR / "profiles" / ".replicas").resolve())
+    except ValueError:
+        return False
+    return True
+
+
 def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None) -> Lease:
     now = int(time.time())
     effective_ttl = max(60, min(int(ttl_seconds), LEASE_TTL_SECONDS))
@@ -136,11 +160,11 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
     if identity_id:
         identity = require_identity(identity_id)
         allowed_slot = None if identity.slot == "auto" else identity.slot
-        identity_profile_dir = str(identity.profile_dir)
     with locked_state() as state:
         gc_leases(state)
-        if identity_id and any(item.get("identity_id") == identity_id for item in state["leases"].values()):
-            raise LeaseError(f"Identity already leased: {identity_id}")
+        identity_lease_count = _identity_lease_count(state, identity_id) if identity_id else 0
+        if identity_id and identity and identity_lease_count >= getattr(identity, "max_parallel_sessions", 1):
+            raise LeaseError(f"Identity already leased at max parallel sessions: {identity_id}")
         in_use = {str(item["name"]) for item in state["leases"].values()}
         identities = load_identities()
         reclaimable_slots: list[Slot] = []
@@ -158,8 +182,20 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 active_config = identities.get(active_identity)
                 if active_config and active_config.slot != "auto":
                     continue
-            if identity_id and (active_identity != identity_id or not healthy(slot.port)):
-                activate_identity(identity_id, slot.name, check_leases=False)
+            if identity_id and identity:
+                identity_profile_dir = _identity_profile_for_slot(identity_id, identity, slot, identity_lease_count, active_identity)
+            if identity_id and (
+                active_identity != identity_id
+                or not healthy(slot.port)
+                or (identity_lease_count > 0 and _is_replica_profile(identity_profile_dir))
+            ):
+                activate_identity(
+                    identity_id,
+                    slot.name,
+                    check_leases=False,
+                    profile_dir_override=Path(identity_profile_dir) if identity_profile_dir else None,
+                    clear_existing=getattr(identity, "max_parallel_sessions", 1) <= 1,
+                )
             if not healthy(slot.port):
                 continue
             lease_id = str(uuid.uuid4())

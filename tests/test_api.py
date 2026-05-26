@@ -69,6 +69,88 @@ def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
     assert ok.json()["service"] == "openbrowser"
 
 
+def test_openbrowser_identities_requires_key_and_returns_redacted_status(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "redacted_status", lambda: {"identities": {"chrome-one": {"label": "One"}}, "proxy_refs": []})
+    client = TestClient(api.app)
+
+    missing = client.get("/openbrowser/v1/identities")
+    ok = client.get("/openbrowser/v1/identities", headers={"authorization": "Bearer test-openbrowser-key"})
+
+    assert missing.status_code == 401
+    assert ok.status_code == 200
+    assert ok.json()["identities"]["chrome-one"]["label"] == "One"
+
+
+def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "create_auth_request",
+        lambda owner, url, reason, identity_id: {
+            "token": "tok",
+            "owner": owner,
+            "url": url,
+            "reason": reason,
+            "identity_id": identity_id,
+            "portal_url": "https://openbrowser-auth.floom.dev/auth/tok",
+            "status": "pending",
+        },
+    )
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    missing = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "identity_id": "chrome-one", "url": "https://accounts.google.com/"},
+    )
+    ok = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "identity_id": "chrome-one", "url": "https://accounts.google.com/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert missing.status_code == 401
+    assert ok.status_code == 200
+    assert ok.json()["portal_url"].endswith("/auth/tok")
+    assert ok.json()["identity_id"] == "chrome-one"
+
+
+def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    created = []
+
+    def fake_create_auth_request(owner, url, reason, identity_id):
+        created.append((owner, url, reason, identity_id))
+        return {
+            "token": identity_id + "-token",
+            "owner": owner,
+            "url": url,
+            "reason": reason,
+            "identity_id": identity_id,
+            "portal_url": f"https://openbrowser-auth.floom.dev/auth/{identity_id}-token",
+            "status": "pending",
+        }
+
+    monkeypatch.setattr(api, "create_auth_request", fake_create_auth_request)
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/batch",
+        json={"owner": "pytest", "identity_ids": ["chrome-one", "chrome-two"], "url": "https://accounts.google.com/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["count"] == 2
+    assert [item["identity_id"] for item in response.json()["requests"]] == ["chrome-one", "chrome-two"]
+    assert created == [
+        ("pytest", "https://accounts.google.com/", "profile_login", "chrome-one"),
+        ("pytest", "https://accounts.google.com/", "profile_login", "chrome-two"),
+    ]
+
+
 def test_openbrowser_open_releases_lease_on_navigation_failure(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     released = []

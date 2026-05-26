@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+import pytest
+
 from ax_browser_broker import pool
+
+
+@pytest.fixture(autouse=True)
+def three_slot_pool(monkeypatch):
+    monkeypatch.setattr(pool, "SLOTS", pool.SLOTS[:3])
+    monkeypatch.setattr(pool, "read_slot_config", lambda _slot_name: {})
 
 
 def test_status_shape() -> None:
@@ -129,6 +137,137 @@ def test_identity_lease_is_exclusive(tmp_path, monkeypatch) -> None:
         pool.release(lease.lease_id)
 
 
+def test_parallel_identity_leases_use_replica_profile(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": None, "pool-b": None, "pool-c": None}
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = tmp_path / "chrome-one"
+        proxy_ref = None
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **kwargs):
+        activations.append((identity_id, slot_name, kwargs))
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+    monkeypatch.setattr(pool, "identity_replica_profile_dir", lambda _identity, slot_name: tmp_path / "replicas" / slot_name)
+
+    first = pool.lease("parallel-1", identity_id="chrome-one")
+    second = pool.lease("parallel-2", identity_id="chrome-one")
+    try:
+        assert first.name == "pool-a"
+        assert first.profile_dir == str(identity.profile_dir)
+        assert second.name == "pool-b"
+        assert second.profile_dir == str(tmp_path / "replicas" / "pool-b")
+        assert activations[0][2]["clear_existing"] is False
+        assert activations[0][2]["profile_dir_override"] == identity.profile_dir
+        assert activations[1][2]["clear_existing"] is False
+        assert activations[1][2]["profile_dir_override"] == tmp_path / "replicas" / "pool-b"
+    finally:
+        pool.release(first.lease_id)
+        pool.release(second.lease_id)
+
+
+def test_parallel_identity_limit_is_enforced(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": None, "pool-b": None, "pool-c": None}
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = tmp_path / "chrome-one"
+        proxy_ref = None
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+    monkeypatch.setattr(pool, "identity_replica_profile_dir", lambda _identity, slot_name: tmp_path / "replicas" / slot_name)
+
+    first = pool.lease("parallel-1", identity_id="chrome-one")
+    second = pool.lease("parallel-2", identity_id="chrome-one")
+    try:
+        try:
+            pool.lease("parallel-3", identity_id="chrome-one")
+        except pool.LeaseError as error:
+            assert "max parallel sessions" in str(error)
+        else:
+            raise AssertionError("expected identity parallel limit to be enforced")
+    finally:
+        pool.release(first.lease_id)
+        pool.release(second.lease_id)
+
+
+def test_warm_replica_slot_is_refreshed_before_parallel_lease(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-one", "pool-b": "chrome-one", "pool-c": None}
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = tmp_path / "chrome-one"
+        proxy_ref = None
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **kwargs):
+        activations.append((identity_id, slot_name, kwargs))
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+    monkeypatch.setattr(pool, "_is_replica_profile", lambda profile_dir: bool(profile_dir))
+    monkeypatch.setattr(
+        pool,
+        "read_slot_config",
+        lambda slot_name: {"PROFILE_DIR": str(tmp_path / "replicas" / slot_name)} if slot_name == "pool-b" else {},
+    )
+
+    canonical = pool.lease("canonical", identity_id="chrome-one")
+    replica = pool.lease("replica", identity_id="chrome-one")
+    try:
+        assert canonical.name == "pool-a"
+        assert replica.name == "pool-b"
+        assert activations == [
+            (
+                "chrome-one",
+                "pool-b",
+                {
+                    "profile_dir_override": tmp_path / "replicas" / "pool-b",
+                    "clear_existing": False,
+                },
+            )
+        ]
+    finally:
+        pool.release(canonical.lease_id)
+        pool.release(replica.lease_id)
+
+
 def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "leases.json"
     active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": "linkedin-main"}
@@ -147,7 +286,7 @@ def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> Non
         "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
     }
 
-    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
         activations.append((identity_id, slot_name, check_leases))
         active[slot_name] = identity_id
         return {"active": True}
@@ -198,7 +337,7 @@ def test_auto_identity_skips_unhealthy_slot_after_activation(tmp_path, monkeypat
             return False
         return True
 
-    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
         active[slot_name] = identity_id
         return {"active": True}
 
@@ -232,7 +371,7 @@ def test_concurrent_auto_identity_leases_are_unique_under_lock(tmp_path, monkeyp
 
     identities = {f"chrome-{index}": Identity(f"chrome-{index}") for index in range(4)}
 
-    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
         active[slot_name] = identity_id
         return {"active": True}
 
@@ -280,7 +419,7 @@ def test_sustained_auto_identity_contention_exhausts_slots_cleanly(tmp_path, mon
 
     identities = {f"chrome-{index}": Identity(f"chrome-{index}") for index in range(10)}
 
-    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
         active[slot_name] = identity_id
         return {"active": True}
 
@@ -333,7 +472,7 @@ def test_auto_identity_respects_dynamic_in_use_and_reserved_slots(tmp_path, monk
         "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
     }
 
-    def activate(identity_id: str, slot_name: str, check_leases: bool = True):
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
         active[slot_name] = identity_id
         return {"active": True}
 

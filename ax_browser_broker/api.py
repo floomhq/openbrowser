@@ -25,6 +25,7 @@ from .browser import controller
 from .config import BROKER_HOST, BROKER_PORT, OPENBROWSER_API_KEYS_FILE, PUBLIC_OPENBROWSER_BASE_URL, ensure_dirs
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
+from .identities import redacted_status
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 from .telemetry import TelemetryError, list_events, record_event, summary
@@ -122,6 +123,13 @@ class OpenBrowserOpenRequest(BaseModel):
     identity_id: str | None = None
     ttl_seconds: int = Field(default=300, ge=60, le=14400)
     wait_until: str = "domcontentloaded"
+
+
+class OpenBrowserAuthBatchRequest(BaseModel):
+    owner: str = "openbrowser-api"
+    identity_ids: list[str] = Field(min_length=1, max_length=20)
+    url: str = "https://accounts.google.com/"
+    reason: str = "profile_login"
 
 
 @asynccontextmanager
@@ -234,6 +242,10 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
         "auth": "Authorization: Bearer <OPENBROWSER_API_KEY>",
         "endpoints": {
             "health": "GET /openbrowser/v1/health",
+            "identities": "GET /openbrowser/v1/identities",
+            "auth_request": "POST /openbrowser/v1/auth/request",
+            "auth_batch": "POST /openbrowser/v1/auth/batch",
+            "auth_status": "GET /openbrowser/v1/auth/status",
             "lease": "POST /openbrowser/v1/leases",
             "release": "POST /openbrowser/v1/leases/{lease_id}/release",
             "heartbeat": "POST /openbrowser/v1/leases/{lease_id}/heartbeat",
@@ -254,6 +266,38 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
             "linkedin-main": "LinkedIn identity with its configured proxy",
         },
     }
+
+
+@app.get("/openbrowser/v1/identities")
+async def openbrowser_identities(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return redacted_status()
+
+
+@app.get("/openbrowser/v1/auth/status")
+async def openbrowser_auth_status(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await auth_status()
+
+
+@app.post("/openbrowser/v1/auth/request")
+async def openbrowser_auth_request(request: AuthRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await auth_request(request)
+
+
+@app.post("/openbrowser/v1/auth/batch")
+async def openbrowser_auth_batch(request: OpenBrowserAuthBatchRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    requests = []
+    for identity_id in request.identity_ids:
+        requests.append(
+            await auth_request(
+                AuthRequest(
+                    owner=request.owner,
+                    identity_id=identity_id,
+                    url=request.url,
+                    reason=request.reason,
+                )
+            )
+        )
+    return {"count": len(requests), "requests": requests}
 
 
 @app.post("/openbrowser/v1/leases")

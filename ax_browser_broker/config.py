@@ -52,6 +52,11 @@ SLOTS = (
     Slot("pool-a", 9223),
     Slot("pool-b", 9224),
     Slot("pool-c", 9225),
+    Slot("pool-d", 9226),
+    Slot("pool-e", 9227),
+    Slot("pool-f", 9228),
+    Slot("pool-g", 9229),
+    Slot("pool-h", 9230),
 )
 
 

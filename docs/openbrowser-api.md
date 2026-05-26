@@ -73,10 +73,46 @@ Pass `identity_id` only when account state is required.
 
 Generic leases never use an active personal identity slot. If all neutral slots are busy, the allocator may recycle an idle proxied identity slot back to its neutral pool profile, then that identity can be reactivated on demand later.
 
+Identity capacity is controlled by `policy.max_parallel_sessions` in `config/identities.local.json`. When a Chrome identity allows more than one session, the first lease uses the canonical logged-in profile and later parallel leases use per-slot replicas under `/root/browser-pool/profiles/.replicas/<identity>/<slot>`. This avoids Chrome profile-lock conflicts while keeping the original logged-in profile intact.
+
+List available identities:
+
+```bash
+curl -fsS "$BASE/identities" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0"
+```
+
+Start a human login handoff for a profile:
+
+```bash
+curl -fsS "$BASE/auth/request" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0" \
+  -H "content-type: application/json" \
+  -d '{"owner":"profile-login","identity_id":"chrome-fede","url":"https://accounts.google.com/","reason":"profile_login"}'
+```
+
+Open the returned `portal_url`, sign in inside the browser view, then mark it complete in the portal. Future leases for that `identity_id` reuse the persisted AX41 profile.
+
+Generate several profile login links at once:
+
+```bash
+curl -fsS "$BASE/auth/batch" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0" \
+  -H "content-type: application/json" \
+  -d '{"owner":"profile-login","identity_ids":["chrome-fede","chrome-clients","chrome-admin"],"url":"https://accounts.google.com/","reason":"profile_login"}'
+```
+
 ## Endpoints
 
 - `GET /health`
 - `GET /docs`
+- `GET /identities`
+- `GET /auth/status`
+- `POST /auth/request`
+- `POST /auth/batch`
 - `POST /leases`
 - `POST /leases/{lease_id}/release`
 - `POST /leases/{lease_id}/heartbeat`
