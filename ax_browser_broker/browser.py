@@ -162,6 +162,11 @@ class BrowserController:
         await page.click(selector, timeout=10000)
         return {"lease_id": lease.lease_id, "slot": lease.name, "clicked": selector, "url": page.url}
 
+    async def mouse_click(self, lease: Lease, x: int, y: int) -> dict[str, Any]:
+        page = await self.page(lease)
+        await page.mouse.click(max(0, int(x)), max(0, int(y)))
+        return {"lease_id": lease.lease_id, "slot": lease.name, "clicked": {"x": int(x), "y": int(y)}, "url": page.url}
+
     async def _uses_rich_text_keyboard_path(self, page: Page, selector: str) -> bool:
         return bool(
             await page.locator(selector).evaluate(

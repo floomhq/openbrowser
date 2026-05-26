@@ -114,6 +114,16 @@ def browser_keyboard_press(lease_id: str, key: str, selector: str | None = None)
 
 
 @mcp.tool()
+def lease_control_request(lease_id: str, owner: str = "agent", ttl_seconds: int = 900) -> dict[str, Any]:
+    """Create a short-lived human control link for an existing lease. Use for manual login/challenge handoff."""
+    return _request(
+        "POST",
+        "/lease-control/request",
+        {"lease_id": lease_id, "owner": owner, "ttl_seconds": ttl_seconds},
+    )
+
+
+@mcp.tool()
 def browser_wait(lease_id: str, selector: str | None = None, timeout_ms: int = 1000) -> dict[str, Any]:
     """Wait for a selector or fixed timeout in a leased browser."""
     return _request("POST", "/browser/wait", {"lease_id": lease_id, "selector": selector, "timeout_ms": timeout_ms})

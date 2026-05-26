@@ -32,6 +32,14 @@ class FakeKeyboard:
         self.events.append(("keyboard.type", text, delay))
 
 
+class FakeMouse:
+    def __init__(self, events: list[tuple]) -> None:
+        self.events = events
+
+    async def click(self, x: int, y: int) -> None:
+        self.events.append(("mouse.click", x, y))
+
+
 class FakeLocator:
     def __init__(self, events: list[tuple], rich_text: bool) -> None:
         self.events = events
@@ -51,6 +59,7 @@ class FakePage:
     def __init__(self, rich_text: bool = False) -> None:
         self.events: list[tuple] = []
         self.keyboard = FakeKeyboard(self.events)
+        self.mouse = FakeMouse(self.events)
         self.rich_text = rich_text
 
     def locator(self, selector: str) -> FakeLocator:
@@ -134,6 +143,22 @@ def test_keyboard_type_and_press_use_page_keyboard() -> None:
         ("locator.click", 10000),
         ("keyboard.press", "Enter"),
     ]
+
+
+def test_mouse_click_uses_page_mouse_coordinates() -> None:
+    controller = BrowserController()
+    page = FakePage(rich_text=False)
+
+    async def fake_page(_lease):
+        return page
+
+    controller.page = fake_page
+    lease = make_lease()
+
+    result = asyncio.run(controller.mouse_click(lease, 123, 45))
+
+    assert result["clicked"] == {"x": 123, "y": 45}
+    assert page.events == [("mouse.click", 123, 45)]
 
 
 def test_screenshot_falls_back_to_cdp_capture(tmp_path, monkeypatch) -> None:

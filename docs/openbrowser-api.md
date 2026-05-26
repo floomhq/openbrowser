@@ -124,6 +124,7 @@ curl -fsS "$BASE/auth/batch" \
 - `POST /browser/type`
 - `POST /browser/keyboard-type`
 - `POST /browser/keyboard-press`
+- `POST /lease-control/request`
 - `POST /browser/wait`
 - `POST /browser/tabs`
 - `POST /browser/new-tab`
@@ -132,6 +133,20 @@ curl -fsS "$BASE/auth/batch" \
 ## Safety
 
 The API never exposes cookies, passwords, raw Discord tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
+
+## Active Lease Human Control
+
+If a leased headless browser hits a prompt that must be handled in the current tab, create a short-lived manual control link:
+
+```bash
+curl -fsS "$BASE/lease-control/request" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0" \
+  -H "content-type: application/json" \
+  -d "{\"lease_id\":\"$LEASE_ID\",\"owner\":\"human-handoff\",\"ttl_seconds\":900}"
+```
+
+Open the returned `portal_url`. The page shows fresh screenshots and lets the human click or type into the existing tab. It is a manual handoff surface, not an automated CAPTCHA solver.
 
 ## Rich-Text Editors
 

@@ -70,6 +70,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "rules": [
             "Use broker identities such as chrome-* or linkedin-main when account state is needed.",
             "Use auth_request for login or password handoff.",
+            "Use lease_control_request when an already-leased browser hits a human challenge or login prompt that must be handled in the current tab.",
             "For Discord, use chrome-depontefede when Federico expects his normal personal browser; use discord-main only for a separate Discord-only profile.",
             "Use /root/ax-browser-broker/bin/ax-openbrowser when a task names OpenBrowser.",
             "For chat/editor submission, prefer broker keyboard tools over DOM fill because modern editors maintain internal state.",
@@ -141,11 +142,13 @@ TOPICS: dict[str, dict[str, Any]] = {
             "During identity auth, the broker pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile.",
             "If the identity has proxy_ref, the temporary auth Chrome also uses that proxy through ax-proxy-forwarder.",
             "After completion, lease the same identity_id; the saved AX41 profile state is reused.",
+            "If a challenge appears inside an active headless lease, use lease_control_request for a short-lived manual control link instead of starting a second VNC auth browser.",
             "If an identity auth handoff is refused before VNC starts, the temporary VNC password file is removed.",
             "When completion runs, the broker stops VNC/websockify/Chrome/Xvfb helper processes and removes the temporary password file.",
         ],
         "examples": [
             {"tool": "auth_request", "args": {"owner": "agent-name", "url": "https://accounts.google.com/", "reason": "google_profile_login", "identity_id": "chrome-openpaper"}},
+            {"tool": "lease_control_request", "args": {"owner": "agent-name", "lease_id": "<lease_id>", "ttl_seconds": 900}},
         ],
     },
     "feedback": {

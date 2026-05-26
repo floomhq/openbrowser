@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
+
 from fastapi.testclient import TestClient
 
-from ax_browser_broker import api, auth, feedback, telemetry
+from ax_browser_broker import api, auth, feedback, lease_control, telemetry
 from ax_browser_broker.pool import Lease
 
 
@@ -295,6 +297,132 @@ def test_browser_keyboard_press_endpoint_records_key(monkeypatch) -> None:
     assert response.json()["pressed"] == "Enter"
     assert events[0]["message"] == "Browser keyboard press"
     assert events[0]["data"]["key"] == "Enter"
+
+
+def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    def fake_create_control_session(owner, lease_id, ttl_seconds):
+        assert owner == "pytest-control"
+        assert lease_id == "lease-api"
+        assert ttl_seconds == 600
+        return {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "ttl_seconds": ttl_seconds,
+            "portal_url": "https://openbrowser-auth.floom.dev/auth/lease-control/control-token",
+        }
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/lease-control/request",
+        json={"lease_id": "lease-api", "owner": "pytest-control", "ttl_seconds": 600},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
+    assert events[0]["message"] == "Lease control session created"
+    assert events[0]["data"]["slot"] == "pool-b"
+
+
+def test_openbrowser_lease_control_request_is_protected(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+
+    async def fake_lease_control_request(_request):
+        return {"portal_url": "https://openbrowser-auth.floom.dev/auth/lease-control/tok"}
+
+    monkeypatch.setattr(api, "lease_control_request", fake_lease_control_request)
+    client = TestClient(api.app)
+
+    missing = client.post("/openbrowser/v1/lease-control/request", json={"lease_id": "lease-api"})
+    ok = client.post(
+        "/openbrowser/v1/lease-control/request",
+        json={"lease_id": "lease-api"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert missing.status_code == 401
+    assert ok.status_code == 200
+    assert ok.json()["portal_url"].endswith("/auth/lease-control/tok")
+
+
+def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
+    lease = make_lease()
+
+    def fake_get_control_session(_token):
+        return {
+            "token": "tok",
+            "owner": "<human>",
+            "lease_id": "lease-api",
+            "expires_at": 123,
+        }
+
+    async def fake_screenshot(lease_obj, full_page):
+        assert lease_obj == lease
+        assert full_page is False
+        return {"base64": base64.b64encode(b"png-bytes").decode("ascii")}
+
+    monkeypatch.setattr(api, "get_control_session", fake_get_control_session)
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "screenshot", fake_screenshot)
+    client = TestClient(api.app)
+
+    portal = client.get("/auth/lease-control/tok")
+    shot = client.get("/auth/lease-control/tok/screenshot")
+
+    assert portal.status_code == 200
+    assert "&lt;human&gt;" in portal.text
+    assert "Manual browser control" in portal.text
+    assert "session cookies" in portal.text
+    assert shot.status_code == 200
+    assert shot.headers["content-type"] == "image/png"
+    assert shot.content == b"png-bytes"
+
+
+def test_lease_control_click_records_coordinates(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    monkeypatch.setattr(
+        api,
+        "get_control_session",
+        lambda _token: {"token": "tok", "owner": "pytest-control", "lease_id": "lease-api"},
+    )
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+
+    async def fake_mouse_click(lease_obj, x, y):
+        assert lease_obj == lease
+        return {"lease_id": lease_obj.lease_id, "slot": lease_obj.name, "clicked": {"x": x, "y": y}, "url": "https://example.com"}
+
+    monkeypatch.setattr(api.controller, "mouse_click", fake_mouse_click)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post("/auth/lease-control/tok/click", json={"x": 10, "y": 20})
+
+    assert response.status_code == 200
+    assert response.json()["clicked"] == {"x": 10, "y": 20}
+    assert events[0]["message"] == "Lease control click"
+    assert events[0]["data"]["x"] == 10
+
+
+def test_lease_control_state_lifecycle(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(lease_control, "LEASE_CONTROL_STATE_FILE", tmp_path / "lease_control.json")
+    monkeypatch.setattr(lease_control, "PUBLIC_AUTH_BASE_URL", "https://openbrowser-auth.floom.dev")
+
+    session = lease_control.create_control_session("pytest", "lease-api", ttl_seconds=60)
+    loaded = lease_control.get_control_session(session["token"])
+    completed = lease_control.complete_control_session(session["token"])
+
+    assert session["portal_url"].startswith("https://openbrowser-auth.floom.dev/auth/lease-control/")
+    assert loaded["lease_id"] == "lease-api"
+    assert completed["owner"] == "pytest"
 
 
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:

@@ -4,11 +4,12 @@ import hmac
 import html
 import json
 import os
+import base64
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .audit import run_audit
@@ -26,6 +27,7 @@ from .config import BROKER_HOST, BROKER_PORT, OPENBROWSER_API_KEYS_FILE, PUBLIC_
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .identities import redacted_status
+from .lease_control import LeaseControlError, complete_control_session, create_control_session, get_control_session
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 from .telemetry import TelemetryError, list_events, record_event, summary
@@ -69,6 +71,25 @@ class KeyboardTypeRequest(LeaseIdRequest):
 class KeyboardPressRequest(LeaseIdRequest):
     key: str
     selector: str | None = None
+
+
+class LeaseControlRequest(LeaseIdRequest):
+    owner: str = "agent"
+    ttl_seconds: int = Field(default=900, ge=60, le=3600)
+
+
+class MouseClickRequest(BaseModel):
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+
+
+class LeaseControlTypeRequest(BaseModel):
+    text: str = Field(max_length=4000)
+    delay_ms: int = Field(default=0, ge=0, le=1000)
+
+
+class LeaseControlPressRequest(BaseModel):
+    key: str = Field(min_length=1, max_length=80)
 
 
 class WaitRequest(LeaseIdRequest):
@@ -268,6 +289,7 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
             "type": "POST /openbrowser/v1/browser/type",
             "keyboard_type": "POST /openbrowser/v1/browser/keyboard-type",
             "keyboard_press": "POST /openbrowser/v1/browser/keyboard-press",
+            "lease_control_request": "POST /openbrowser/v1/lease-control/request",
             "wait": "POST /openbrowser/v1/browser/wait",
             "tabs": "POST /openbrowser/v1/browser/tabs",
             "new_tab": "POST /openbrowser/v1/browser/new-tab",
@@ -376,6 +398,13 @@ async def openbrowser_keyboard_type(request: KeyboardTypeRequest, _auth: str = D
 @app.post("/openbrowser/v1/browser/keyboard-press")
 async def openbrowser_keyboard_press(request: KeyboardPressRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
     return await browser_keyboard_press(request)
+
+
+@app.post("/openbrowser/v1/lease-control/request")
+async def openbrowser_lease_control_request(
+    request: LeaseControlRequest, _auth: str = Depends(require_openbrowser_api_key)
+) -> dict[str, Any]:
+    return await lease_control_request(request)
 
 
 @app.post("/openbrowser/v1/browser/wait")
@@ -619,6 +648,246 @@ async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any
     except Exception as error:
         _record_browser_failure(request, "keyboard-press", error, {"selector": request.selector, "key": request.key})
         raise _http_error(error) from error
+
+
+@app.post("/lease-control/request")
+async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
+    try:
+        lease_obj = require_lease(request.lease_id)
+        result = create_control_session(request.owner, lease_obj.lease_id, request.ttl_seconds)
+        _safe_record_event(
+            source=request.owner,
+            event_type="session",
+            message="Lease control session created",
+            lease_id=lease_obj.lease_id,
+            tags=["lease-control", "human-handoff"],
+            data={"slot": lease_obj.name, "identity_id": lease_obj.identity_id, "ttl_seconds": request.ttl_seconds},
+        )
+        return result
+    except Exception as error:
+        _safe_record_event(
+            source=request.owner,
+            event_type="error",
+            message="Lease control session failed",
+            severity="error",
+            lease_id=request.lease_id,
+            tags=["lease-control", "failure"],
+            data={"error": str(error)},
+        )
+        raise _http_error(error) from error
+
+
+def _control_html(token: str, session: dict[str, Any]) -> str:
+    safe_owner = html.escape(str(session.get("owner", "unknown")))
+    safe_lease_id = html.escape(str(session.get("lease_id", "")))
+    safe_token = html.escape(token, quote=True)
+    safe_expires_at = html.escape(str(session.get("expires_at", "")))
+    return f"""
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AX41 Browser Control</title>
+    <style>
+      :root {{ color-scheme: light; }}
+      body {{ font-family: system-ui, sans-serif; margin: 0; background: #f8fafc; color: #111827; }}
+      header {{ padding: 16px 20px; background: #111827; color: white; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
+      main {{ padding: 16px; max-width: 1280px; margin: 0 auto; }}
+      button {{ background: #111827; color: white; border: 0; padding: 9px 12px; border-radius: 6px; cursor: pointer; }}
+      input {{ padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 6px; min-width: min(520px, 70vw); }}
+      .muted {{ color: #64748b; }}
+      .panel {{ background: white; border: 1px solid #dbe3ef; border-radius: 8px; padding: 12px; margin: 14px 0; }}
+      .toolbar {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+      #screen {{ display: block; max-width: 100%; height: auto; border: 1px solid #cbd5e1; background: white; cursor: crosshair; }}
+      #status {{ font-size: 14px; color: #334155; min-height: 20px; }}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><b>Manual browser control</b><div>Owner: {safe_owner}</div></div>
+      <div>Lease: <code>{safe_lease_id}</code></div>
+    </header>
+    <main>
+      <div class="panel">
+        <div class="toolbar">
+          <button id="refresh" type="button">Refresh screenshot</button>
+          <form id="typeForm" class="toolbar">
+            <input id="text" autocomplete="off" placeholder="Text to type into focused field">
+            <button type="submit">Type</button>
+          </form>
+          <form id="pressForm" class="toolbar">
+            <input id="key" autocomplete="off" value="Enter" aria-label="Key">
+            <button type="submit">Press key</button>
+          </form>
+          <button id="done" type="button">End control link</button>
+        </div>
+        <p class="muted">Click the screenshot to send a coordinate click to the held browser tab. This is a human handoff view for login or challenge prompts; it does not expose session cookies or passwords.</p>
+        <div id="status">Expires at Unix time {safe_expires_at}</div>
+      </div>
+      <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
+    </main>
+    <script>
+      const token = {json.dumps(token)};
+      const screen = document.getElementById('screen');
+      const statusBox = document.getElementById('status');
+      const setStatus = (text) => {{ statusBox.textContent = text; }};
+      const refresh = () => {{ screen.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`; }};
+      document.getElementById('refresh').addEventListener('click', refresh);
+      screen.addEventListener('click', async (event) => {{
+        const rect = screen.getBoundingClientRect();
+        const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
+        const y = Math.round((event.clientY - rect.top) * screen.naturalHeight / rect.height);
+        setStatus(`Clicking ${{x}}, ${{y}}...`);
+        const response = await fetch(`/auth/lease-control/${{token}}/click`, {{
+          method: 'POST',
+          headers: {{'content-type': 'application/json'}},
+          body: JSON.stringify({{x, y}})
+        }});
+        setStatus(response.ok ? `Clicked ${{x}}, ${{y}}` : `Click failed: ${{await response.text()}}`);
+        setTimeout(refresh, 700);
+      }});
+      document.getElementById('typeForm').addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const text = document.getElementById('text').value;
+        setStatus('Typing...');
+        const response = await fetch(`/auth/lease-control/${{token}}/keyboard-type`, {{
+          method: 'POST',
+          headers: {{'content-type': 'application/json'}},
+          body: JSON.stringify({{text}})
+        }});
+        setStatus(response.ok ? 'Typed text into focused field' : `Type failed: ${{await response.text()}}`);
+        document.getElementById('text').value = '';
+        setTimeout(refresh, 700);
+      }});
+      document.getElementById('pressForm').addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const key = document.getElementById('key').value || 'Enter';
+        setStatus(`Pressing ${{key}}...`);
+        const response = await fetch(`/auth/lease-control/${{token}}/keyboard-press`, {{
+          method: 'POST',
+          headers: {{'content-type': 'application/json'}},
+          body: JSON.stringify({{key}})
+        }});
+        setStatus(response.ok ? `Pressed ${{key}}` : `Key failed: ${{await response.text()}}`);
+        setTimeout(refresh, 700);
+      }});
+      document.getElementById('done').addEventListener('click', async () => {{
+        const response = await fetch(`/auth/lease-control/${{token}}/complete`, {{method: 'POST'}});
+        setStatus(response.ok ? 'Control link ended' : `End failed: ${{await response.text()}}`);
+      }});
+    </script>
+  </body>
+</html>
+"""
+
+
+@app.get("/auth/lease-control/{token}", response_class=HTMLResponse)
+async def lease_control_portal(token: str) -> str:
+    try:
+        session = get_control_session(token)
+        require_lease(str(session["lease_id"]))
+        return _control_html(token, session)
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.get("/auth/lease-control/{token}/screenshot")
+async def lease_control_screenshot(token: str) -> Response:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.screenshot(lease_obj, False)
+        return Response(content=base64.b64decode(str(result["base64"])), media_type="image/png")
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/click")
+async def lease_control_click(token: str, request: MouseClickRequest) -> dict[str, Any]:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.mouse_click(lease_obj, request.x, request.y)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="browser_action",
+            message="Lease control click",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["lease-control", "click"],
+            data={"slot": lease_obj.name, "x": request.x, "y": request.y},
+        )
+        return result
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/keyboard-type")
+async def lease_control_keyboard_type(token: str, request: LeaseControlTypeRequest) -> dict[str, Any]:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.keyboard_type(lease_obj, request.text, None, request.delay_ms)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="browser_action",
+            message="Lease control keyboard type",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["lease-control", "keyboard", "type"],
+            data={"slot": lease_obj.name, "text_length": len(request.text), "delay_ms": request.delay_ms},
+        )
+        return result
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/keyboard-press")
+async def lease_control_keyboard_press(token: str, request: LeaseControlPressRequest) -> dict[str, Any]:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.keyboard_press(lease_obj, request.key, None)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="browser_action",
+            message="Lease control keyboard press",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["lease-control", "keyboard", "press"],
+            data={"slot": lease_obj.name, "key": request.key},
+        )
+        return result
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/complete")
+async def lease_control_complete(token: str) -> dict[str, Any]:
+    try:
+        session = complete_control_session(token)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="session",
+            message="Lease control session completed",
+            lease_id=str(session.get("lease_id")),
+            tags=["lease-control", "complete"],
+            data={"ttl_seconds": session.get("ttl_seconds")},
+        )
+        return session
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @app.post("/browser/wait")
