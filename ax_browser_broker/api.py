@@ -60,6 +60,17 @@ class TypeRequest(LeaseIdRequest):
     submit: bool = False
 
 
+class KeyboardTypeRequest(LeaseIdRequest):
+    text: str
+    selector: str | None = None
+    delay_ms: int = Field(default=0, ge=0, le=1000)
+
+
+class KeyboardPressRequest(LeaseIdRequest):
+    key: str
+    selector: str | None = None
+
+
 class WaitRequest(LeaseIdRequest):
     selector: str | None = None
     timeout_ms: int = Field(default=1000, ge=1, le=30000)
@@ -255,6 +266,8 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
             "screenshot": "POST /openbrowser/v1/browser/screenshot",
             "click": "POST /openbrowser/v1/browser/click",
             "type": "POST /openbrowser/v1/browser/type",
+            "keyboard_type": "POST /openbrowser/v1/browser/keyboard-type",
+            "keyboard_press": "POST /openbrowser/v1/browser/keyboard-press",
             "wait": "POST /openbrowser/v1/browser/wait",
             "tabs": "POST /openbrowser/v1/browser/tabs",
             "new_tab": "POST /openbrowser/v1/browser/new-tab",
@@ -353,6 +366,16 @@ async def openbrowser_click(request: ClickRequest, _auth: str = Depends(require_
 @app.post("/openbrowser/v1/browser/type")
 async def openbrowser_type(request: TypeRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
     return await browser_type(request)
+
+
+@app.post("/openbrowser/v1/browser/keyboard-type")
+async def openbrowser_keyboard_type(request: KeyboardTypeRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_keyboard_type(request)
+
+
+@app.post("/openbrowser/v1/browser/keyboard-press")
+async def openbrowser_keyboard_press(request: KeyboardPressRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return await browser_keyboard_press(request)
 
 
 @app.post("/openbrowser/v1/browser/wait")
@@ -531,7 +554,13 @@ async def browser_type(request: TypeRequest) -> dict[str, Any]:
             message="Browser type",
             lease_id=lease_obj.lease_id,
             tags=["browser", "type"],
-            data={"slot": lease_obj.name, "selector": request.selector, "submitted": request.submit, "text_length": len(request.text)},
+            data={
+                "slot": lease_obj.name,
+                "selector": request.selector,
+                "submitted": request.submit,
+                "text_length": len(request.text),
+                "keyboard": result.get("keyboard"),
+            },
         )
         return result
     except Exception as error:
@@ -541,6 +570,54 @@ async def browser_type(request: TypeRequest) -> dict[str, Any]:
             error,
             {"selector": request.selector, "submitted": request.submit, "text_length": len(request.text)},
         )
+        raise _http_error(error) from error
+
+
+@app.post("/browser/keyboard-type")
+async def browser_keyboard_type(request: KeyboardTypeRequest) -> dict[str, Any]:
+    try:
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.keyboard_type(lease_obj, request.text, request.selector, request.delay_ms)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser keyboard type",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "keyboard", "type"],
+            data={
+                "slot": lease_obj.name,
+                "selector": request.selector,
+                "text_length": len(request.text),
+                "delay_ms": request.delay_ms,
+            },
+        )
+        return result
+    except Exception as error:
+        _record_browser_failure(
+            request,
+            "keyboard-type",
+            error,
+            {"selector": request.selector, "text_length": len(request.text), "delay_ms": request.delay_ms},
+        )
+        raise _http_error(error) from error
+
+
+@app.post("/browser/keyboard-press")
+async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any]:
+    try:
+        lease_obj = require_lease(request.lease_id)
+        result = await controller.keyboard_press(lease_obj, request.key, request.selector)
+        _safe_record_event(
+            source=lease_obj.owner,
+            event_type="browser_action",
+            message="Browser keyboard press",
+            lease_id=lease_obj.lease_id,
+            tags=["browser", "keyboard", "press"],
+            data={"slot": lease_obj.name, "selector": request.selector, "key": request.key},
+        )
+        return result
+    except Exception as error:
+        _record_browser_failure(request, "keyboard-press", error, {"selector": request.selector, "key": request.key})
         raise _http_error(error) from error
 
 

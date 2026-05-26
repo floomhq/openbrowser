@@ -3,6 +3,21 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from ax_browser_broker import api, auth, feedback, telemetry
+from ax_browser_broker.pool import Lease
+
+
+def make_lease() -> Lease:
+    return Lease(
+        lease_id="lease-api",
+        name="pool-b",
+        port=9224,
+        owner="pytest",
+        created_at=1,
+        heartbeat_at=1,
+        expires_at=2,
+        cdp="http://127.0.0.1:9224",
+        profile_dir="/tmp/profile",
+    )
 
 
 def test_auth_portal_escapes_request_values(tmp_path, monkeypatch) -> None:
@@ -67,6 +82,8 @@ def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
     assert wrong.status_code == 401
     assert ok.status_code == 200
     assert ok.json()["service"] == "openbrowser"
+    assert ok.json()["endpoints"]["keyboard_type"] == "POST /openbrowser/v1/browser/keyboard-type"
+    assert ok.json()["endpoints"]["keyboard_press"] == "POST /openbrowser/v1/browser/keyboard-press"
 
 
 def test_openbrowser_identities_requires_key_and_returns_redacted_status(monkeypatch) -> None:
@@ -210,6 +227,74 @@ def test_browser_action_failure_records_telemetry(monkeypatch) -> None:
     assert events[0]["message"] == "Browser click failed"
     assert events[0]["lease_id"] == "missing-lease"
     assert events[0]["data"]["selector"] == "#submit"
+
+
+def test_browser_keyboard_type_endpoint_records_text_length_only(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    async def fake_keyboard_type(lease_obj, text, selector, delay_ms):
+        assert lease_obj == lease
+        assert text == "secret-ish message"
+        assert selector == "#editor"
+        assert delay_ms == 12
+        return {
+            "lease_id": lease_obj.lease_id,
+            "slot": lease_obj.name,
+            "selector": selector,
+            "typed": True,
+            "text_length": len(text),
+            "delay_ms": delay_ms,
+            "url": "https://example.com",
+        }
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "keyboard_type", fake_keyboard_type)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/browser/keyboard-type",
+        json={"lease_id": "lease-api", "selector": "#editor", "text": "secret-ish message", "delay_ms": 12},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["text_length"] == 18
+    assert events[0]["message"] == "Browser keyboard type"
+    assert events[0]["data"]["text_length"] == 18
+    assert "secret-ish message" not in str(events[0])
+
+
+def test_browser_keyboard_press_endpoint_records_key(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    async def fake_keyboard_press(lease_obj, key, selector):
+        assert lease_obj == lease
+        assert key == "Enter"
+        assert selector == "#editor"
+        return {
+            "lease_id": lease_obj.lease_id,
+            "slot": lease_obj.name,
+            "selector": selector,
+            "pressed": key,
+            "url": "https://example.com",
+        }
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "keyboard_press", fake_keyboard_press)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/browser/keyboard-press",
+        json={"lease_id": "lease-api", "selector": "#editor", "key": "Enter"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["pressed"] == "Enter"
+    assert events[0]["message"] == "Browser keyboard press"
+    assert events[0]["data"]["key"] == "Enter"
 
 
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:

@@ -93,8 +93,24 @@ def browser_click(lease_id: str, selector: str) -> dict[str, Any]:
 
 @mcp.tool()
 def browser_type(lease_id: str, selector: str, text: str, submit: bool = False) -> dict[str, Any]:
-    """Fill an element by CSS selector in a leased browser."""
+    """Fill an element by CSS selector in a leased browser. Rich-text textboxes use real keyboard events."""
     return _request("POST", "/browser/type", {"lease_id": lease_id, "selector": selector, "text": text, "submit": submit})
+
+
+@mcp.tool()
+def browser_keyboard_type(lease_id: str, text: str, selector: str | None = None, delay_ms: int = 0) -> dict[str, Any]:
+    """Type through real keyboard events. Use for Slack, Discord, Notion, Linear, X, and other rich-text editors."""
+    return _request(
+        "POST",
+        "/browser/keyboard-type",
+        {"lease_id": lease_id, "selector": selector, "text": text, "delay_ms": delay_ms},
+    )
+
+
+@mcp.tool()
+def browser_keyboard_press(lease_id: str, key: str, selector: str | None = None) -> dict[str, Any]:
+    """Press a real keyboard key such as Enter, Tab, Escape, ArrowDown, or Control+Enter."""
+    return _request("POST", "/browser/keyboard-press", {"lease_id": lease_id, "selector": selector, "key": key})
 
 
 @mcp.tool()

@@ -9,6 +9,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "steps": [
             "Call browser_lease with owner and optional identity_id.",
             "Use browser_navigate, browser_snapshot, browser_click, browser_type, and related tools with the returned lease_id.",
+            "For rich-text editors such as Discord, Slack, Notion, Linear, or X, use browser_keyboard_type and browser_keyboard_press, or browser_type submit=true on a rich-text textbox.",
             "Call browser_release when finished.",
         ],
         "examples": [
@@ -71,6 +72,7 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Use auth_request for login or password handoff.",
             "For Discord, use chrome-depontefede when Federico expects his normal personal browser; use discord-main only for a separate Discord-only profile.",
             "Use /root/ax-browser-broker/bin/ax-openbrowser when a task names OpenBrowser.",
+            "For chat/editor submission, prefer broker keyboard tools over DOM fill because modern editors maintain internal state.",
             "Never aim raw OpenBrowser or custom scripts directly at 9222, 9223, 9224, or 9225 for normal agent work.",
             "Raw pool CDP ports 9223, 9224, and 9225 belong to the broker lease manager.",
         ],

@@ -162,12 +162,57 @@ class BrowserController:
         await page.click(selector, timeout=10000)
         return {"lease_id": lease.lease_id, "slot": lease.name, "clicked": selector, "url": page.url}
 
+    async def _uses_rich_text_keyboard_path(self, page: Page, selector: str) -> bool:
+        return bool(
+            await page.locator(selector).evaluate(
+                """(el) => {
+                  const tag = el.tagName.toLowerCase();
+                  const role = el.getAttribute('role') || '';
+                  return !!el.isContentEditable || (role === 'textbox' && tag !== 'input' && tag !== 'textarea');
+                }"""
+            )
+        )
+
     async def type_text(self, lease: Lease, selector: str, text: str, submit: bool = False) -> dict[str, Any]:
         page = await self.page(lease)
-        await page.fill(selector, text, timeout=10000)
+        rich_text = await self._uses_rich_text_keyboard_path(page, selector)
+        if rich_text:
+            locator = page.locator(selector)
+            await locator.click(timeout=10000)
+            await page.keyboard.press("Control+A")
+            await page.keyboard.press("Backspace")
+            await page.keyboard.type(text)
+        else:
+            await page.fill(selector, text, timeout=10000)
         if submit:
-            await page.press(selector, "Enter")
-        return {"lease_id": lease.lease_id, "slot": lease.name, "typed": selector, "submitted": submit}
+            if rich_text:
+                await page.keyboard.press("Enter")
+            else:
+                await page.press(selector, "Enter")
+        return {"lease_id": lease.lease_id, "slot": lease.name, "typed": selector, "submitted": submit, "keyboard": rich_text}
+
+    async def keyboard_type(self, lease: Lease, text: str, selector: str | None = None, delay_ms: int = 0) -> dict[str, Any]:
+        page = await self.page(lease)
+        if selector:
+            await page.locator(selector).click(timeout=10000)
+        bounded_delay = max(0, min(int(delay_ms), 1000))
+        await page.keyboard.type(text, delay=bounded_delay)
+        return {
+            "lease_id": lease.lease_id,
+            "slot": lease.name,
+            "selector": selector,
+            "typed": True,
+            "text_length": len(text),
+            "delay_ms": bounded_delay,
+            "url": page.url,
+        }
+
+    async def keyboard_press(self, lease: Lease, key: str, selector: str | None = None) -> dict[str, Any]:
+        page = await self.page(lease)
+        if selector:
+            await page.locator(selector).click(timeout=10000)
+        await page.keyboard.press(key)
+        return {"lease_id": lease.lease_id, "slot": lease.name, "selector": selector, "pressed": key, "url": page.url}
 
     async def wait(self, lease: Lease, selector: str | None = None, timeout_ms: int = 1000) -> dict[str, Any]:
         page = await self.page(lease)

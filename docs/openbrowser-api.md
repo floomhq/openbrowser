@@ -122,6 +122,8 @@ curl -fsS "$BASE/auth/batch" \
 - `POST /browser/screenshot`
 - `POST /browser/click`
 - `POST /browser/type`
+- `POST /browser/keyboard-type`
+- `POST /browser/keyboard-press`
 - `POST /browser/wait`
 - `POST /browser/tabs`
 - `POST /browser/new-tab`
@@ -130,3 +132,23 @@ curl -fsS "$BASE/auth/batch" \
 ## Safety
 
 The API never exposes cookies, passwords, raw Discord tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
+
+## Rich-Text Editors
+
+Modern editors such as Discord, Slack, Notion, Linear, and X often ignore DOM value changes. Use real keyboard events for those surfaces:
+
+```bash
+curl -fsS "$BASE/browser/keyboard-type" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0" \
+  -H "content-type: application/json" \
+  -d "{\"lease_id\":\"$LEASE_ID\",\"selector\":\"div[role=\\\"textbox\\\"]\",\"text\":\"hello\"}"
+
+curl -fsS "$BASE/browser/keyboard-press" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0" \
+  -H "content-type: application/json" \
+  -d "{\"lease_id\":\"$LEASE_ID\",\"key\":\"Enter\"}"
+```
+
+`POST /browser/type` also detects contenteditable or non-input `role=textbox` elements and uses keyboard events automatically. On normal inputs and textareas it keeps the existing fill behavior.
