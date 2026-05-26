@@ -75,26 +75,40 @@ if [[ "${CHROME_DISABLE_SYNC:-1}" != "0" ]]; then
   SYNC_ARGS=(--disable-sync)
 fi
 
-nohup /usr/bin/google-chrome-stable \
-  --headless \
-  --user-data-dir="$PROFILE_DIR" \
-  --no-sandbox \
-  --disable-gpu \
-  --disable-gpu-sandbox \
-  --disable-dev-shm-usage \
-  --disable-extensions \
-  --disable-component-extensions-with-background-pages \
-  --remote-debugging-port="$PORT" \
-  --remote-debugging-address=127.0.0.1 \
-  --disable-background-timer-throttling \
-  --disable-renderer-backgrounding \
-  --disable-backgrounding-occluded-windows \
-  --no-first-run \
-  "${SYNC_ARGS[@]}" \
-  --lang="$CHROME_LANG" \
-  --window-size=1280,800 \
-  --window-position=0,0 \
-  --remote-allow-origins='*' \
-  "${PROXY_ARGS[@]}" \
-  >"$LOG" 2>&1 &
-echo $! > "/root/browser-pool/state/${NAME}.pid"
+(
+  if [[ -w "/proc/${BASHPID}/oom_score_adj" ]]; then
+    echo 300 >"/proc/${BASHPID}/oom_score_adj" || true
+  fi
+  exec /usr/bin/google-chrome-stable \
+    --headless \
+    --user-data-dir="$PROFILE_DIR" \
+    --no-sandbox \
+    --disable-gpu \
+    --disable-gpu-sandbox \
+    --disable-dev-shm-usage \
+    --disable-extensions \
+    --disable-component-extensions-with-background-pages \
+    --remote-debugging-port="$PORT" \
+    --remote-debugging-address=127.0.0.1 \
+    --disable-background-timer-throttling \
+    --disable-renderer-backgrounding \
+    --disable-backgrounding-occluded-windows \
+    --no-first-run \
+    "${SYNC_ARGS[@]}" \
+    --lang="$CHROME_LANG" \
+    --window-size=1280,800 \
+    --window-position=0,0 \
+    --remote-allow-origins='*' \
+    "${PROXY_ARGS[@]}"
+) >"$LOG" 2>&1 &
+CHROME_PID=$!
+echo "$CHROME_PID" > "/root/browser-pool/state/${NAME}.pid"
+if [[ -w "/proc/${CHROME_PID}/oom_score_adj" ]]; then
+  echo 300 >"/proc/${CHROME_PID}/oom_score_adj" || true
+fi
+sleep 0.5
+for CHILD_PID in $(pgrep -f -- "--user-data-dir=${PROFILE_DIR}" 2>/dev/null || true); do
+  if [[ -w "/proc/${CHILD_PID}/oom_score_adj" ]]; then
+    echo 300 >"/proc/${CHILD_PID}/oom_score_adj" || true
+  fi
+done

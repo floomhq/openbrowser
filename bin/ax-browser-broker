@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd /root/ax-browser-broker
+
+# Keep the broker API alive during host memory pressure. Browser children are
+# explicitly made more killable by launch_chrome.sh.
+if [[ -w "/proc/$$/oom_score_adj" ]]; then
+  echo -700 >"/proc/$$/oom_score_adj" || true
+fi
+
 exec python3 -m uvicorn ax_browser_broker.api:app --host 127.0.0.1 --port 8767
