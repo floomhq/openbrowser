@@ -8,9 +8,10 @@ from ax_browser_broker import pool
 
 
 @pytest.fixture(autouse=True)
-def three_slot_pool(monkeypatch):
+def three_slot_pool(tmp_path, monkeypatch):
     monkeypatch.setattr(pool, "SLOTS", pool.SLOTS[:3])
     monkeypatch.setattr(pool, "read_slot_config", lambda _slot_name: {})
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
 
 
 def test_status_shape() -> None:

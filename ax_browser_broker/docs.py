@@ -83,7 +83,7 @@ TOPICS: dict[str, dict[str, Any]] = {
     "identities": {
         "title": "Identities",
         "facts": [
-            "linkedin-main is pinned to pool-c.",
+            "linkedin-main is pinned to the configured dedicated slot.",
             "linkedin-main uses /root/browser-pool/profiles/linkedin-main.",
             "linkedin-main routes Chrome through local proxy http://127.0.0.1:18803.",
             "Identity leases are exclusive; a second lease for the same identity returns a conflict.",
