@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import sqlite3
 import subprocess
 import threading
 import time
@@ -141,6 +142,37 @@ def _identity_profile_for_slot(identity_id: str, identity: Any, slot: Slot, exis
     return str(identity.profile_dir)
 
 
+def _profile_cookie_score(profile_dir: Path) -> int:
+    score = 0
+    for relative in ("Default/Cookies", "Default/Network/Cookies"):
+        db_path = profile_dir / relative
+        if not db_path.exists():
+            continue
+        try:
+            connection = sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True, timeout=1)
+            try:
+                row = connection.execute("select count(*), count(distinct host_key) from cookies").fetchone()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            continue
+        if row:
+            score += int(row[0] or 0) + int(row[1] or 0)
+    return score
+
+
+def _ordered_slots_for_identity(identity_id: str, identity: Any) -> list[Slot]:
+    def sort_key(slot: Slot) -> tuple[int, int, int]:
+        active_identity = active_identity_id(slot.name)
+        if active_identity != identity_id:
+            return (1, 0, slot.port)
+        profile_dir = read_slot_config(slot.name).get("PROFILE_DIR")
+        score = _profile_cookie_score(Path(profile_dir)) if profile_dir else 0
+        return (0, -score, slot.port)
+
+    return sorted(SLOTS, key=sort_key)
+
+
 def _is_replica_profile(profile_dir: str | None) -> bool:
     if not profile_dir:
         return False
@@ -168,7 +200,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
         in_use = {str(item["name"]) for item in state["leases"].values()}
         identities = load_identities()
         reclaimable_slots: list[Slot] = []
-        for slot in SLOTS:
+        slots = _ordered_slots_for_identity(identity_id, identity) if identity_id and identity else list(SLOTS)
+        for slot in slots:
             if allowed_slot and slot.name != allowed_slot:
                 continue
             if slot.name in in_use:
@@ -187,7 +220,6 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
             if identity_id and (
                 active_identity != identity_id
                 or not healthy(slot.port)
-                or (identity_lease_count > 0 and _is_replica_profile(identity_profile_dir))
             ):
                 activate_identity(
                     identity_id,

@@ -180,6 +180,49 @@ def test_parallel_identity_leases_use_replica_profile(tmp_path, monkeypatch) -> 
         pool.release(second.lease_id)
 
 
+def test_identity_lease_prefers_warm_active_replica_without_resync(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-one", "pool-b": "chrome-one", "pool-c": None}
+    profile_dirs = {
+        "pool-a": tmp_path / "canonical",
+        "pool-b": tmp_path / "replica-b",
+    }
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = tmp_path / "canonical"
+        proxy_ref = None
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(
+        pool,
+        "read_slot_config",
+        lambda slot_name: {"PROFILE_DIR": str(profile_dirs[slot_name])} if slot_name in profile_dirs else {},
+    )
+    monkeypatch.setattr(pool, "_profile_cookie_score", lambda path: 50 if path == tmp_path / "replica-b" else 2)
+    monkeypatch.setattr(pool, "activate_identity", lambda *args, **kwargs: activations.append((args, kwargs)))
+
+    first = pool.lease("parallel-1", identity_id="chrome-one")
+    second = pool.lease("parallel-2", identity_id="chrome-one")
+    try:
+        assert first.name == "pool-b"
+        assert first.profile_dir == str(tmp_path / "replica-b")
+        assert second.name == "pool-a"
+        assert second.profile_dir == str(tmp_path / "canonical")
+        assert activations == []
+    finally:
+        pool.release(first.lease_id)
+        pool.release(second.lease_id)
+
+
 def test_parallel_identity_limit_is_enforced(tmp_path, monkeypatch) -> None:
     active = {"pool-a": None, "pool-b": None, "pool-c": None}
 
@@ -218,7 +261,7 @@ def test_parallel_identity_limit_is_enforced(tmp_path, monkeypatch) -> None:
         pool.release(second.lease_id)
 
 
-def test_warm_replica_slot_is_refreshed_before_parallel_lease(tmp_path, monkeypatch) -> None:
+def test_warm_replica_slot_is_reused_without_destructive_refresh(tmp_path, monkeypatch) -> None:
     active = {"pool-a": "chrome-one", "pool-b": "chrome-one", "pool-c": None}
     activations = []
 
@@ -254,16 +297,7 @@ def test_warm_replica_slot_is_refreshed_before_parallel_lease(tmp_path, monkeypa
     try:
         assert canonical.name == "pool-a"
         assert replica.name == "pool-b"
-        assert activations == [
-            (
-                "chrome-one",
-                "pool-b",
-                {
-                    "profile_dir_override": tmp_path / "replicas" / "pool-b",
-                    "clear_existing": False,
-                },
-            )
-        ]
+        assert activations == []
     finally:
         pool.release(canonical.lease_id)
         pool.release(replica.lease_id)
