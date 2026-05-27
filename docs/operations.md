@@ -141,6 +141,14 @@ The broker records lease lifecycle, browser actions, auth requests, auth complet
 Browser API failures emit `error` telemetry with the action name and lease id. OpenBrowser and browser-use wrappers emit adapter start, completion, failure, duration, and exit-code telemetry.
 Messages, URLs, tags, and string values are redacted for common secret-shaped strings before storage; browser typing records text length only.
 
+### Feedback Rules For Agents
+
+Use telemetry only for expected negative test cases, app-level validation failures, missing product content, or one-off selector misses during product QA.
+
+File a feedback issue when the browser service, lease manager, identity/proxy activation, auth handoff, upload, screenshot, keyboard, or adapter layer blocks the task. Also file a feedback issue when the same browser action fails repeatedly and the agent cannot complete the workflow by changing selectors, waiting, or taking a screenshot for evidence.
+
+Every filed issue must include `source`, `severity`, a concise title, reproduction details, and `lease_id` when available. Do not include cookies, passwords, proxy credentials, API keys, or typed message text.
+
 ## Agent Usage Audit
 
 Run:
@@ -161,7 +169,7 @@ The audit combines:
 - Claude session JSONL under `/root/.claude/projects`
 - Codex history and TUI logs under `/root/.codex`
 
-Findings include direct CDP mentions, active leases, missing release telemetry, open issues, and broker failure mentions without issue reports.
+Findings include direct CDP mentions, active leases, missing terminal release/expiry telemetry, open issues, and broker error telemetry without issue reports.
 Audit JSON includes `issue_log_contexts` for direct issue-specific session-log snippets by issue id, source, lease id, title, and tags. Check those snippets before resolving browser-tool issues.
 
 After a routing cleanup, baseline the already-reviewed historical raw-CDP findings once:

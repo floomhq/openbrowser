@@ -160,6 +160,9 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Call feedback_update_issue to resolve or annotate an issue.",
             "Issue reports automatically write linked telemetry events.",
             "Adapter wrappers file an issue automatically when OpenBrowser or browser-use exits nonzero.",
+            "Do not file issues for ordinary expected assertion failures, missing app content, or one-off selector misses during product QA.",
+            "File an issue when the browser service, lease manager, identity/proxy activation, auth handoff, upload, screenshot, keyboard, or adapter layer blocks the task.",
+            "File an issue when the same browser action fails repeatedly and the agent cannot complete the workflow by changing selectors or waiting.",
             "Audit output includes issue_log_contexts with direct issue-specific session-log snippets matched by issue id, source, lease, title, or tags.",
         ],
     },
@@ -167,6 +170,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "title": "Telemetry",
         "steps": [
             "Call telemetry_record_event for structured session evidence, smoke-test results, and non-issue observations.",
+            "Use telemetry-only records for expected negative test cases and normal app-level validation failures.",
             "Use event_type values: auth, browser_action, docs, error, feedback, issue, lease, profile, proxy, session, smoke.",
             "Use severity values: info, warning, error, critical.",
             "Filter with telemetry_list_events by source, event_type, severity, lease_id, or issue_id.",

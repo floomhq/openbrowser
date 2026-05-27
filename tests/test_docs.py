@@ -25,6 +25,9 @@ def test_docs_topics_and_quickstart() -> None:
 
     auth = docs("auth")
     assert any("temporary VNC password file is removed" in item for item in auth["steps"])
+    feedback = docs("feedback")
+    assert any("Do not file issues" in item for item in feedback["steps"])
+    assert any("blocks the task" in item for item in feedback["steps"])
 
     routing = docs("routing")
     assert routing["topic"] == "routing"

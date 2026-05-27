@@ -134,6 +134,8 @@ curl -fsS "$BASE/auth/batch" \
 
 The API never exposes cookies, passwords, raw Discord tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
 
+Use telemetry-only records for expected negative test cases and normal app validation failures. File feedback issues for broker, identity/proxy, auth handoff, upload, screenshot, keyboard, or adapter failures that block the task.
+
 ## Active Lease Human Control
 
 If a leased headless browser hits a prompt that must be handled in the current tab, create a short-lived manual control link:
