@@ -52,8 +52,8 @@ Chrome pool: pool-a, pool-b, pool-c, ...
 ### Python
 
 ```bash
-git clone https://github.com/federicodeponte/ax-browser-broker.git openbrowser-broker
-cd openbrowser-broker
+git clone https://github.com/floomhq/openbrowser.git
+cd openbrowser
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
@@ -71,8 +71,8 @@ openbrowser-broker
 ### Docker
 
 ```bash
-git clone https://github.com/federicodeponte/ax-browser-broker.git openbrowser-broker
-cd openbrowser-broker
+git clone https://github.com/floomhq/openbrowser.git
+cd openbrowser
 OPENBROWSER_API_KEYS="$(openssl rand -base64 48)" docker compose up --build
 ```
 

@@ -34,9 +34,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/federicodeponte/ax-browser-broker"
-Documentation = "https://github.com/federicodeponte/ax-browser-broker#readme"
-Issues = "https://github.com/federicodeponte/ax-browser-broker/issues"
+Homepage = "https://github.com/floomhq/openbrowser"
+Documentation = "https://github.com/floomhq/openbrowser#readme"
+Issues = "https://github.com/floomhq/openbrowser/issues"
 
 [project.scripts]
 openbrowser-broker = "ax_browser_broker.api:main"
