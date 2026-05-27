@@ -111,6 +111,8 @@ curl -fsS "$BASE/auth/batch" \
 - `GET /docs`
 - `GET /identities`
 - `GET /auth/status`
+- `GET /audit`
+- `GET /profiles/status`
 - `POST /auth/request`
 - `POST /auth/batch`
 - `POST /leases`
@@ -129,6 +131,33 @@ curl -fsS "$BASE/auth/batch" \
 - `POST /browser/tabs`
 - `POST /browser/new-tab`
 - `POST /browser/switch-tab`
+- `GET /feedback/issues`
+- `POST /feedback/issues`
+- `POST /feedback/issues/{issue_id}`
+- `POST /telemetry/events`
+- `GET /telemetry/events`
+- `GET /telemetry/summary`
+
+## Remote MCP
+
+Agents on other machines can use the same public API through a stdio MCP server:
+
+```json
+{
+  "mcpServers": {
+    "openbrowser-remote": {
+      "command": "python3",
+      "args": ["-m", "ax_browser_broker.remote_mcp_server"],
+      "env": {
+        "OPENBROWSER_API_KEY": "<OPENBROWSER_API_KEY>",
+        "OPENBROWSER_BASE_URL": "https://openbrowser-auth.floom.dev/openbrowser/v1"
+      }
+    }
+  }
+}
+```
+
+The remote MCP exposes browser leasing/actions, auth handoff, profile status, feedback issue reporting, telemetry, and audit tools. It is a client-side MCP process: the agent launches it locally, and it calls the Cloudflare-backed OpenBrowser API with bearer auth.
 
 ## Safety
 

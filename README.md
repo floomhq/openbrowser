@@ -6,6 +6,7 @@ Local browser automation broker for AX41 agents.
 
 - API: `http://127.0.0.1:8767`
 - MCP stdio command: `/root/ax-browser-broker/bin/ax-browser-mcp`
+- Remote MCP stdio command: `/root/ax-browser-broker/bin/ax-openbrowser-remote-mcp`
 - Pool slots: `9223` through `9230` (`pool-a` through `pool-h`)
 
 ## Core flow
@@ -48,6 +49,7 @@ Use `auth_request(..., identity_id="chrome-...")` once per imported identity to 
 /root/ax-browser-broker/bin/ax-openbrowser status --format json
 /root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status
 /root/ax-browser-broker/bin/ax-browser-mcp
+OPENBROWSER_API_KEY=... /root/ax-browser-broker/bin/ax-openbrowser-remote-mcp
 ```
 
 ## Verification
@@ -97,6 +99,27 @@ https://openbrowser-auth.floom.dev/openbrowser/v1
 Use it from any trusted machine with `Authorization: Bearer <OPENBROWSER_API_KEY>`. It supports leases, navigation, snapshots, screenshots, tabs, clicks, typing, waits, and one-shot `open` calls. See `docs/openbrowser-api.md`.
 Logged-in Chrome identities can also opt into controlled parallel sessions with `policy.max_parallel_sessions`. Parallel identity leases use per-slot profile replicas under `/root/browser-pool/profiles/.replicas/`, so Chrome profile locks do not block separate agents.
 Issue title, details, URL, tags, and notes are sanitized before storage.
+
+## Remote MCP
+
+External agents can use OpenBrowser as a normal stdio MCP server without SSH access to AX41. The remote MCP process runs wherever the agent runs and proxies tool calls to the public OpenBrowser API:
+
+```json
+{
+  "mcpServers": {
+    "openbrowser-remote": {
+      "command": "python3",
+      "args": ["-m", "ax_browser_broker.remote_mcp_server"],
+      "env": {
+        "OPENBROWSER_API_KEY": "<OPENBROWSER_API_KEY>",
+        "OPENBROWSER_BASE_URL": "https://openbrowser-auth.floom.dev/openbrowser/v1"
+      }
+    }
+  }
+}
+```
+
+Remote MCP tools include browser leasing/actions, auth handoff, profile status, feedback issues, telemetry, and audit. The remote MCP never returns raw cookies, passwords, proxy credentials, or VNC passwords.
 
 Agents can record and inspect telemetry through MCP:
 

@@ -278,6 +278,8 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
             "auth_request": "POST /openbrowser/v1/auth/request",
             "auth_batch": "POST /openbrowser/v1/auth/batch",
             "auth_status": "GET /openbrowser/v1/auth/status",
+            "audit": "GET /openbrowser/v1/audit",
+            "profile_status": "GET /openbrowser/v1/profiles/status",
             "lease": "POST /openbrowser/v1/leases",
             "release": "POST /openbrowser/v1/leases/{lease_id}/release",
             "heartbeat": "POST /openbrowser/v1/leases/{lease_id}/heartbeat",
@@ -294,6 +296,12 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
             "tabs": "POST /openbrowser/v1/browser/tabs",
             "new_tab": "POST /openbrowser/v1/browser/new-tab",
             "switch_tab": "POST /openbrowser/v1/browser/switch-tab",
+            "feedback_list_issues": "GET /openbrowser/v1/feedback/issues",
+            "feedback_report_issue": "POST /openbrowser/v1/feedback/issues",
+            "feedback_update_issue": "POST /openbrowser/v1/feedback/issues/{issue_id}",
+            "telemetry_record_event": "POST /openbrowser/v1/telemetry/events",
+            "telemetry_list_events": "GET /openbrowser/v1/telemetry/events",
+            "telemetry_summary": "GET /openbrowser/v1/telemetry/summary",
         },
         "identities": {
             "generic": "omit identity_id for a neutral non-account browser",
@@ -311,6 +319,16 @@ async def openbrowser_identities(_auth: str = Depends(require_openbrowser_api_ke
 @app.get("/openbrowser/v1/auth/status")
 async def openbrowser_auth_status(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
     return await auth_status()
+
+
+@app.get("/openbrowser/v1/audit")
+async def openbrowser_audit(hours: int = 24, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return run_audit(hours)
+
+
+@app.get("/openbrowser/v1/profiles/status")
+async def openbrowser_profiles_status(_auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    return profile_status()
 
 
 @app.post("/openbrowser/v1/auth/request")
@@ -425,6 +443,61 @@ async def openbrowser_new_tab(request: NewTabRequest, _auth: str = Depends(requi
 @app.post("/openbrowser/v1/browser/switch-tab")
 async def openbrowser_switch_tab(request: SwitchTabRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
     return await browser_switch_tab(request)
+
+
+@app.get("/openbrowser/v1/feedback/issues")
+async def openbrowser_feedback_issues(
+    status: str = "open",
+    limit: int = 50,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await feedback_issues(status, limit)
+
+
+@app.post("/openbrowser/v1/feedback/issues")
+async def openbrowser_feedback_create_issue(
+    request: FeedbackIssueRequest,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await feedback_create_issue(request)
+
+
+@app.post("/openbrowser/v1/feedback/issues/{issue_id}")
+async def openbrowser_feedback_update(
+    issue_id: str,
+    request: FeedbackUpdateRequest,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await feedback_update(issue_id, request)
+
+
+@app.post("/openbrowser/v1/telemetry/events")
+async def openbrowser_telemetry_create_event(
+    request: TelemetryEventRequest,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await telemetry_create_event(request)
+
+
+@app.get("/openbrowser/v1/telemetry/events")
+async def openbrowser_telemetry_events(
+    source: str | None = None,
+    event_type: str | None = None,
+    severity: str | None = None,
+    lease_id: str | None = None,
+    issue_id: str | None = None,
+    limit: int = 100,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await telemetry_events(source, event_type, severity, lease_id, issue_id, limit)
+
+
+@app.get("/openbrowser/v1/telemetry/summary")
+async def openbrowser_telemetry_summary(
+    window_seconds: int = 86400,
+    _auth: str = Depends(require_openbrowser_api_key),
+) -> dict[str, Any]:
+    return await telemetry_summary(window_seconds)
 
 
 @app.post("/lease")

@@ -170,6 +170,76 @@ def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
     ]
 
 
+def test_openbrowser_ops_endpoints_are_protected(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "run_audit", lambda hours=24: {"score": 100, "window_hours": hours})
+    monkeypatch.setattr(api, "profile_status", lambda: {"profiles": {"count": 1}})
+    client = TestClient(api.app)
+
+    missing_audit = client.get("/openbrowser/v1/audit")
+    ok_audit = client.get(
+        "/openbrowser/v1/audit?hours=2",
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    ok_profiles = client.get(
+        "/openbrowser/v1/profiles/status",
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert missing_audit.status_code == 401
+    assert ok_audit.status_code == 200
+    assert ok_audit.json() == {"score": 100, "window_hours": 2}
+    assert ok_profiles.json()["profiles"]["count"] == 1
+
+
+def test_openbrowser_feedback_and_telemetry_are_protected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(feedback, "ISSUE_STATE_FILE", tmp_path / "issues.json")
+    monkeypatch.setattr(telemetry, "TELEMETRY_STATE_FILE", tmp_path / "telemetry.jsonl")
+    client = TestClient(api.app)
+
+    missing_issue = client.post(
+        "/openbrowser/v1/feedback/issues",
+        json={"source": "pytest", "title": "Blocked", "details": "Browser failed."},
+    )
+    created_issue = client.post(
+        "/openbrowser/v1/feedback/issues",
+        json={"source": "pytest", "title": "Blocked", "details": "Browser failed."},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    issue_id = created_issue.json()["id"]
+    listed = client.get(
+        "/openbrowser/v1/feedback/issues?status=open",
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    updated = client.post(
+        f"/openbrowser/v1/feedback/issues/{issue_id}",
+        json={"status": "resolved", "note": "Verified"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    event = client.post(
+        "/openbrowser/v1/telemetry/events",
+        json={"source": "pytest", "event_type": "smoke", "message": "Remote MCP smoke", "data": {"token": "secret"}},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    events = client.get(
+        "/openbrowser/v1/telemetry/events?event_type=smoke",
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+    summary = client.get(
+        "/openbrowser/v1/telemetry/summary",
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert missing_issue.status_code == 401
+    assert created_issue.status_code == 200
+    assert listed.json()["count"] == 1
+    assert updated.json()["status"] == "resolved"
+    assert event.json()["data"]["token"] == "[redacted]"
+    assert events.json()["count"] == 1
+    assert summary.json()["by_event_type"]["smoke"] == 1
+
+
 def test_openbrowser_open_releases_lease_on_navigation_failure(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     released = []
