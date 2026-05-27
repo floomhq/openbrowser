@@ -1,0 +1,70 @@
+<svg width="1200" height="620" viewBox="0 0 1200 620" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">OpenBrowser architecture</title>
+  <desc id="desc">AI agents connect through MCP or the remote API to the OpenBrowser Broker, which manages leases, identities, proxy routing, human auth, telemetry, feedback, audits, and isolated Chrome slots.</desc>
+  <rect width="1200" height="620" rx="28" fill="#0E1116"/>
+  <rect x="36" y="36" width="1128" height="548" rx="22" fill="#151A22" stroke="#2A3340"/>
+
+  <text x="70" y="92" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="700">OpenBrowser</text>
+  <text x="70" y="124" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16">Leased browser infrastructure for AI agents</text>
+
+  <g>
+    <rect x="70" y="180" width="230" height="120" rx="14" fill="#202938" stroke="#3D4B5E"/>
+    <text x="96" y="222" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="700">Agents</text>
+    <text x="96" y="254" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">Claude, Codex, Cursor</text>
+    <text x="96" y="278" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">browser-use, workers</text>
+  </g>
+
+  <g>
+    <rect x="390" y="154" width="300" height="172" rx="16" fill="#1B2A41" stroke="#4C84D8"/>
+    <text x="424" y="204" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="24" font-weight="700">OpenBrowser Broker</text>
+    <text x="424" y="238" fill="#B9D2FF" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">MCP + HTTPS API</text>
+    <text x="424" y="266" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="15">lease, act, release, report</text>
+  </g>
+
+  <g>
+    <rect x="790" y="96" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
+    <text x="820" y="132" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Persistent identities</text>
+    <text x="820" y="158" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">profiles, cookies, replicas</text>
+
+    <rect x="790" y="214" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
+    <text x="820" y="250" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Proxy routing</text>
+    <text x="820" y="276" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">per-identity exit policy</text>
+
+    <rect x="790" y="332" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
+    <text x="820" y="368" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Human auth</text>
+    <text x="820" y="394" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">login, 2FA, passkeys, control links</text>
+
+    <rect x="790" y="450" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
+    <text x="820" y="486" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Telemetry and audits</text>
+    <text x="820" y="512" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">feedback issues, session evidence</text>
+  </g>
+
+  <g>
+    <rect x="210" y="404" width="140" height="84" rx="14" fill="#163528" stroke="#3BAA78"/>
+    <text x="244" y="438" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">pool-a</text>
+    <text x="232" y="464" fill="#A8DCC4" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Chrome CDP</text>
+
+    <rect x="380" y="404" width="140" height="84" rx="14" fill="#163528" stroke="#3BAA78"/>
+    <text x="414" y="438" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">pool-b</text>
+    <text x="402" y="464" fill="#A8DCC4" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Chrome CDP</text>
+
+    <rect x="550" y="404" width="140" height="84" rx="14" fill="#163528" stroke="#3BAA78"/>
+    <text x="584" y="438" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="16" font-weight="700">pool-c</text>
+    <text x="572" y="464" fill="#A8DCC4" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="13">Chrome CDP</text>
+  </g>
+
+  <path d="M300 240 H380" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M372 232 L388 240 L372 248" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M690 196 C732 144 744 140 790 140" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M690 240 H790" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M690 284 C732 352 744 376 790 376" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M690 312 C732 450 744 494 790 494" stroke="#7AA7F7" stroke-width="3" stroke-linecap="round"/>
+
+  <path d="M540 326 V392" stroke="#43D19E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M532 384 L540 400 L548 384" stroke="#43D19E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M540 374 C480 392 374 392 280 404" stroke="#43D19E" stroke-width="3" stroke-linecap="round"/>
+  <path d="M540 374 C558 392 594 392 620 404" stroke="#43D19E" stroke-width="3" stroke-linecap="round"/>
+
+  <text x="70" y="548" fill="#7F8C9B" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">One contract for agents: lease a browser, use it safely, release it, and leave an audit trail.</text>
+</svg>

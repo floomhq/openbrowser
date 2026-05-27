@@ -3,11 +3,14 @@ set -euo pipefail
 
 NAME="${1:?name}"
 PORT="${2:?port}"
-CONFIG_FILE="/root/browser-pool/config/${NAME}.env"
-PROFILE_DIR="/root/browser-pool/profiles/${NAME}"
-LOG="/root/browser-pool/logs/${NAME}.log"
-MAINTENANCE_FILE="/root/browser-pool/state/maintenance/${NAME}.json"
-PROXY_PID_FILE="/root/browser-pool/state/${NAME}.proxy.pid"
+BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/root/browser-pool}"
+BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/root/ax-browser-broker}"
+CHROME_BIN="${OPENBROWSER_CHROME_BIN:-/usr/bin/google-chrome-stable}"
+CONFIG_FILE="${BROWSER_POOL_DIR}/config/${NAME}.env"
+PROFILE_DIR="${BROWSER_POOL_DIR}/profiles/${NAME}"
+LOG="${BROWSER_POOL_DIR}/logs/${NAME}.log"
+MAINTENANCE_FILE="${BROWSER_POOL_DIR}/state/maintenance/${NAME}.json"
+PROXY_PID_FILE="${BROWSER_POOL_DIR}/state/${NAME}.proxy.pid"
 PROXY_ARGS=()
 SYNC_ARGS=()
 CHROME_LANG="en-US"
@@ -17,7 +20,7 @@ if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
 fi
 
-mkdir -p "$PROFILE_DIR" /root/browser-pool/logs /root/browser-pool/state
+mkdir -p "$PROFILE_DIR" "${BROWSER_POOL_DIR}/logs" "${BROWSER_POOL_DIR}/state"
 if [[ -f "$MAINTENANCE_FILE" ]]; then
   if python3 - "$MAINTENANCE_FILE" <<'PY'
 import json
@@ -61,7 +64,7 @@ sleep 1
 
 if [[ -n "${PROXY_REF:-}" ]]; then
   PROXY_LOCAL_PORT="${PROXY_LOCAL_PORT:-18801}"
-  nohup /root/ax-browser-broker/bin/ax-proxy-forwarder \
+  nohup "${BROKER_ROOT}/bin/ax-proxy-forwarder" \
     --proxy-ref "$PROXY_REF" \
     --listen-host 127.0.0.1 \
     --listen-port "$PROXY_LOCAL_PORT" \
@@ -79,7 +82,7 @@ fi
   if [[ -w "/proc/${BASHPID}/oom_score_adj" ]]; then
     echo 300 >"/proc/${BASHPID}/oom_score_adj" || true
   fi
-  exec /usr/bin/google-chrome-stable \
+  exec "$CHROME_BIN" \
     --headless \
     --user-data-dir="$PROFILE_DIR" \
     --no-sandbox \
@@ -102,7 +105,7 @@ fi
     "${PROXY_ARGS[@]}"
 ) >"$LOG" 2>&1 &
 CHROME_PID=$!
-echo "$CHROME_PID" > "/root/browser-pool/state/${NAME}.pid"
+echo "$CHROME_PID" > "${BROWSER_POOL_DIR}/state/${NAME}.pid"
 if [[ -w "/proc/${CHROME_PID}/oom_score_adj" ]]; then
   echo 300 >"/proc/${CHROME_PID}/oom_score_adj" || true
 fi

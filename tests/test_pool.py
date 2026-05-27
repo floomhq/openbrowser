@@ -126,14 +126,14 @@ def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch
 
 
 def test_generic_lease_does_not_reclaim_personal_non_proxy_identity(tmp_path, monkeypatch) -> None:
-    active = {"pool-a": "chrome-work", "pool-b": None, "pool-c": "discord-main"}
+    active = {"pool-a": "chrome-work", "pool-b": None, "pool-c": "chat-main"}
 
     class Identity:
         proxy_ref = None
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
-    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-work": Identity(), "discord-main": Identity()})
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-work": Identity(), "chat-main": Identity()})
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     neutral = pool.lease("neutral-task")

@@ -2,6 +2,18 @@
 
 OpenBrowser Broker exposes a bearer-token protected API for remote browser automation. It uses the same leased browser pool, identities, auth handoff, telemetry, feedback issues, and audit system as the MCP server.
 
+```mermaid
+flowchart LR
+  Remote["Remote agent or worker"] -->|HTTPS + bearer token| API["/openbrowser/v1"]
+  API --> Lease["Lease lifecycle"]
+  API --> Browser["Browser actions"]
+  API --> Auth["Human auth handoff"]
+  API --> Observability["Telemetry, feedback, audit"]
+  Lease --> Chrome["Broker-managed Chrome pool"]
+  Browser --> Chrome
+  Auth --> Chrome
+```
+
 Base URL:
 
 ```text
@@ -19,6 +31,21 @@ Keys are loaded from `OPENBROWSER_API_KEYS`, `AX_OPENBROWSER_API_KEYS`, or `secr
 Use a normal API client user agent such as `openbrowser-client/1.0`, `curl`, or your app's own product user agent.
 
 ## Core Flow
+
+```mermaid
+sequenceDiagram
+  participant Client as API client
+  participant API as OpenBrowser API
+  participant Slot as Chrome slot
+  Client->>API: POST /leases
+  API-->>Client: lease_id
+  Client->>API: POST /browser/navigate
+  API->>Slot: navigate over CDP
+  Client->>API: POST /browser/snapshot
+  API-->>Client: structured page state
+  Client->>API: POST /leases/{lease_id}/release
+  API->>API: record telemetry
+```
 
 ```bash
 BASE=https://browser.example.com/openbrowser/v1
@@ -75,6 +102,17 @@ Pass `identity_id` only when account state or proxy routing is required.
 Generic leases never expose personal profile state. If all neutral slots are busy, the allocator can recycle an idle identity slot back to its neutral pool profile, then reactivate the identity on demand later.
 
 Identity capacity is controlled by `policy.max_parallel_sessions` in `config/identities.local.json`. When a Chrome identity allows more than one session, the first lease uses the canonical logged-in profile and later parallel leases use per-slot replicas under `profiles/.replicas/<identity>/<slot>`. This avoids Chrome profile-lock conflicts while keeping the original logged-in profile intact.
+
+```mermaid
+flowchart TD
+  Request["POST /leases identity_id=work-main"] --> Policy["Identity policy"]
+  Policy -->|first lease| Canonical["Canonical profile"]
+  Policy -->|parallel lease| Replica["Per-slot replica"]
+  Policy -->|proxy_ref set| Proxy["Local proxy forwarder"]
+  Canonical --> Chrome["Chrome slot"]
+  Replica --> Chrome
+  Proxy --> Chrome
+```
 
 List available identities:
 

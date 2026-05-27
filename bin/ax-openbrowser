@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export OPENBROWSER_CLI="${OPENBROWSER_CLI:-node /root/openbrowser/dist/index.js}"
+export OPENBROWSER_CLI="${OPENBROWSER_CLI:-openbrowser}"
 exec python3 -m ax_browser_broker.adapters openbrowser "$@"

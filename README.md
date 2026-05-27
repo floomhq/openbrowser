@@ -1,8 +1,30 @@
-# OpenBrowser Broker
+# OpenBrowser
 
-Open-source browser automation infrastructure for AI agents: a browser pool, persistent Chrome profiles, proxy-aware identities, human login handoff, a remote API, and MCP tools.
+[![CI](https://github.com/floomhq/openbrowser/actions/workflows/ci.yml/badge.svg)](https://github.com/floomhq/openbrowser/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](pyproject.toml)
+[![MCP](https://img.shields.io/badge/MCP-ready-black.svg)](docs/browser-routing.md)
+[![Remote API](https://img.shields.io/badge/API-remote%20browser%20control-purple.svg)](docs/openbrowser-api.md)
 
-OpenBrowser Broker lets Claude, Codex, Cursor, browser-use, OpenBrowser, and custom agents share real Chrome browsers without fighting over one CDP port. Agents lease isolated browser sessions, use persisted profiles when account state is needed, route selected identities through proxies, hand login challenges to a human, and leave behind telemetry plus issue reports that can be audited later.
+OpenBrowser is browser infrastructure for AI agents: isolated Chrome sessions, persistent profiles, proxy-aware identities, human login handoff, a remote API, and MCP tools.
+
+It lets Claude, Codex, Cursor, browser-use, OpenBrowser-style agents, and custom workers share real Chrome browsers without fighting over one CDP port. Agents lease a browser, use a named profile when account state is needed, route selected identities through proxies, hand login challenges to a human, and leave behind telemetry plus issue reports that can be audited later.
+
+![OpenBrowser architecture](docs/assets/openbrowser-architecture.svg)
+
+```mermaid
+flowchart LR
+  Agent["Agent\nClaude / Codex / Cursor / worker"] --> Client["MCP or API client"]
+  Client --> Broker["OpenBrowser Broker"]
+  Broker --> Lease["Lease manager"]
+  Broker --> Profiles["Profile + identity manager"]
+  Broker --> Proxy["Proxy router"]
+  Broker --> Observability["Telemetry + feedback + audit"]
+  Lease --> Pool["Chrome pool"]
+  Profiles --> Pool
+  Proxy --> Pool
+  Pool --> Slots["pool-a ... pool-h\nisolated CDP sessions"]
+```
 
 ## Why
 
@@ -14,7 +36,7 @@ Most browser agents break in the same ways:
 - rich-text apps such as Slack, Discord, Notion, Linear, and X ignore DOM fill calls
 - failures vanish into logs, so the next agent repeats the same mistake
 
-OpenBrowser Broker gives agents a single operating contract: lease, act, release, report.
+OpenBrowser gives agents one operating contract: lease, act, release, report.
 
 ## Features
 
@@ -30,21 +52,39 @@ OpenBrowser Broker gives agents a single operating contract: lease, act, release
 - **Telemetry and issues**: sanitized events, feedback issue tracking, and usage audits.
 - **browser-use and OpenBrowser adapters**: wrappers lease a slot, run the tool, then release the slot.
 
+## Use Cases
+
+| Use case | OpenBrowser gives you |
+| --- | --- |
+| Remote browser automation | HTTPS API and remote MCP for agents running on other machines. |
+| Logged-in workflows | Named Chrome identities with persisted profile state. |
+| Multi-agent work | Lease isolation so parallel agents do not steal each other's tabs. |
+| Account-specific routing | Per-identity proxy refs, locale, timezone, and profile policy. |
+| Human-in-the-loop auth | One-time portal links for passwords, 2FA, passkeys, and manual checks. |
+| Debuggable automation | Sanitized telemetry, native feedback issues, and session-log audits. |
+
 ## Architecture
 
-```text
-Agent / MCP client / API client
-        |
-        v
-OpenBrowser Broker API
-        |
-        +-- lease manager
-        +-- profile and identity manager
-        +-- proxy forwarders
-        +-- telemetry and issue store
-        |
-        v
-Chrome pool: pool-a, pool-b, pool-c, ...
+```mermaid
+sequenceDiagram
+  participant A as Agent
+  participant B as OpenBrowser Broker
+  participant C as Chrome slot
+  participant H as Human auth portal
+  A->>B: lease(owner, identity_id?)
+  B->>C: reserve isolated Chrome session
+  B-->>A: lease_id
+  A->>B: navigate / click / type / screenshot
+  B->>C: browser action over CDP
+  C-->>B: page state
+  B-->>A: snapshot or result
+  alt login or challenge required
+    A->>B: auth_request or lease_control_request
+    B-->>H: one-time portal URL
+    H->>C: human completes login
+  end
+  A->>B: release(lease_id)
+  B->>B: telemetry + feedback + audit trail
 ```
 
 ## Quick Start
@@ -118,7 +158,17 @@ curl -fsS "$BASE/docs" \
   -H "user-agent: openbrowser-client/1.0"
 ```
 
-The public API covers leases, navigation, snapshots, screenshots, clicks, typing, keyboard events, tabs, auth handoff, lease control, profiles, feedback issues, telemetry, and audits.
+The API covers leases, navigation, snapshots, screenshots, clicks, typing, keyboard events, tabs, auth handoff, lease control, profiles, feedback issues, telemetry, and audits.
+
+```mermaid
+flowchart TD
+  RemoteAgent["Remote agent"] -->|Bearer token| API["/openbrowser/v1"]
+  API --> Lease["POST /leases"]
+  API --> Browser["POST /browser/*"]
+  API --> Auth["POST /auth/request"]
+  API --> Issues["POST /feedback/issues"]
+  API --> Audit["GET /audit"]
+```
 
 ## MCP
 
@@ -196,6 +246,16 @@ curl -fsS "$BASE/auth/request" \
 
 Open the returned `portal_url`, complete login in the browser view, then mark the request complete. Future leases for that identity reuse the saved profile state.
 
+```mermaid
+flowchart LR
+  Identity["identity_id=work-main"] --> Profile["Chrome profile dir"]
+  Identity --> Policy["parallel-session policy"]
+  Identity --> ProxyRef["optional proxy_ref"]
+  ProxyRef --> Forwarder["local proxy forwarder"]
+  Profile --> Chrome["leased Chrome slot"]
+  Forwarder --> Chrome
+```
+
 ## Proxy Routing
 
 Add proxy credentials in `secrets/proxies.json`:
@@ -224,6 +284,14 @@ Then set `"proxy_ref": "residential:work-main"` on the identity. The broker star
 - Login and challenge handling use human handoff portals instead of secrets in chat.
 - CAPTCHA solving and ban-circumvention automation are outside the project boundary.
 
+## What This Is Not
+
+- Not a CAPTCHA solver.
+- Not a token extractor.
+- Not a shared global Chrome tab for every agent.
+- Not a scraping bypass toolkit.
+- Not a replacement for product APIs when a stable API exists.
+
 ## Operations
 
 ```bash
@@ -243,7 +311,7 @@ pytest -q
 
 ## Project Status
 
-OpenBrowser Broker is production-oriented infrastructure that is being prepared for public open-source release. Compatibility wrappers remain available for existing deployments; new installs can use the generic commands and environment variables above.
+OpenBrowser is an alpha public release of production-oriented browser infrastructure. The core lease manager, profile identities, remote API, MCP surfaces, human auth handoff, telemetry, feedback issues, audits, and adapter wrappers are covered by tests. New deployments can use the generic commands and environment variables above; legacy `ax-*` command wrappers remain for existing installations.
 
 ## License
 

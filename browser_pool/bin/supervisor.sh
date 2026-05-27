@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/root/browser-pool}"
+BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/root/ax-browser-broker}"
+
 SLOTS=(
   "pool-a:9223"
   "pool-b:9224"
@@ -44,11 +47,11 @@ while true; do
   for slot in "${SLOTS[@]}"; do
     name="${slot%%:*}"
     port="${slot##*:}"
-    if maintenance_active "/root/browser-pool/state/maintenance/${name}.json"; then
+    if maintenance_active "${BROWSER_POOL_DIR}/state/maintenance/${name}.json"; then
       continue
     fi
     if ! curl -fsS "http://127.0.0.1:${port}/json/version" >/dev/null 2>&1; then
-      /root/ax-browser-broker/browser_pool/bin/launch_chrome.sh "$name" "$port" || true
+      "${BROKER_ROOT}/browser_pool/bin/launch_chrome.sh" "$name" "$port" || true
       sleep 2
     fi
   done

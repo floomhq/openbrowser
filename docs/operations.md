@@ -15,10 +15,19 @@ Put the broker behind HTTPS and set:
 ```bash
 OPENBROWSER_API_KEYS="your-long-random-api-key"
 OPENBROWSER_PUBLIC_AUTH_BASE_URL="https://browser.example.com"
-OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL="https://browser.example.com"
+OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL="https://browser.example.com/openbrowser/v1"
 ```
 
 Expose only the routes needed by your deployment. For public agent access, use `/openbrowser/v1/*`. For human login handoff, use `/auth/*`.
+
+```mermaid
+flowchart LR
+  Internet["Agent on another machine"] --> HTTPS["HTTPS reverse proxy"]
+  HTTPS -->|/openbrowser/v1/*| Broker["OpenBrowser Broker"]
+  HTTPS -->|/auth/*| Auth["Human auth portal"]
+  Broker --> Pool["Chrome pool"]
+  Auth --> Pool
+```
 
 ## Proxy Check
 

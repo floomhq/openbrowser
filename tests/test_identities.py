@@ -185,14 +185,14 @@ def test_activate_auto_identity_clears_duplicate_slot_config(tmp_path, monkeypat
     proxy_file = tmp_path / "proxies.json"
     pool_config_dir = tmp_path / "pool-config"
     browser_pool = tmp_path / "browser-pool"
-    profile_dir = tmp_path / "discord-main"
+    profile_dir = tmp_path / "chat-main"
     pool_config_dir.mkdir()
     (pool_config_dir / "pool-a.env").write_text(
-        f"IDENTITY_ID='discord-main'\nPROFILE_DIR={str(profile_dir)!r}\nCHROME_LANG='en-US'\n",
+        f"IDENTITY_ID='chat-main'\nPROFILE_DIR={str(profile_dir)!r}\nCHROME_LANG='en-US'\n",
         encoding="utf-8",
     )
     identity_file.write_text(
-        json.dumps({"identities": {"discord-main": {"slot": "auto", "profile_dir": str(profile_dir)}}}),
+        json.dumps({"identities": {"chat-main": {"slot": "auto", "profile_dir": str(profile_dir)}}}),
         encoding="utf-8",
     )
     proxy_file.write_text(json.dumps({"proxies": {}}), encoding="utf-8")
@@ -204,7 +204,7 @@ def test_activate_auto_identity_clears_duplicate_slot_config(tmp_path, monkeypat
     monkeypatch.setattr(identities, "_healthy", lambda _port: True)
     monkeypatch.setattr(identities.subprocess, "run", lambda args, check=False: calls.append((args, check)) or type("Result", (), {"returncode": 1})())
 
-    result = identities.activate_identity("discord-main", "pool-b")
+    result = identities.activate_identity("chat-main", "pool-b")
 
     assert result["slot"] == "pool-b"
     assert not (pool_config_dir / "pool-a.env").exists()

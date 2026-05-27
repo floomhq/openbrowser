@@ -2,6 +2,20 @@
 
 This is the canonical routing guide for agents using OpenBrowser Broker.
 
+```mermaid
+flowchart TD
+  Task["Browser task"] --> NeedAuth{"Needs account state?"}
+  NeedAuth -->|No| Generic["Lease generic broker slot"]
+  NeedAuth -->|Yes| Identity["Lease named identity"]
+  Identity --> Login{"Login wall?"}
+  Login -->|No| Act["Navigate, click, type, screenshot"]
+  Login -->|Yes| Handoff["auth_request or lease_control_request"]
+  Generic --> Act
+  Handoff --> Act
+  Act --> Release["Release lease"]
+  Release --> Audit["Run broker_audit"]
+```
+
 ## Routes
 
 | Route | Use For | Start |
