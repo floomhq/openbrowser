@@ -24,11 +24,11 @@ def test_seed_identity_uses_identity_profile_and_port(tmp_path, monkeypatch) -> 
     golden = tmp_path / "golden"
     golden.mkdir()
     (golden / "Cookies").write_text("cookie-db", encoding="utf-8")
-    dest = tmp_path / "linkedin-main"
+    dest = tmp_path / "work-main"
     calls = []
 
     class Identity:
-        identity_id = "linkedin-main"
+        identity_id = "work-main"
         slot = "pool-c"
         profile_dir = dest
 
@@ -58,9 +58,9 @@ def test_seed_identity_uses_identity_profile_and_port(tmp_path, monkeypatch) -> 
         lambda source, target: shutil.copytree(source, target, dirs_exist_ok=True),
     )
 
-    result = profiles.seed_identity("linkedin-main")
+    result = profiles.seed_identity("work-main")
 
-    assert result["identity_id"] == "linkedin-main"
+    assert result["identity_id"] == "work-main"
     assert result["profile_dir"] == str(dest)
     assert (dest / "Cookies").read_text(encoding="utf-8") == "cookie-db"
     assert ["pkill", "-f", "--", "--remote-debugging-port=9225"] in calls

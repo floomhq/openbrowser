@@ -47,7 +47,7 @@ def test_inventory_prefers_preferences_account_info(tmp_path) -> None:
                 "profile": {
                     "info_cache": {
                         "Profile 3": {
-                            "name": "Federico",
+                            "name": "Example",
                             "user_name": "",
                             "gaia_name": "",
                         }
@@ -61,7 +61,7 @@ def test_inventory_prefers_preferences_account_info(tmp_path) -> None:
         json.dumps(
             {
                 "profile": {"name": "Person 2"},
-                "account_info": [{"email": "depontefede@example.com", "full_name": "Federico De Ponte"}],
+                "account_info": [{"email": "user@example.com", "full_name": "Example User"}],
             }
         ),
         encoding="utf-8",
@@ -70,8 +70,8 @@ def test_inventory_prefers_preferences_account_info(tmp_path) -> None:
     profiles = mac_chrome.inventory(chrome_dir)
 
     assert profiles[0].label == "Person 2"
-    assert profiles[0].account_email == "depontefede@example.com"
-    assert profiles[0].gaia_name == "Federico De Ponte"
+    assert profiles[0].account_email == "user@example.com"
+    assert profiles[0].gaia_name == "Example User"
 
 
 def test_import_profiles_creates_secret_free_identity_config(tmp_path, monkeypatch) -> None:
@@ -177,13 +177,13 @@ def test_redacted_inventory_masks_email(tmp_path) -> None:
     chrome_dir = tmp_path / "Chrome"
     (chrome_dir / "Default").mkdir(parents=True)
     (chrome_dir / "Local State").write_text(
-        json.dumps({"profile": {"info_cache": {"Default": {"name": "Federico", "user_name": "federico@example.com"}}}}),
+        json.dumps({"profile": {"info_cache": {"Default": {"name": "Example", "user_name": "user@example.com"}}}}),
         encoding="utf-8",
     )
 
     rows = mac_chrome.redacted_inventory(chrome_dir)
 
-    assert rows[0]["account_email"] == "fe***@example.com"
+    assert rows[0]["account_email"] == "us***@example.com"
 
 
 def test_read_json_falls_back_to_mac_ssh_for_mount_permission_error(monkeypatch) -> None:

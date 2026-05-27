@@ -120,7 +120,7 @@ def test_openbrowser_status_uses_broker_profile_and_releases(tmp_path, monkeypat
     monkeypatch.setattr(adapters, "_release", lambda lease_id: released.append(lease_id))
     monkeypatch.setattr(adapters, "_safe_record_event", lambda **kwargs: events.append(kwargs))
 
-    assert adapters.run_openbrowser(["--identity", "linkedin-main", "status"]) == 0
+    assert adapters.run_openbrowser(["--identity", "work-main", "status"]) == 0
     output = capsys.readouterr().out
 
     assert '"adapter": "openbrowser"' in output

@@ -65,16 +65,16 @@ def test_remote_mcp_browser_lease_posts_to_public_api(monkeypatch) -> None:
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["body"] = json.loads(request.data.decode("utf-8"))
-        return FakeResponse({"lease_id": "lease-123", "identity_id": "chrome-depontefede"})
+        return FakeResponse({"lease_id": "lease-123", "identity_id": "chrome-work"})
 
     monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
     monkeypatch.delenv("OPENBROWSER_BASE_URL", raising=False)
     monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
 
-    result = remote_mcp_server.browser_lease(owner="pytest", identity_id="chrome-depontefede", ttl_seconds=120)
+    result = remote_mcp_server.browser_lease(owner="pytest", identity_id="chrome-work", ttl_seconds=120)
 
     assert captured["url"] == "http://127.0.0.1:8767/openbrowser/v1/leases"
-    assert captured["body"] == {"owner": "pytest", "ttl_seconds": 120, "identity_id": "chrome-depontefede"}
+    assert captured["body"] == {"owner": "pytest", "ttl_seconds": 120, "identity_id": "chrome-work"}
     assert result["lease_id"] == "lease-123"
 
 

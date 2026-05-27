@@ -73,7 +73,7 @@ def test_gc_leases_records_expiry_telemetry(tmp_path, monkeypatch) -> None:
 
 
 def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> None:
-    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
+    active = {"pool-a": "chrome-work", "pool-b": None, "pool-c": "work-main"}
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
@@ -89,7 +89,7 @@ def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> Non
 
 
 def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch) -> None:
-    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
+    active = {"pool-a": "chrome-work", "pool-b": None, "pool-c": "work-main"}
     reclaimed = []
 
     class Identity:
@@ -97,8 +97,8 @@ def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch
             self.proxy_ref = proxy_ref
 
     identities = {
-        "chrome-depontefede": Identity(None),
-        "linkedin-main": Identity("iproyal:linkedin-main"),
+        "chrome-work": Identity(None),
+        "work-main": Identity("residential:work-main"),
     }
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
@@ -126,14 +126,14 @@ def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch
 
 
 def test_generic_lease_does_not_reclaim_personal_non_proxy_identity(tmp_path, monkeypatch) -> None:
-    active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "discord-main"}
+    active = {"pool-a": "chrome-work", "pool-b": None, "pool-c": "discord-main"}
 
     class Identity:
         proxy_ref = None
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
-    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-depontefede": Identity(), "discord-main": Identity()})
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-work": Identity(), "discord-main": Identity()})
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
     neutral = pool.lease("neutral-task")
@@ -151,19 +151,19 @@ def test_generic_lease_does_not_reclaim_personal_non_proxy_identity(tmp_path, mo
 def test_identity_lease_is_exclusive(tmp_path, monkeypatch) -> None:
     class Identity:
         slot = "pool-c"
-        profile_dir = "/tmp/linkedin-main"
+        profile_dir = "/tmp/work-main"
 
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "require_identity", lambda _identity_id: Identity())
-    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: "linkedin-main")
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: "work-main")
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
 
-    lease = pool.lease("test-identity", identity_id="linkedin-main")
+    lease = pool.lease("test-identity", identity_id="work-main")
     try:
-        assert lease.identity_id == "linkedin-main"
+        assert lease.identity_id == "work-main"
         assert lease.name == "pool-c"
         try:
-            pool.lease("test-identity-2", identity_id="linkedin-main")
+            pool.lease("test-identity-2", identity_id="work-main")
         except pool.LeaseError as error:
             assert "Identity already leased" in str(error)
         else:
@@ -339,7 +339,7 @@ def test_warm_replica_slot_is_reused_without_destructive_refresh(tmp_path, monke
 
 def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "leases.json"
-    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": "linkedin-main"}
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": "work-main"}
     activations = []
 
     class Identity:
@@ -352,7 +352,7 @@ def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> Non
     identities = {
         "chrome-one": Identity("chrome-one", "auto", str(tmp_path / "chrome-one")),
         "chrome-two": Identity("chrome-two", "auto", str(tmp_path / "chrome-two")),
-        "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
+        "work-main": Identity("work-main", "pool-c", str(tmp_path / "work-main"), "proxy"),
     }
 
     def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
@@ -382,7 +382,7 @@ def test_auto_identity_uses_free_non_reserved_slot(tmp_path, monkeypatch) -> Non
 
 def test_auto_identity_skips_unhealthy_slot_after_activation(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "leases.json"
-    active = {"pool-a": None, "pool-b": None, "pool-c": "linkedin-main"}
+    active = {"pool-a": None, "pool-b": None, "pool-c": "work-main"}
     healthy_calls = {"pool-a": 0, "pool-b": 0, "pool-c": 0}
 
     class Identity:
@@ -394,7 +394,7 @@ def test_auto_identity_skips_unhealthy_slot_after_activation(tmp_path, monkeypat
 
     identities = {
         "chrome-one": Identity("chrome-one", "auto", str(tmp_path / "chrome-one")),
-        "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
+        "work-main": Identity("work-main", "pool-c", str(tmp_path / "work-main"), "proxy"),
     }
 
     port_to_slot = {slot.port: slot.name for slot in pool.SLOTS}
@@ -526,7 +526,7 @@ def test_sustained_auto_identity_contention_exhausts_slots_cleanly(tmp_path, mon
 
 def test_auto_identity_respects_dynamic_in_use_and_reserved_slots(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "leases.json"
-    active = {"pool-a": "chrome-busy", "pool-b": None, "pool-c": "linkedin-main"}
+    active = {"pool-a": "chrome-busy", "pool-b": None, "pool-c": "work-main"}
 
     class Identity:
         def __init__(self, identity_id: str, slot: str, profile_dir: str, proxy_ref: str | None = None) -> None:
@@ -538,7 +538,7 @@ def test_auto_identity_respects_dynamic_in_use_and_reserved_slots(tmp_path, monk
     identities = {
         "chrome-busy": Identity("chrome-busy", "auto", str(tmp_path / "chrome-busy")),
         "chrome-free": Identity("chrome-free", "auto", str(tmp_path / "chrome-free")),
-        "linkedin-main": Identity("linkedin-main", "pool-c", str(tmp_path / "linkedin-main"), "proxy"),
+        "work-main": Identity("work-main", "pool-c", str(tmp_path / "work-main"), "proxy"),
     }
 
     def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
@@ -557,7 +557,7 @@ def test_auto_identity_respects_dynamic_in_use_and_reserved_slots(tmp_path, monk
     try:
         assert busy.name == "pool-a"
         assert free.name == "pool-b"
-        assert active["pool-c"] == "linkedin-main"
+        assert active["pool-c"] == "work-main"
     finally:
         pool.release(busy.lease_id)
         pool.release(free.lease_id)

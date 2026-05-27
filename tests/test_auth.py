@@ -28,18 +28,18 @@ def test_auth_request_lifecycle_uses_state_file(tmp_path, monkeypatch) -> None:
 def test_auth_request_uses_public_portal_url_when_configured(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
-    monkeypatch.setattr(auth, "PUBLIC_AUTH_BASE_URL", "https://openbrowser-auth.floom.dev/")
+    monkeypatch.setattr(auth, "PUBLIC_AUTH_BASE_URL", "https://browser.example.com/")
 
     request = auth.create_auth_request("tester", "https://example.com/login")
 
-    assert request["portal_url"] == f"https://openbrowser-auth.floom.dev/auth/{request['token']}"
+    assert request["portal_url"] == f"https://browser.example.com/auth/{request['token']}"
     assert request["local_portal_url"] == f"http://127.0.0.1:{auth.BROKER_PORT}/auth/{request['token']}"
 
 
 def test_novnc_url_uses_public_url_when_configured(monkeypatch) -> None:
-    monkeypatch.setattr(auth, "PUBLIC_NOVNC_BASE_URL", "https://openbrowser-auth.floom.dev")
+    monkeypatch.setattr(auth, "PUBLIC_NOVNC_BASE_URL", "https://browser.example.com")
 
-    assert auth.novnc_url(6081) == "https://openbrowser-auth.floom.dev/vnc.html?autoconnect=1&resize=remote"
+    assert auth.novnc_url(6081) == "https://browser.example.com/vnc.html?autoconnect=1&resize=remote"
 
 
 def test_novnc_url_falls_back_to_localhost(monkeypatch) -> None:
@@ -298,11 +298,11 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
 
 def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, monkeypatch) -> None:
     class Identity:
-        identity_id = "linkedin-main"
-        profile_dir = tmp_path / "linkedin-main"
+        identity_id = "work-main"
+        profile_dir = tmp_path / "work-main"
         lang = "en-US"
         slot = "pool-c"
-        proxy_ref = "iproyal:linkedin-main"
+        proxy_ref = "residential:work-main"
 
     class FakeProc:
         def __init__(self, pid: int) -> None:
@@ -328,7 +328,7 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
 
     result = auth._start_identity_auth_vnc(
-        {"identity_id": "linkedin-main", "url": "https://example.com"},
+        {"identity_id": "work-main", "url": "https://example.com"},
         6081,
         5901,
         tmp_path / "passwd",

@@ -17,10 +17,10 @@ def test_write_slot_config_uses_local_proxy_without_secret(tmp_path, monkeypatch
         json.dumps(
             {
                 "identities": {
-                    "linkedin-main": {
+                    "work-main": {
                         "slot": "pool-c",
                         "profile_dir": str(profile_dir),
-                        "proxy_ref": "iproyal:linkedin-main",
+                        "proxy_ref": "residential:work-main",
                         "timezone": "America/New_York",
                         "lang": "en-US",
                     }
@@ -33,7 +33,7 @@ def test_write_slot_config_uses_local_proxy_without_secret(tmp_path, monkeypatch
         json.dumps(
             {
                 "proxies": {
-                    "iproyal:linkedin-main": {
+                    "residential:work-main": {
                         "scheme": "http",
                         "host": "proxy.example",
                         "port": 1234,
@@ -49,10 +49,10 @@ def test_write_slot_config_uses_local_proxy_without_secret(tmp_path, monkeypatch
     monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
     monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
 
-    path = identities.write_slot_config("linkedin-main", 18801)
+    path = identities.write_slot_config("work-main", 18801)
 
     text = path.read_text(encoding="utf-8")
-    assert "PROXY_REF='iproyal:linkedin-main'" in text
+    assert "PROXY_REF='residential:work-main'" in text
     assert "PROXY_LOCAL_PORT=18801" in text
     assert "pass-secret" not in text
     assert "user-secret" not in text
@@ -63,12 +63,12 @@ def test_write_slot_config_enables_sync_for_imported_mac_profile(tmp_path, monke
     identity_file = tmp_path / "identities.json"
     proxy_file = tmp_path / "proxies.json"
     pool_config_dir = tmp_path / "pool-config"
-    profile_dir = tmp_path / "chrome-depontefede"
+    profile_dir = tmp_path / "chrome-work"
     identity_file.write_text(
         json.dumps(
             {
                 "identities": {
-                    "chrome-depontefede": {
+                    "chrome-work": {
                         "slot": "pool-b",
                         "profile_dir": str(profile_dir),
                         "source": {"type": "mac-chrome-profile", "profile_dir_name": "Profile 3"},
@@ -83,7 +83,7 @@ def test_write_slot_config_enables_sync_for_imported_mac_profile(tmp_path, monke
     monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
     monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
 
-    path = identities.write_slot_config("chrome-depontefede")
+    path = identities.write_slot_config("chrome-work")
 
     assert "CHROME_DISABLE_SYNC='0'" in path.read_text(encoding="utf-8")
 
@@ -133,14 +133,14 @@ def test_save_proxy_writes_secret_file_0600(tmp_path) -> None:
     path = tmp_path / "proxies.json"
 
     identities.save_proxy(
-        "iproyal:linkedin-main",
+        "residential:work-main",
         {"scheme": "http", "host": "proxy.example", "port": 1234, "username": "u", "password": "p"},
         path,
     )
 
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["proxies"]["iproyal:linkedin-main"]["host"] == "proxy.example"
+    assert data["proxies"]["residential:work-main"]["host"] == "proxy.example"
 
 
 def test_activate_identity_writes_slot_config_and_launches_profile(tmp_path, monkeypatch) -> None:

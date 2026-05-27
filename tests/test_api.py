@@ -112,7 +112,7 @@ def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
             "url": url,
             "reason": reason,
             "identity_id": identity_id,
-            "portal_url": "https://openbrowser-auth.floom.dev/auth/tok",
+            "portal_url": "https://browser.example.com/auth/tok",
             "status": "pending",
         },
     )
@@ -147,7 +147,7 @@ def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
             "url": url,
             "reason": reason,
             "identity_id": identity_id,
-            "portal_url": f"https://openbrowser-auth.floom.dev/auth/{identity_id}-token",
+            "portal_url": f"https://browser.example.com/auth/{identity_id}-token",
             "status": "pending",
         }
 
@@ -382,7 +382,7 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
             "owner": owner,
             "lease_id": lease_id,
             "ttl_seconds": ttl_seconds,
-            "portal_url": "https://openbrowser-auth.floom.dev/auth/lease-control/control-token",
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
         }
 
     monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
@@ -405,7 +405,7 @@ def test_openbrowser_lease_control_request_is_protected(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
 
     async def fake_lease_control_request(_request):
-        return {"portal_url": "https://openbrowser-auth.floom.dev/auth/lease-control/tok"}
+        return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
 
     monkeypatch.setattr(api, "lease_control_request", fake_lease_control_request)
     client = TestClient(api.app)
@@ -484,13 +484,13 @@ def test_lease_control_click_records_coordinates(monkeypatch) -> None:
 
 def test_lease_control_state_lifecycle(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(lease_control, "LEASE_CONTROL_STATE_FILE", tmp_path / "lease_control.json")
-    monkeypatch.setattr(lease_control, "PUBLIC_AUTH_BASE_URL", "https://openbrowser-auth.floom.dev")
+    monkeypatch.setattr(lease_control, "PUBLIC_AUTH_BASE_URL", "https://browser.example.com")
 
     session = lease_control.create_control_session("pytest", "lease-api", ttl_seconds=60)
     loaded = lease_control.get_control_session(session["token"])
     completed = lease_control.complete_control_session(session["token"])
 
-    assert session["portal_url"].startswith("https://openbrowser-auth.floom.dev/auth/lease-control/")
+    assert session["portal_url"].startswith("https://browser.example.com/auth/lease-control/")
     assert loaded["lease_id"] == "lease-api"
     assert completed["owner"] == "pytest"
 
