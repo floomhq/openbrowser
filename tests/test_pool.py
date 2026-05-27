@@ -38,6 +38,40 @@ def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
     assert released["released"] == lease.lease_id
 
 
+def test_gc_leases_records_expiry_telemetry(tmp_path, monkeypatch) -> None:
+    events = []
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "LEASE_TTL_SECONDS", 60)
+    monkeypatch.setattr(pool.time, "time", lambda: 200)
+
+    def fake_record_event(**kwargs):
+        events.append(kwargs)
+        return {"id": "event"}
+
+    import ax_browser_broker.telemetry as telemetry
+
+    monkeypatch.setattr(telemetry, "record_event", fake_record_event)
+    state = {
+        "leases": {
+            "expired-lease": {
+                "name": "pool-a",
+                "owner": "agent-a",
+                "created_at": 1,
+                "heartbeat_at": 100,
+                "identity_id": "chrome-one",
+            }
+        }
+    }
+
+    expired = pool.gc_leases(state)
+
+    assert expired == ["expired-lease"]
+    assert state["leases"] == {}
+    assert events[0]["message"] == "Lease expired"
+    assert events[0]["lease_id"] == "expired-lease"
+    assert events[0]["data"]["slot"] == "pool-a"
+
+
 def test_generic_lease_skips_identity_active_slots(tmp_path, monkeypatch) -> None:
     active = {"pool-a": "chrome-depontefede", "pool-b": None, "pool-c": "linkedin-main"}
 

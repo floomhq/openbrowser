@@ -24,6 +24,8 @@ FAILURE_PATTERN = re.compile(r"\b(error|failed|failure|traceback|exception|block
 ISSUE_CONTEXT_PATTERN = re.compile(r"openbrowser|browser-use|browser|lease-[A-Za-z0-9_-]+|axbt_|issue-|failed|failure|error|exception|timeout", re.I)
 RAW_CDP_BYPASS_PATTERN = re.compile(r"connect_?over_?cdp|curl\s+-[^\n]*https?://(?:127\.0\.0\.1|localhost):9222|chrome-devtools MCP connects to CDP", re.I)
 RAW_CDP_REFERENCE_PATTERN = re.compile(r"SKILL\.md|README|docs/|description|Relevant context|attachment|broker_docs|ax-browser-broker", re.I)
+HISTORY_REFERENCE_FILES = {"history.jsonl"}
+LEASE_TERMINAL_MESSAGES = {"Lease released", "Lease expired"}
 MAX_LOG_MATCHES = 50
 MAX_ISSUE_CANDIDATES = 200
 MAX_SESSION_BYTES = 2_000_000
@@ -161,7 +163,7 @@ def _scan_session_logs(paths: list[Path], since_ts: int) -> dict[str, Any]:
                     "snippet": sanitize_text(text, 500),
                 }
                 if RAW_CDP_PATTERN.search(text):
-                    if file_path.name == "codex-tui.log":
+                    if file_path.name == "codex-tui.log" or file_path.name in HISTORY_REFERENCE_FILES:
                         if len(raw_cdp_reference) < MAX_LOG_MATCHES:
                             raw_cdp_reference.append(hit)
                     elif RAW_CDP_BYPASS_PATTERN.search(text) and not RAW_CDP_REFERENCE_PATTERN.search(text):
@@ -393,14 +395,14 @@ def run_audit(
 
     for lease_id, lease_items in lease_events.items():
         has_create = any(event.get("message") == "Lease created" for event in lease_items)
-        has_release = any(event.get("message") == "Lease released" for event in lease_items)
+        has_release = any(event.get("message") in LEASE_TERMINAL_MESSAGES for event in lease_items)
         is_active = lease_id in leases
         if has_create and not has_release and not is_active:
             findings.append(
                 {
                     "severity": "high",
                     "code": "missing_release_telemetry",
-                    "message": f"Lease {lease_id} has creation telemetry but no release telemetry and is not active.",
+                    "message": f"Lease {lease_id} has creation telemetry but no terminal release/expiry telemetry and is not active.",
                     "lease_id": lease_id,
                 }
             )
@@ -420,13 +422,21 @@ def run_audit(
         )
         score -= 10 if issue.get("severity") != "blocker" else 20
 
-    if session_scan["broker_failure_mentions"] and not issues:
+    error_events = [event for event in events if event.get("event_type") == "error"]
+    issue_ids = {str(issue.get("id")) for issue in issues if issue.get("id")}
+    untriaged_error_events = [
+        event
+        for event in error_events
+        if str(event.get("issue_id") or "") not in issue_ids
+    ]
+    if untriaged_error_events and not issues:
         findings.append(
             {
                 "severity": "medium",
-                "code": "failure_mentions_without_issues",
-                "message": "Session logs mention broker failures but no issue was filed in the audit window.",
-                "count": len(session_scan["broker_failure_mentions"]),
+                "code": "error_telemetry_without_issues",
+                "message": "Broker recorded error telemetry but no feedback issue was filed in the audit window.",
+                "count": len(untriaged_error_events),
+                "sources": dict(Counter(str(event.get("source", "unknown")) for event in untriaged_error_events)),
             }
         )
         score -= 15

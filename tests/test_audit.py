@@ -175,6 +175,116 @@ def test_audit_treats_codex_tui_raw_cdp_as_reference(tmp_path, monkeypatch) -> N
     assert result["session_logs"]["raw_cdp_bypass_mentions"] == []
 
 
+def test_audit_treats_codex_history_raw_cdp_as_reference(tmp_path, monkeypatch) -> None:
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    issue_file = tmp_path / "issues.json"
+    lease_file = tmp_path / "leases.json"
+    session_file = tmp_path / "history.jsonl"
+    telemetry_file.write_text(
+        json.dumps(
+            {
+                "created_at": 100,
+                "source": "agent-a",
+                "event_type": "smoke",
+                "message": "Audit smoke",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_file.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    lease_file.write_text(json.dumps({"leases": {}}), encoding="utf-8")
+    session_file.write_text(
+        json.dumps({"text": "User pasted advice mentioning connect_over_cdp http://127.0.0.1:9222"}) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(audit, "TELEMETRY_STATE_FILE", telemetry_file)
+    monkeypatch.setattr(audit, "ISSUE_STATE_FILE", issue_file)
+    monkeypatch.setattr(audit, "POOL_STATE_FILE", lease_file)
+
+    result = audit.run_audit(hours=1, session_paths=[session_file], now=200, use_baseline=False)
+
+    assert result["score"] == 100
+    assert result["session_logs"]["raw_cdp_reference_mentions"]
+    assert result["session_logs"]["raw_cdp_bypass_mentions"] == []
+
+
+def test_audit_accepts_expired_lease_as_terminal_telemetry(tmp_path, monkeypatch) -> None:
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    issue_file = tmp_path / "issues.json"
+    lease_file = tmp_path / "leases.json"
+    session_file = tmp_path / "session.jsonl"
+    telemetry_file.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "created_at": 100,
+                        "source": "agent-a",
+                        "event_type": "lease",
+                        "message": "Lease created",
+                        "lease_id": "lease-a",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "created_at": 200,
+                        "source": "agent-a",
+                        "event_type": "lease",
+                        "message": "Lease expired",
+                        "lease_id": "lease-a",
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_file.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    lease_file.write_text(json.dumps({"leases": {}}), encoding="utf-8")
+    session_file.write_text(json.dumps({"content": "Used browser_lease"}) + "\n", encoding="utf-8")
+    monkeypatch.setattr(audit, "TELEMETRY_STATE_FILE", telemetry_file)
+    monkeypatch.setattr(audit, "ISSUE_STATE_FILE", issue_file)
+    monkeypatch.setattr(audit, "POOL_STATE_FILE", lease_file)
+
+    result = audit.run_audit(hours=1, session_paths=[session_file], now=300)
+
+    assert result["score"] == 100
+    assert "missing_release_telemetry" not in {finding["code"] for finding in result["findings"]}
+
+
+def test_audit_flags_error_telemetry_without_feedback_issue(tmp_path, monkeypatch) -> None:
+    telemetry_file = tmp_path / "telemetry.jsonl"
+    issue_file = tmp_path / "issues.json"
+    lease_file = tmp_path / "leases.json"
+    session_file = tmp_path / "session.jsonl"
+    telemetry_file.write_text(
+        json.dumps(
+            {
+                "created_at": 100,
+                "source": "broker-api",
+                "event_type": "error",
+                "message": "Browser navigate failed",
+                "lease_id": "lease-a",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    issue_file.write_text(json.dumps({"issues": {}}), encoding="utf-8")
+    lease_file.write_text(json.dumps({"leases": {}}), encoding="utf-8")
+    session_file.write_text("", encoding="utf-8")
+    monkeypatch.setattr(audit, "TELEMETRY_STATE_FILE", telemetry_file)
+    monkeypatch.setattr(audit, "ISSUE_STATE_FILE", issue_file)
+    monkeypatch.setattr(audit, "POOL_STATE_FILE", lease_file)
+
+    result = audit.run_audit(hours=1, session_paths=[session_file], now=200)
+    finding = next(item for item in result["findings"] if item["code"] == "error_telemetry_without_issues")
+
+    assert finding["count"] == 1
+    assert finding["sources"] == {"broker-api": 1}
+
+
 def test_audit_links_issue_log_context(tmp_path, monkeypatch) -> None:
     telemetry_file = tmp_path / "telemetry.jsonl"
     issue_file = tmp_path / "issues.json"

@@ -100,8 +100,31 @@ def gc_leases(state: dict[str, Any]) -> list[str]:
         heartbeat_at = int(lease.get("heartbeat_at", lease.get("ts", now)))
         if now - heartbeat_at > LEASE_TTL_SECONDS:
             expired.append(lease_id)
+            _record_expired_lease(lease_id, lease)
             del state["leases"][lease_id]
     return expired
+
+
+def _record_expired_lease(lease_id: str, lease: dict[str, Any]) -> None:
+    try:
+        from .telemetry import record_event
+
+        record_event(
+            source=str(lease.get("owner", "broker-api")),
+            event_type="lease",
+            message="Lease expired",
+            severity="warning",
+            lease_id=lease_id,
+            tags=["lease", "expired"],
+            data={
+                "slot": str(lease.get("name", "")),
+                "identity_id": lease.get("identity_id"),
+                "created_at": int(lease.get("created_at", lease.get("ts", 0))),
+                "heartbeat_at": int(lease.get("heartbeat_at", lease.get("ts", 0))),
+            },
+        )
+    except Exception:
+        return
 
 
 def _can_reclaim_for_generic(active_identity: str | None, identities: dict[str, Any]) -> bool:
