@@ -1,6 +1,5 @@
 # OpenBrowser
 
-[![CI](https://github.com/floomhq/openbrowser/actions/workflows/ci.yml/badge.svg)](https://github.com/floomhq/openbrowser/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](pyproject.toml)
 [![MCP](https://img.shields.io/badge/MCP-ready-black.svg)](docs/browser-routing.md)
