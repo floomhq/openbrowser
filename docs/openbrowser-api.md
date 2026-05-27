@@ -1,11 +1,11 @@
 # OpenBrowser Remote API
 
-OpenBrowser is the public API surface for AX41 Browser Broker. It is callable from remote machines through the Cloudflare-backed host and uses the same leased browser pool, identities, auth handoff, telemetry, and feedback stores as MCP.
+OpenBrowser Broker exposes a bearer-token protected API for remote browser automation. It uses the same leased browser pool, identities, auth handoff, telemetry, feedback issues, and audit system as the MCP server.
 
 Base URL:
 
 ```text
-https://openbrowser-auth.floom.dev/openbrowser/v1
+https://browser.example.com/openbrowser/v1
 ```
 
 Authentication:
@@ -14,15 +14,15 @@ Authentication:
 Authorization: Bearer <OPENBROWSER_API_KEY>
 ```
 
-Keys are loaded from `OPENBROWSER_API_KEYS`, `AX_OPENBROWSER_API_KEYS`, or `/root/ax-browser-broker/secrets/openbrowser_api_keys.json`.
+Keys are loaded from `OPENBROWSER_API_KEYS`, `AX_OPENBROWSER_API_KEYS`, or `secrets/openbrowser_api_keys.json`.
 
-Use a normal API client user agent such as `openbrowser-client/1.0`, `curl`, or your app's own product user agent. Cloudflare blocks Python's default `Python-urllib/*` user agent on this hostname.
+Use a normal API client user agent such as `openbrowser-client/1.0`, `curl`, or your app's own product user agent.
 
 ## Core Flow
 
 ```bash
-BASE=https://openbrowser-auth.floom.dev/openbrowser/v1
-KEY="$(jq -r '.tokens.federico' /root/ax-browser-broker/secrets/openbrowser_api_keys.json)"
+BASE=https://browser.example.com/openbrowser/v1
+KEY=your-long-random-api-key
 
 LEASE="$(
   curl -fsS "$BASE/leases" \
@@ -65,15 +65,16 @@ curl -fsS "$BASE/open" \
 
 ## Identities
 
-Pass `identity_id` only when account state is required.
+Pass `identity_id` only when account state or proxy routing is required.
 
 - Omit `identity_id` for generic public-page QA.
-- Use `chrome-depontefede` for Federico's AX41 Chrome identity with persisted Google/Discord login.
-- Use `linkedin-main` for LinkedIn. It is proxy-routed and exclusive.
+- Use an identity such as `work-main` for a persisted logged-in Chrome profile.
+- Use `policy.max_parallel_sessions` to control replica sessions for an identity.
+- Use `proxy_ref` to route an identity through a configured proxy.
 
-Generic leases never use an active personal identity slot. If all neutral slots are busy, the allocator may recycle an idle proxied identity slot back to its neutral pool profile, then that identity can be reactivated on demand later.
+Generic leases never expose personal profile state. If all neutral slots are busy, the allocator can recycle an idle identity slot back to its neutral pool profile, then reactivate the identity on demand later.
 
-Identity capacity is controlled by `policy.max_parallel_sessions` in `config/identities.local.json`. When a Chrome identity allows more than one session, the first lease uses the canonical logged-in profile and later parallel leases use per-slot replicas under `/root/browser-pool/profiles/.replicas/<identity>/<slot>`. This avoids Chrome profile-lock conflicts while keeping the original logged-in profile intact.
+Identity capacity is controlled by `policy.max_parallel_sessions` in `config/identities.local.json`. When a Chrome identity allows more than one session, the first lease uses the canonical logged-in profile and later parallel leases use per-slot replicas under `profiles/.replicas/<identity>/<slot>`. This avoids Chrome profile-lock conflicts while keeping the original logged-in profile intact.
 
 List available identities:
 
@@ -90,10 +91,10 @@ curl -fsS "$BASE/auth/request" \
   -H "authorization: Bearer $KEY" \
   -H "user-agent: openbrowser-client/1.0" \
   -H "content-type: application/json" \
-  -d '{"owner":"profile-login","identity_id":"chrome-fede","url":"https://accounts.google.com/","reason":"profile_login"}'
+  -d '{"owner":"profile-login","identity_id":"work-main","url":"https://example.com/login","reason":"profile_login"}'
 ```
 
-Open the returned `portal_url`, sign in inside the browser view, then mark it complete in the portal. Future leases for that `identity_id` reuse the persisted AX41 profile.
+Open the returned `portal_url`, sign in inside the browser view, then mark it complete in the portal. Future leases for that `identity_id` reuse the persisted profile.
 
 Generate several profile login links at once:
 
@@ -102,7 +103,7 @@ curl -fsS "$BASE/auth/batch" \
   -H "authorization: Bearer $KEY" \
   -H "user-agent: openbrowser-client/1.0" \
   -H "content-type: application/json" \
-  -d '{"owner":"profile-login","identity_ids":["chrome-fede","chrome-clients","chrome-admin"],"url":"https://accounts.google.com/","reason":"profile_login"}'
+  -d '{"owner":"profile-login","identity_ids":["work-main","qa-generic"],"url":"https://example.com/login","reason":"profile_login"}'
 ```
 
 ## Endpoints
@@ -146,22 +147,21 @@ Agents on other machines can use the same public API through a stdio MCP server:
 {
   "mcpServers": {
     "openbrowser-remote": {
-      "command": "python3",
-      "args": ["-m", "ax_browser_broker.remote_mcp_server"],
+      "command": "openbrowser-remote-mcp",
       "env": {
         "OPENBROWSER_API_KEY": "<OPENBROWSER_API_KEY>",
-        "OPENBROWSER_BASE_URL": "https://openbrowser-auth.floom.dev/openbrowser/v1"
+        "OPENBROWSER_BASE_URL": "https://browser.example.com/openbrowser/v1"
       }
     }
   }
 }
 ```
 
-The remote MCP exposes browser leasing/actions, auth handoff, profile status, feedback issue reporting, telemetry, and audit tools. It is a client-side MCP process: the agent launches it locally, and it calls the Cloudflare-backed OpenBrowser API with bearer auth.
+The remote MCP exposes browser leasing/actions, auth handoff, profile status, feedback issue reporting, telemetry, and audit tools. It is a client-side MCP process: the agent launches it locally, and it calls the HTTPS OpenBrowser API with bearer auth.
 
 ## Safety
 
-The API never exposes cookies, passwords, raw Discord tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
+The API never exposes cookies, passwords, raw tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
 
 Use telemetry-only records for expected negative test cases and normal app validation failures. File feedback issues for broker, identity/proxy, auth handoff, upload, screenshot, keyboard, or adapter failures that block the task.
 

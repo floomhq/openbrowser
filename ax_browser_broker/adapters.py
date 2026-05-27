@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import sqlite3
 import subprocess
 import sys
@@ -138,10 +139,21 @@ def print_env(owner: str, identity_id: str | None = None) -> int:
     return 0
 
 
+def _is_help(args: list[str]) -> bool:
+    return any(item in {"-h", "--help"} for item in args)
+
+
+def _openbrowser_command(args: list[str]) -> list[str]:
+    configured = os.environ.get("OPENBROWSER_CLI", "openbrowser")
+    return [*shlex.split(configured), *args]
+
+
 def run_browser_use(args: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--identity")
     parsed, passthrough = parser.parse_known_args(args)
+    if _is_help(passthrough):
+        return subprocess.call(["browser-use", *passthrough])
     lease = _lease("browser-use", parsed.identity)
     print(f"leased {lease['name']} at {lease['cdp']} for browser-use", file=sys.stderr)
     env = os.environ.copy()
@@ -223,6 +235,8 @@ def run_openbrowser(args: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--identity")
     parsed, passthrough = parser.parse_known_args(args)
+    if _is_help(passthrough):
+        return subprocess.call(_openbrowser_command(passthrough))
     lease = _lease("openbrowser", parsed.identity)
     print(f"leased {lease['name']} at {lease['cdp']} for openbrowser", file=sys.stderr)
     started_at = time.monotonic()
@@ -265,7 +279,7 @@ def run_openbrowser(args: list[str]) -> int:
         }
         (config_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
         env["HOME"] = str(home)
-        command = ["node", "/root/openbrowser/dist/index.js", *passthrough]
+        command = _openbrowser_command(passthrough)
         try:
             exit_code = subprocess.call(command, env=env)
             duration_ms = int((time.monotonic() - started_at) * 1000)
@@ -362,7 +376,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_browser_use(argv[1:])
     if argv and argv[0] == "openbrowser":
         return run_openbrowser(argv[1:])
-    parser = argparse.ArgumentParser(description="AX41 browser broker adapters")
+    parser = argparse.ArgumentParser(description="OpenBrowser Broker adapters")
     sub = parser.add_subparsers(dest="cmd", required=True)
     env_cmd = sub.add_parser("env")
     env_cmd.add_argument("--owner", default="manual")
@@ -371,6 +385,14 @@ def main(argv: list[str] | None = None) -> int:
     if parsed.cmd == "env":
         return print_env(parsed.owner, parsed.identity)
     raise RuntimeError(f"Unhandled command: {parsed.cmd}")
+
+
+def main_browser_use() -> int:
+    return run_browser_use(sys.argv[1:])
+
+
+def main_openbrowser() -> int:
+    return run_openbrowser(sys.argv[1:])
 
 
 if __name__ == "__main__":

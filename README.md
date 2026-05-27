@@ -1,165 +1,250 @@
-# AX41 Browser Broker
+# OpenBrowser Broker
 
-Local browser automation broker for AX41 agents.
+Open-source browser automation infrastructure for AI agents: a browser pool, persistent Chrome profiles, proxy-aware identities, human login handoff, a remote API, and MCP tools.
 
-## Services
+OpenBrowser Broker lets Claude, Codex, Cursor, browser-use, OpenBrowser, and custom agents share real Chrome browsers without fighting over one CDP port. Agents lease isolated browser sessions, use persisted profiles when account state is needed, route selected identities through proxies, hand login challenges to a human, and leave behind telemetry plus issue reports that can be audited later.
 
-- API: `http://127.0.0.1:8767`
-- MCP stdio command: `/root/ax-browser-broker/bin/ax-browser-mcp`
-- Remote MCP stdio command: `/root/ax-browser-broker/bin/ax-openbrowser-remote-mcp`
-- Pool slots: `9223` through `9230` (`pool-a` through `pool-h`)
+## Why
 
-## Core flow
+Most browser agents break in the same ways:
 
-1. Lease a slot through `/lease` or `browser_lease`.
-2. Run browser actions with the returned `lease_id`.
-3. Release the slot through `/release/{lease_id}` or `browser_release`.
+- several agents connect to the same Chrome instance and block each other
+- logged-in sessions are tied to one fragile browser profile
+- passwords and 2FA prompts become unsafe chat messages
+- rich-text apps such as Slack, Discord, Notion, Linear, and X ignore DOM fill calls
+- failures vanish into logs, so the next agent repeats the same mistake
 
-All action endpoints validate the lease before touching a browser.
+OpenBrowser Broker gives agents a single operating contract: lease, act, release, report.
 
-For authenticated LinkedIn work, pass `identity_id: "linkedin-main"` to `browser_lease` or `--identity linkedin-main` to the wrappers. This pins the work to `pool-c`, `/root/browser-pool/profiles/linkedin-main`, and the configured US ISP proxy.
+## Features
 
-For Federico's Mac Chrome people/profiles, import metadata into broker identities:
+- **Browser pool**: multiple isolated Chrome slots with CDP endpoints managed behind one broker.
+- **Persistent profiles**: named identities reuse Chrome profile directories and session cookies.
+- **Profile replicas**: selected identities can run in parallel without Chrome profile-lock conflicts.
+- **Proxy routing**: identities can pin traffic to an HTTP/SOCKS proxy via `proxy_ref`.
+- **Remote API**: bearer-token protected `/openbrowser/v1` API for agents on any machine.
+- **MCP servers**: local MCP for same-host agents and remote MCP for HTTPS-backed access.
+- **Human auth handoff**: one-time portal links for login, 2FA, passkeys, and manual challenges.
+- **Active lease control**: short-lived manual control links for a browser tab already held by an agent.
+- **Rich-text keyboard tools**: real keyboard events for editors that reject simple DOM value changes.
+- **Telemetry and issues**: sanitized events, feedback issue tracking, and usage audits.
+- **browser-use and OpenBrowser adapters**: wrappers lease a slot, run the tool, then release the slot.
 
-```bash
-/root/ax-browser-broker/bin/ax-browser-identity mac-inventory
-/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles --dry-run
-/root/ax-browser-broker/bin/ax-browser-identity import-mac-profiles
-/root/ax-browser-broker/bin/ax-mac-profile-sync status
-/root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
-/root/ax-browser-broker/bin/ax-mac-profile-autosync
-```
-
-If the Mac reverse tunnel is absent, the Mac-side installer is:
-
-```bash
-curl -fsSL https://openbrowser-auth.floom.dev/mac/install-reverse-tunnel.sh | bash
-```
-
-The importer creates `chrome-*` identities with isolated AX41 profile directories and `slot: "auto"` so different profiles can run concurrently when free pool slots exist. Auto identities use free non-reserved slots; pinned/proxied identities such as `linkedin-main` keep their dedicated slot and are not overwritten by generic Chrome profile work. The importer copies no raw cookies, passwords, or tokens from macOS because macOS Chrome secret state is Keychain-backed and not portable Linux Chrome session state.
-
-Use `auth_request(..., identity_id="chrome-...")` once per imported identity to log in through local noVNC, then agents can lease that identity through the broker. If an auth handoff is refused or fails before VNC starts, the broker removes the temporary VNC password file. Successful handoff completion stops VNC/Chrome/Xvfb helper processes and removes the temporary password file.
-
-## Commands
-
-```bash
-/root/ax-browser-broker/bin/ax-browser-lease --owner manual
-/root/ax-browser-broker/bin/ax-browser-use --json open https://example.com
-/root/ax-browser-broker/bin/ax-browser-use --identity linkedin-main --json state
-/root/ax-browser-broker/bin/ax-openbrowser status --format json
-/root/ax-browser-broker/bin/ax-openbrowser --identity linkedin-main status
-/root/ax-browser-broker/bin/ax-browser-mcp
-OPENBROWSER_API_KEY=... /root/ax-browser-broker/bin/ax-openbrowser-remote-mcp
-```
-
-## Verification
-
-```bash
-PYTHONPATH=/root/ax-browser-broker python3 -m pytest -q /root/ax-browser-broker/tests
-curl -fsS http://127.0.0.1:8767/health
-```
-
-Operational verification and rollback notes live in `docs/operations.md`.
-Mac Chrome profile import and auth edge cases live in `docs/mac-chrome-profiles.md`.
-Browser tool routing lives in `docs/browser-routing.md`.
-
-## Agent Docs And Feedback
-
-Agents can call `broker_docs` through MCP for live runbook topics:
-
-- `topics`
-- `quickstart`
-- `routing`
-- `identities`
-- `browser-use`
-- `openbrowser`
-- `auth`
-- `feedback`
-- `telemetry`
-- `audit`
-- `safety`
-
-Agents can report issues through MCP:
-
-- `feedback_report_issue`
-- `feedback_list_issues`
-- `feedback_update_issue`
-
-The issue store is local at `/root/ax-browser-broker/state/issues.json` and is ignored by git.
-OpenBrowser and browser-use wrapper failures file issues automatically when the adapter process exits nonzero.
-
-## Remote OpenBrowser API
-
-OpenBrowser is also exposed as a bearer-token-protected remote API at:
+## Architecture
 
 ```text
-https://openbrowser-auth.floom.dev/openbrowser/v1
+Agent / MCP client / API client
+        |
+        v
+OpenBrowser Broker API
+        |
+        +-- lease manager
+        +-- profile and identity manager
+        +-- proxy forwarders
+        +-- telemetry and issue store
+        |
+        v
+Chrome pool: pool-a, pool-b, pool-c, ...
 ```
 
-Use it from any trusted machine with `Authorization: Bearer <OPENBROWSER_API_KEY>`. It supports leases, navigation, snapshots, screenshots, tabs, clicks, typing, waits, and one-shot `open` calls. See `docs/openbrowser-api.md`.
-Logged-in Chrome identities can also opt into controlled parallel sessions with `policy.max_parallel_sessions`. Parallel identity leases use per-slot profile replicas under `/root/browser-pool/profiles/.replicas/`, so Chrome profile locks do not block separate agents.
-Issue title, details, URL, tags, and notes are sanitized before storage.
+## Quick Start
 
-## Remote MCP
+### Python
 
-External agents can use OpenBrowser as a normal stdio MCP server without SSH access to AX41. The remote MCP process runs wherever the agent runs and proxies tool calls to the public OpenBrowser API:
+```bash
+git clone https://github.com/federicodeponte/ax-browser-broker.git openbrowser-broker
+cd openbrowser-broker
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -e .
+playwright install chromium
+cp .env.example .env
+cp config/identities.example.json config/identities.local.json
+```
+
+Start the broker:
+
+```bash
+openbrowser-broker
+```
+
+### Docker
+
+```bash
+git clone https://github.com/federicodeponte/ax-browser-broker.git openbrowser-broker
+cd openbrowser-broker
+OPENBROWSER_API_KEYS="$(openssl rand -base64 48)" docker compose up --build
+```
+
+Lease a browser:
+
+```bash
+curl -fsS http://127.0.0.1:8767/lease \
+  -H "content-type: application/json" \
+  -d '{"owner":"demo","ttl_seconds":300}'
+```
+
+Use the returned `lease_id`:
+
+```bash
+curl -fsS http://127.0.0.1:8767/browser/navigate \
+  -H "content-type: application/json" \
+  -d '{"lease_id":"<lease_id>","url":"https://example.com"}'
+
+curl -fsS http://127.0.0.1:8767/browser/snapshot \
+  -H "content-type: application/json" \
+  -d '{"lease_id":"<lease_id>"}'
+
+curl -fsS -X POST http://127.0.0.1:8767/release/<lease_id>
+```
+
+## Remote API
+
+Expose the broker behind your HTTPS proxy or tunnel and configure:
+
+```bash
+OPENBROWSER_API_KEYS="your-long-random-api-key"
+OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL="https://browser.example.com/openbrowser/v1"
+```
+
+Then call:
+
+```bash
+BASE=https://browser.example.com/openbrowser/v1
+KEY=your-long-random-api-key
+
+curl -fsS "$BASE/docs" \
+  -H "authorization: Bearer $KEY" \
+  -H "user-agent: openbrowser-client/1.0"
+```
+
+The public API covers leases, navigation, snapshots, screenshots, clicks, typing, keyboard events, tabs, auth handoff, lease control, profiles, feedback issues, telemetry, and audits.
+
+## MCP
+
+Local MCP, for agents running on the broker host:
+
+```json
+{
+  "mcpServers": {
+    "openbrowser-broker": {
+      "command": "openbrowser-mcp"
+    }
+  }
+}
+```
+
+Remote MCP, for agents running anywhere:
 
 ```json
 {
   "mcpServers": {
     "openbrowser-remote": {
-      "command": "python3",
-      "args": ["-m", "ax_browser_broker.remote_mcp_server"],
+      "command": "openbrowser-remote-mcp",
       "env": {
         "OPENBROWSER_API_KEY": "<OPENBROWSER_API_KEY>",
-        "OPENBROWSER_BASE_URL": "https://openbrowser-auth.floom.dev/openbrowser/v1"
+        "OPENBROWSER_BASE_URL": "https://browser.example.com/openbrowser/v1"
       }
     }
   }
 }
 ```
 
-Remote MCP tools include browser leasing/actions, auth handoff, profile status, feedback issues, telemetry, and audit. The remote MCP never returns raw cookies, passwords, proxy credentials, or VNC passwords.
+Core MCP tools:
 
-Agents can record and inspect telemetry through MCP:
+- `browser_lease`, `browser_release`, `browser_heartbeat`
+- `browser_navigate`, `browser_snapshot`, `browser_screenshot`
+- `browser_click`, `browser_type`, `browser_keyboard_type`, `browser_keyboard_press`
+- `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait`
+- `auth_request`, `auth_status`, `lease_control_request`
+- `feedback_report_issue`, `feedback_list_issues`, `feedback_update_issue`
+- `telemetry_record_event`, `telemetry_list_events`, `telemetry_summary`
+- `broker_audit`, `broker_docs`, `profile_status`
 
-- `telemetry_record_event`
-- `telemetry_list_events`
-- `telemetry_summary`
+## Persistent Profiles
 
-The telemetry store is append-only JSONL at `/root/ax-browser-broker/state/telemetry.jsonl` and is ignored by git. Sensitive keys such as password, token, cookie, secret, authorization, and totp are redacted before storage. Browser typing telemetry stores text length, not typed text.
-The broker also emits failure telemetry for browser API action exceptions. The OpenBrowser and browser-use wrappers emit adapter start/completion/failure telemetry with duration and exit code.
+Identities are configured in `config/identities.local.json`:
 
-Agents and operators can audit broker usage:
-
-- MCP: `broker_audit(hours=24)`
-- API: `GET /audit?hours=24`
-- CLI: `/root/ax-browser-broker/bin/ax-browser-audit --json`
-
-The audit checks telemetry, feedback issues, active leases, and session logs. It flags raw CDP mentions, unreleased leases, open issues, and broker failures that lack issue reports.
-Audit JSON includes `issue_log_contexts`, keyed by issue id, so an agent can inspect direct issue-specific Claude/Codex session-log snippets before fixing a browser-tool problem.
-
-## Auth flow
-
-Agents create an auth request with `/auth/request` or `auth_request`.
-The broker returns a one-time portal URL. On AX41 this is `https://openbrowser-auth.floom.dev/auth/<token>`; `local_portal_url` is kept only as a localhost diagnostic fallback.
-The public hostname is routed through Cloudflare Tunnel to a localhost-only nginx proxy that exposes `/auth/*` and the temporary noVNC surface, not the full broker API.
-The portal can launch noVNC against authenticated Chrome or an identity-specific temporary Chrome for human login.
-When `identity_id` is provided, the portal launches a temporary graphical Chrome using that identity's AX41 profile directory.
-Identity auth pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile. If that identity has `proxy_ref`, the temporary auth Chrome uses the same local proxy-forwarder path as pool Chrome.
-
-Normal tools do not return raw cookies or password data.
-
-## Run
-
-```bash
-/root/ax-browser-broker/bin/ax-browser-broker
+```json
+{
+  "identities": {
+    "work-main": {
+      "label": "Work account",
+      "site": "example.com",
+      "slot": "auto",
+      "profile_dir": "/var/lib/openbrowser-broker/profiles/work-main",
+      "proxy_ref": "residential:work-main",
+      "timezone": "America/New_York",
+      "lang": "en-US",
+      "policy": {
+        "max_parallel_sessions": 1,
+        "requires_human_auth": true
+      }
+    }
+  }
+}
 ```
 
-Install as systemd:
+When an identity needs login:
 
 ```bash
-cp /root/ax-browser-broker/systemd/ax-browser-broker.service /etc/systemd/system/ax-browser-broker.service
-systemctl daemon-reload
-systemctl enable --now ax-browser-broker.service
+curl -fsS "$BASE/auth/request" \
+  -H "authorization: Bearer $KEY" \
+  -H "content-type: application/json" \
+  -d '{"owner":"setup","identity_id":"work-main","url":"https://example.com/login","reason":"initial_login"}'
 ```
+
+Open the returned `portal_url`, complete login in the browser view, then mark the request complete. Future leases for that identity reuse the saved profile state.
+
+## Proxy Routing
+
+Add proxy credentials in `secrets/proxies.json`:
+
+```json
+{
+  "proxies": {
+    "residential:work-main": {
+      "scheme": "http",
+      "host": "proxy.example.net",
+      "port": 12345,
+      "username": "user",
+      "password": "pass"
+    }
+  }
+}
+```
+
+Then set `"proxy_ref": "residential:work-main"` on the identity. The broker starts a local proxy forwarder and launches Chrome with the matching proxy for that profile.
+
+## Safety Model
+
+- Raw cookies, passwords, tokens, proxy credentials, and VNC passwords are never returned by tools.
+- Telemetry redacts sensitive keys and secret-shaped strings.
+- Browser typing telemetry stores text length, not typed text.
+- Login and challenge handling use human handoff portals instead of secrets in chat.
+- CAPTCHA solving and ban-circumvention automation are outside the project boundary.
+
+## Operations
+
+```bash
+openbrowser-audit --json
+openbrowser-use --json open https://example.com
+openbrowser-adapter status --format json
+```
+
+Systemd examples live in `systemd/`. Detailed runbooks live in `docs/`.
+
+## Development
+
+```bash
+python3 -m compileall ax_browser_broker tests
+pytest -q
+```
+
+## Project Status
+
+OpenBrowser Broker is production-oriented infrastructure that is being prepared for public open-source release. Compatibility wrappers remain available for existing deployments; new installs can use the generic commands and environment variables above.
+
+## License
+
+MIT

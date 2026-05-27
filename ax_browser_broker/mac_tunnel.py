@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import json
+import os
 import subprocess
 import urllib.error
 import urllib.request
@@ -10,17 +11,18 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import ROOT
 from .feedback import report_issue
 from .mac_chrome import MacChromeAccessError, mirror_profiles
 
 
-MAC_SSH_HOST = "mac"
-MAC_SSH_PORT = 2222
-MAC_CDP_LOCAL_URL = "http://127.0.0.1:19333"
-MAC_CDP_REMOTE_PORT = 9333
-MAC_CHROME_CDP_HELPER = "/root/.codex/scripts/mac-chrome-cdp"
-AX41_HOST = "65.21.90.216"
-SYNC_LOCK = Path("/root/ax-browser-broker/state/mac-profile-sync/sync.lock")
+MAC_SSH_HOST = os.environ.get("OPENBROWSER_MAC_SSH_HOST", "mac")
+MAC_SSH_PORT = int(os.environ.get("OPENBROWSER_MAC_SSH_PORT", "2222"))
+MAC_CDP_LOCAL_URL = os.environ.get("OPENBROWSER_MAC_CDP_LOCAL_URL", "http://127.0.0.1:19333")
+MAC_CDP_REMOTE_PORT = int(os.environ.get("OPENBROWSER_MAC_CDP_REMOTE_PORT", "9333"))
+MAC_CHROME_CDP_HELPER = os.environ.get("OPENBROWSER_MAC_CHROME_CDP_HELPER", "/root/.codex/scripts/mac-chrome-cdp")
+BROKER_PUBLIC_HOST = os.environ.get("OPENBROWSER_BROKER_PUBLIC_HOST", "browser-host.example.com")
+SYNC_LOCK = Path(os.environ.get("OPENBROWSER_MAC_PROFILE_SYNC_LOCK", str(ROOT / "state" / "mac-profile-sync" / "sync.lock")))
 
 
 @dataclass(frozen=True)
@@ -90,11 +92,11 @@ def status() -> dict[str, Any]:
         "ssh": asdict(ssh),
         "cdp": asdict(cdp),
         "expected_mac_reverse_tunnel": {
-            "ax41_listener": f"127.0.0.1:{MAC_SSH_PORT}",
-            "mac_command": f"ssh -N -R 127.0.0.1:{MAC_SSH_PORT}:127.0.0.1:22 root@{AX41_HOST}",
+            "broker_listener": f"127.0.0.1:{MAC_SSH_PORT}",
+            "mac_command": f"ssh -N -R 127.0.0.1:{MAC_SSH_PORT}:127.0.0.1:22 root@{BROKER_PUBLIC_HOST}",
         },
         "expected_mac_chrome_cdp": {
-            "ax41_url": MAC_CDP_LOCAL_URL,
+            "broker_url": MAC_CDP_LOCAL_URL,
             "mac_remote_port": MAC_CDP_REMOTE_PORT,
         },
     }
@@ -143,7 +145,7 @@ def _sync_profiles_unlocked(dry_run: bool = False, report: bool = False) -> dict
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check and sync Federico's Mac Chrome profiles into AX41 Browser Broker")
+    parser = argparse.ArgumentParser(description="Check and sync Mac Chrome profiles into OpenBrowser Broker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
     sync = sub.add_parser("sync")

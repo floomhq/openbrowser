@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/ax-browser-broker
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Keep the broker API alive during host memory pressure. Browser children are
 # explicitly made more killable by launch_chrome.sh.

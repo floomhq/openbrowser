@@ -10,7 +10,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 
-DEFAULT_BASE_URL = "https://openbrowser-auth.floom.dev/openbrowser/v1"
+DEFAULT_BASE_URL = "http://127.0.0.1:8767/openbrowser/v1"
 DEFAULT_USER_AGENT = "openbrowser-mcp/1.0"
 
 mcp = FastMCP("openbrowser-remote")
@@ -88,7 +88,7 @@ def broker_audit(hours: int = 24) -> dict[str, Any]:
 
 @mcp.tool()
 def browser_lease(owner: str = "remote-agent", ttl_seconds: int = 300, identity_id: str | None = None) -> dict[str, Any]:
-    """Lease an isolated browser session. Pass identity_id for a persisted profile such as chrome-depontefede or linkedin-main."""
+    """Lease an isolated browser session. Pass identity_id for a persisted profile such as work-main."""
     return _request("POST", "/leases", {"owner": owner, "ttl_seconds": ttl_seconds, "identity_id": identity_id})
 
 

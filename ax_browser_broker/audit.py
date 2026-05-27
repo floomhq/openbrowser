@@ -483,7 +483,7 @@ def baseline_current_raw_cdp(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Audit AX41 browser broker agent usage.")
+    parser = argparse.ArgumentParser(description="Audit OpenBrowser Broker agent usage.")
     parser.add_argument("--hours", type=int, default=24)
     parser.add_argument("--session-path", action="append", default=[])
     parser.add_argument("--json", action="store_true")

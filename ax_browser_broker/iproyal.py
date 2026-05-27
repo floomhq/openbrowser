@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .config import SECRET_DIR
 
 API_BASE = "https://apid.iproyal.com/v1/reseller"
-DEFAULT_SECRET_FILE = Path("/root/ax-browser-broker/secrets/iproyal.json")
+DEFAULT_SECRET_FILE = SECRET_DIR / "iproyal.json"
 ISP_DEDICATED_PRODUCT_ID = 9
 ISP_DEDICATED_30_DAY_PLAN_ID = 22
 
@@ -223,7 +224,7 @@ def extract_proxy_records(payload: Any) -> list[dict[str, Any]]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="IPRoyal helper for AX41 Browser Broker")
+    parser = argparse.ArgumentParser(description="IPRoyal helper for OpenBrowser Broker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("balance")
     sub.add_parser("isp-summary")

@@ -8,6 +8,7 @@ import base64
 from contextlib import asynccontextmanager
 from typing import Any
 
+import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
@@ -174,7 +175,7 @@ async def lifespan(_app: FastAPI):
         await controller.stop()
 
 
-app = FastAPI(title="AX41 Browser Broker", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="OpenBrowser Broker", version="0.1.0", lifespan=lifespan)
 
 
 def _http_error(error: Exception) -> HTTPException:
@@ -305,8 +306,8 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
         },
         "identities": {
             "generic": "omit identity_id for a neutral non-account browser",
-            "chrome-depontefede": "Federico AX41 Chrome profile with persisted Google/Discord login",
-            "linkedin-main": "LinkedIn identity with its configured proxy",
+            "work-main": "Example persisted Chrome profile with account state",
+            "qa-generic": "Example generic QA identity",
         },
     }
 
@@ -761,7 +762,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AX41 Browser Control</title>
+    <title>OpenBrowser Broker Control</title>
     <style>
       :root {{ color-scheme: light; }}
       body {{ font-family: system-ui, sans-serif; margin: 0; background: #f8fafc; color: #111827; }}
@@ -1094,7 +1095,7 @@ async def auth_portal(token: str) -> str:
 <html>
   <head>
     <meta charset="utf-8">
-    <title>AX41 Browser Auth</title>
+    <title>OpenBrowser Broker Auth</title>
     <style>
       body {{ font-family: system-ui, sans-serif; margin: 40px; max-width: 760px; line-height: 1.45; }}
       code, pre {{ background: #f3f4f6; padding: 2px 5px; border-radius: 4px; }}
@@ -1131,7 +1132,7 @@ async def auth_start_vnc(token: str) -> str:
     return f"""
 <!doctype html>
 <html>
-  <head><meta charset="utf-8"><title>AX41 noVNC</title></head>
+  <head><meta charset="utf-8"><title>OpenBrowser Broker noVNC</title></head>
   <body style="font-family: system-ui, sans-serif; margin: 40px">
     <h1>Login view ready</h1>
     <p>Open <a href="{safe_websocket_url}">{safe_websocket_url}</a>.</p>
@@ -1278,3 +1279,11 @@ async def telemetry_events(
 @app.get("/telemetry/summary")
 async def telemetry_summary(window_seconds: int = 86400) -> dict[str, Any]:
     return summary(window_seconds)
+
+
+def main() -> None:
+    uvicorn.run(app, host=BROKER_HOST, port=BROKER_PORT)
+
+
+if __name__ == "__main__":
+    main()

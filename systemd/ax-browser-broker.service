@@ -1,12 +1,12 @@
 [Unit]
-Description=AX41 Browser Broker API
+Description=OpenBrowser Broker API
 After=network.target browser-pool-supervisor.service authenticated-chrome.service
 Wants=browser-pool-supervisor.service
 
 [Service]
 Type=simple
-WorkingDirectory=/root/ax-browser-broker
-ExecStart=/root/ax-browser-broker/bin/ax-browser-broker
+WorkingDirectory=/opt/openbrowser-broker
+ExecStart=/opt/openbrowser-broker/bin/ax-browser-broker
 Restart=always
 RestartSec=3
 Environment=PYTHONUNBUFFERED=1

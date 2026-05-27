@@ -386,7 +386,7 @@ def check_proxy(ref: str, timeout: float = 20.0) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Identity and proxy helper for AX41 Browser Broker")
+    parser = argparse.ArgumentParser(description="Identity and proxy helper for OpenBrowser Broker")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("status")
     sub.add_parser("mac-inventory")

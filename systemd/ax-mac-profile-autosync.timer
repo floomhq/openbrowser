@@ -1,5 +1,5 @@
 [Unit]
-Description=Run AX41 Mac Chrome profile autosync every six hours
+Description=Run OpenBrowser Broker Mac Chrome profile autosync every six hours
 
 [Timer]
 OnBootSec=5min

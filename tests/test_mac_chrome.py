@@ -206,7 +206,7 @@ def test_read_json_falls_back_to_mac_ssh_for_mount_permission_error(monkeypatch)
         lambda args, text, timeout=None: '{"profile":{"info_cache":{}}}',
     )
 
-    data = mac_chrome._read_json(FakePath("/Users/federicodeponte/Library/Application Support/Google/Chrome/Local State"), {})
+    data = mac_chrome._read_json(FakePath("/Users/example/Library/Application Support/Google/Chrome/Local State"), {})
 
     assert data == {"profile": {"info_cache": {}}}
 
@@ -247,7 +247,7 @@ def test_remote_mac_profile_copy_uses_shell_cd_for_paths_with_spaces(tmp_path, m
     )
 
     ssh_args = commands[0]
-    assert ssh_args[-1].startswith("cd '/Users/federicodeponte/Library/Application Support/Google/Chrome/Profile 3'")
+    assert ssh_args[-1].startswith("cd '/Users/example/Library/Application Support/Google/Chrome/Profile 3'")
     assert "--exclude=Cookies" in ssh_args[-1]
     assert "--exclude=Extensions" in ssh_args[-1]
     assert "--exclude=Local Extension Settings" in ssh_args[-1]

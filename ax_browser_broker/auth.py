@@ -20,6 +20,7 @@ from .config import (
     BROKER_PORT,
     PUBLIC_AUTH_BASE_URL,
     PUBLIC_NOVNC_BASE_URL,
+    ROOT,
     SLOTS,
     ensure_dirs,
 )
@@ -357,7 +358,7 @@ def _start_identity_auth_vnc(
             started_pids.append(xvfb_proc.pid)
             time.sleep(0.4)
             if getattr(identity, "proxy_ref", None):
-                proxy_forwarder = Path("/root/ax-browser-broker/bin/ax-proxy-forwarder")
+                proxy_forwarder = ROOT / "bin" / "ax-proxy-forwarder"
                 if not proxy_forwarder.exists():
                     raise AuthError("ax-proxy-forwarder is missing")
                 proxy_local_port = _find_free_tcp_port()
@@ -472,7 +473,7 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     auth_path = None
     if not request.get("identity_id"):
         display, auth_path = _authenticated_x_display()
-    runtime_dir = Path("/root/ax-browser-broker/state/vnc")
+    runtime_dir = ROOT / "state" / "vnc"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     password_file = runtime_dir / f"{token}.passwd"
     log_path = runtime_dir / f"{token}.log"

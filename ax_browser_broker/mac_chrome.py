@@ -16,7 +16,8 @@ from typing import Any
 from .config import BROWSER_POOL_DIR, IDENTITIES_FILE, SLOTS, ensure_dirs
 
 
-DEFAULT_MAC_CHROME_DIR = Path("/Users/federicodeponte/Library/Application Support/Google/Chrome")
+DEFAULT_MAC_HOME = Path(os.environ.get("OPENBROWSER_MAC_HOME", "/Users/example"))
+DEFAULT_MAC_CHROME_DIR = DEFAULT_MAC_HOME / "Library/Application Support/Google/Chrome"
 MAC_SSH_ARGS = [
     "ssh",
     "-o",
@@ -49,7 +50,11 @@ class MacChromeAccessError(RuntimeError):
 def _chrome_dir(path: str | Path | None = None) -> Path:
     if path:
         return Path(path)
-    return Path(os.environ.get("AX_MAC_CHROME_DIR", str(DEFAULT_MAC_CHROME_DIR)))
+    return Path(os.environ.get("OPENBROWSER_MAC_CHROME_DIR", os.environ.get("AX_MAC_CHROME_DIR", str(DEFAULT_MAC_CHROME_DIR))))
+
+
+def _is_remote_mac_path(path: Path) -> bool:
+    return str(path).startswith(str(DEFAULT_MAC_HOME) + "/")
 
 
 def _mac_ssh_output(command: str, timeout: float = 10) -> str:
@@ -64,9 +69,8 @@ def _mac_ssh_output(command: str, timeout: float = 10) -> str:
 
 
 def _read_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
-    mac_home = "/Users/federicodeponte/"
     path_text = str(path)
-    if path_text.startswith(mac_home):
+    if _is_remote_mac_path(path):
         code = r"""
 import json
 import pathlib
@@ -87,7 +91,7 @@ else:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except PermissionError:
-        if not path_text.startswith(mac_home):
+        if not _is_remote_mac_path(path):
             raise
         code = "import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text(), end='')"
         output = _mac_ssh_output(f"python3 -c {shlex.quote(code)} {shlex.quote(path_text)}", timeout=10)
@@ -156,7 +160,7 @@ print(json.dumps(rows))
 
 def inventory(chrome_dir: str | Path | None = None) -> list[MacChromeProfile]:
     root = _chrome_dir(chrome_dir)
-    if str(root).startswith("/Users/federicodeponte/"):
+    if _is_remote_mac_path(root):
         return _remote_mac_inventory(root)
     local_state = root / "Local State"
     raw = _read_json(local_state, {})
@@ -353,7 +357,7 @@ MIRROR_EXCLUDES = [
 
 
 def _rsync_profile(source: Path, dest: Path) -> None:
-    is_remote_mac_source = str(source).startswith("/Users/federicodeponte/")
+    is_remote_mac_source = _is_remote_mac_path(source)
     if not is_remote_mac_source and not source.exists():
         raise RuntimeError(f"Profile source not found: {source}")
     dest.mkdir(parents=True, exist_ok=True)
@@ -430,7 +434,7 @@ def mirror_profiles(
                 "copied_raw_cookies": False,
                 "copied_raw_passwords": False,
                 "copied_raw_tokens": False,
-                "note": "Mac Keychain-backed cookies/passwords/tokens are not portable to AX41 Linux Chrome.",
+                "note": "Mac Keychain-backed cookies/passwords/tokens are not portable to Linux Chrome profiles.",
             }
             (dest / ".mac-profile-mirror.json").write_text(json.dumps(stamp, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         mirrored.append(

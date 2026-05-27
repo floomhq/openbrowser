@@ -34,7 +34,7 @@ def test_status_reports_expected_reverse_tunnel(monkeypatch) -> None:
 
     assert result["ok"] is False
     assert result["ssh"]["detail"] == "Connection refused"
-    assert result["expected_mac_reverse_tunnel"]["ax41_listener"] == "127.0.0.1:2222"
+    assert result["expected_mac_reverse_tunnel"]["broker_listener"] == "127.0.0.1:2222"
     assert "ssh -N -R" in result["expected_mac_reverse_tunnel"]["mac_command"]
 
 

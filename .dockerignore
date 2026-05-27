@@ -1,0 +1,12 @@
+.git
+.pytest_cache
+__pycache__
+*.pyc
+.venv
+artifacts
+logs
+profiles
+secrets
+state
+config/identities.local.json
+*.png

@@ -19,8 +19,8 @@ class Slot:
         return BROWSER_POOL_DIR / "profiles" / self.name
 
 
-ROOT = Path("/root/ax-browser-broker")
-BROWSER_POOL_DIR = Path("/root/browser-pool")
+ROOT = Path(os.environ.get("OPENBROWSER_BROKER_ROOT", "/root/ax-browser-broker"))
+BROWSER_POOL_DIR = Path(os.environ.get("OPENBROWSER_BROWSER_POOL_DIR", "/root/browser-pool"))
 STATE_DIR = ROOT / "state"
 ARTIFACT_DIR = ROOT / "artifacts"
 SCREENSHOT_DIR = ARTIFACT_DIR / "screenshots"
@@ -29,7 +29,7 @@ PROFILE_DIR = ROOT / "profiles"
 CONFIG_DIR = ROOT / "config"
 SECRET_DIR = ROOT / "secrets"
 GOLDEN_PROFILE_DIR = PROFILE_DIR / "golden"
-AUTHENTICATED_PROFILE_DIR = Path("/root/.config/authenticated-chrome")
+AUTHENTICATED_PROFILE_DIR = Path(os.environ.get("OPENBROWSER_AUTHENTICATED_PROFILE_DIR", "/root/.config/authenticated-chrome"))
 POOL_STATE_FILE = BROWSER_POOL_DIR / "state" / "leases.json"
 BROWSER_POOL_MAINTENANCE_DIR = BROWSER_POOL_DIR / "state" / "maintenance"
 POOL_CONFIG_DIR = BROWSER_POOL_DIR / "config"
@@ -41,11 +41,14 @@ AUDIT_BASELINE_FILE = STATE_DIR / "audit_baseline.json"
 IDENTITIES_FILE = CONFIG_DIR / "identities.local.json"
 PROXIES_FILE = SECRET_DIR / "proxies.json"
 OPENBROWSER_API_KEYS_FILE = SECRET_DIR / "openbrowser_api_keys.json"
-BROKER_HOST = "127.0.0.1"
-BROKER_PORT = 8767
-PUBLIC_AUTH_BASE_URL = os.environ.get("AX_BROWSER_PUBLIC_AUTH_BASE_URL", "").rstrip("/")
-PUBLIC_NOVNC_BASE_URL = os.environ.get("AX_BROWSER_PUBLIC_NOVNC_BASE_URL", "").rstrip("/")
-PUBLIC_OPENBROWSER_BASE_URL = os.environ.get("AX_BROWSER_PUBLIC_OPENBROWSER_BASE_URL", PUBLIC_AUTH_BASE_URL).rstrip("/")
+BROKER_HOST = os.environ.get("OPENBROWSER_BROKER_HOST", "127.0.0.1")
+BROKER_PORT = int(os.environ.get("OPENBROWSER_BROKER_PORT", "8767"))
+PUBLIC_AUTH_BASE_URL = os.environ.get("OPENBROWSER_PUBLIC_AUTH_BASE_URL", os.environ.get("AX_BROWSER_PUBLIC_AUTH_BASE_URL", "")).rstrip("/")
+PUBLIC_NOVNC_BASE_URL = os.environ.get("OPENBROWSER_PUBLIC_NOVNC_BASE_URL", os.environ.get("AX_BROWSER_PUBLIC_NOVNC_BASE_URL", "")).rstrip("/")
+PUBLIC_OPENBROWSER_BASE_URL = os.environ.get(
+    "OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL",
+    os.environ.get("AX_BROWSER_PUBLIC_OPENBROWSER_BASE_URL", PUBLIC_AUTH_BASE_URL),
+).rstrip("/")
 LEASE_TTL_SECONDS = 60 * 60 * 4
 AUTH_REQUEST_TTL_SECONDS = 15 * 60
 LEASE_CONTROL_TTL_SECONDS = 15 * 60

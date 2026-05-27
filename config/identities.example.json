@@ -1,20 +1,30 @@
 {
   "identities": {
-    "linkedin-main": {
-      "label": "LinkedIn main account",
-      "site": "linkedin.com",
-      "slot": "pool-c",
-      "profile_dir": "/root/browser-pool/profiles/linkedin-main",
-      "proxy_ref": "iproyal:linkedin-main",
+    "work-main": {
+      "label": "Work account",
+      "site": "example.com",
+      "slot": "auto",
+      "profile_dir": "/var/lib/openbrowser-broker/profiles/work-main",
+      "proxy_ref": "residential:work-main",
       "timezone": "America/New_York",
       "lang": "en-US",
       "geo": {
         "country": "US",
-        "city": "Springfield, MA"
+        "city": "New York, NY"
       },
       "policy": {
         "max_parallel_sessions": 1,
         "requires_human_auth": true
+      }
+    },
+    "qa-generic": {
+      "label": "Generic QA profile",
+      "site": "public-web",
+      "slot": "auto",
+      "profile_dir": "/var/lib/openbrowser-broker/profiles/qa-generic",
+      "policy": {
+        "max_parallel_sessions": 2,
+        "requires_human_auth": false
       }
     }
   }

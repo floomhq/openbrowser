@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PYTHONPATH="/root/ax-browser-broker:${PYTHONPATH:-}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
 
-receipt_dir="/root/ax-browser-broker/state/mac-profile-sync"
+receipt_dir="${ROOT_DIR}/state/mac-profile-sync"
 receipt="${receipt_dir}/latest.json"
 mkdir -p "$receipt_dir"
 
@@ -11,7 +12,7 @@ status_json="$(mktemp)"
 sync_json="$(mktemp)"
 trap 'rm -f "$status_json" "$sync_json"' EXIT
 
-if ! /root/ax-browser-broker/bin/ax-mac-profile-sync status >"$status_json"; then
+if ! "${ROOT_DIR}/bin/ax-mac-profile-sync" status >"$status_json"; then
   python3 - "$status_json" "$receipt" <<'PY'
 import json
 import pathlib
@@ -32,7 +33,7 @@ PY
   exit 0
 fi
 
-if ! /root/ax-browser-broker/bin/ax-mac-profile-sync sync >"$sync_json"; then
+if ! "${ROOT_DIR}/bin/ax-mac-profile-sync" sync >"$sync_json"; then
   python3 - "$sync_json" "$receipt" <<'PY'
 import json
 import pathlib

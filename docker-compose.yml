@@ -1,0 +1,16 @@
+services:
+  openbrowser-broker:
+    build: .
+    ports:
+      - "8767:8767"
+    environment:
+      OPENBROWSER_BROKER_HOST: "0.0.0.0"
+      OPENBROWSER_BROKER_PORT: "8767"
+      OPENBROWSER_BROKER_ROOT: "/data/openbrowser-broker"
+      OPENBROWSER_BROWSER_POOL_DIR: "/data/openbrowser-pool"
+      OPENBROWSER_API_KEYS: "${OPENBROWSER_API_KEYS:-dev-openbrowser-key}"
+    volumes:
+      - openbrowser-data:/data
+
+volumes:
+  openbrowser-data:

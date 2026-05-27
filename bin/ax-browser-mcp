@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd /root/ax-browser-broker
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 exec python3 -m ax_browser_broker.mcp_server

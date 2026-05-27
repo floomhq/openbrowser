@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export PYTHONPATH="/root/ax-browser-broker:${PYTHONPATH:-}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
 exec python3 -m ax_browser_broker.identities "$@"

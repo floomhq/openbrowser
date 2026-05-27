@@ -1,111 +1,56 @@
-# Mac Chrome Profiles
+# Chrome Profile Import
 
-AX41 Browser Broker can mirror Federico's Mac Chrome people/profiles as broker identities.
+OpenBrowser Broker can mirror Chrome profile metadata from a workstation into broker identities.
 
-## What Gets Imported
+## What Gets Copied
 
-- Chrome profile metadata from Mac Chrome `Local State`.
-- Profile labels.
-- Account email identifiers.
-- Source profile directory names.
-- Isolated AX41 profile directories under `/root/browser-pool/profiles/<identity>`.
+- Profile labels and account metadata from Chrome profile preferences.
+- Safe profile files needed to create a Linux Chrome profile directory.
+- Bookmarks, preferences, and other non-secret profile state where portable.
+- Isolated broker profile directories under the configured browser pool path.
 
-## What Never Gets Imported
+## What Is Never Copied
 
-- Raw cookies.
-- Raw saved passwords.
-- Raw session tokens.
-- macOS Keychain material.
-- Chrome `Login Data`, `Cookies`, or token databases from the Mac profile.
+- Raw cookies
+- Password databases
+- Tokens
+- Keychain material
+- Browser databases that depend on a workstation secret store
 
-macOS Chrome encrypts sensitive website/session/password state through Keychain. Linux Chrome on AX41 cannot consume that state as a portable session bundle. The broker therefore has no raw-token fallback path by design.
+macOS Chrome encrypts sensitive website, session, and password state through Keychain. Linux Chrome cannot consume that as a portable session bundle. The broker therefore has no raw-token fallback path by design.
 
 ## Auth Fallback
 
-The supported fallback is human auth into the AX41 profile:
+The supported fallback is human auth into the broker profile:
 
-1. Import Mac Chrome profile metadata with `ax-browser-identity import-mac-profiles`.
-2. Create an auth request with `identity_id="chrome-..."`.
-3. Federico logs in through the local noVNC portal.
-4. Chrome stores the resulting session in that AX41 identity profile.
-5. Agents later lease the same `identity_id`.
+1. Create or mirror the identity.
+2. Call `auth_request(..., identity_id="<identity>")`.
+3. The human logs in through the temporary noVNC portal.
+4. Chrome stores the resulting session in that broker identity profile.
 
-During human login, imported `chrome-*` identities are launched without the pool's normal `--disable-sync` flag. Chrome Sync can sync Chrome-managed passwords/bookmarks/extensions through Google's normal Chrome account flow when Federico enables Sync in the AX41 Chrome profile. Website login sessions still depend on the website and normally require login on AX41.
+During human login, imported identities can launch without the pool's normal sync-disabling flags. Chrome Sync can sync Chrome-managed passwords, bookmarks, and extensions when the human enables Sync in the broker Chrome profile. Website login sessions still depend on each website and often require login on the broker host.
 
-## Mirror And Tunnel Verification
+## Remote Workstation Tunnel
 
-Use the profile sync wrapper for the whole Mac dependency chain:
+If a workstation profile needs to be inspected remotely, use a reverse SSH tunnel and a dedicated Chrome CDP profile. The installer template is:
 
 ```bash
-/root/ax-browser-broker/bin/ax-mac-profile-sync status
-/root/ax-browser-broker/bin/ax-mac-profile-sync sync --dry-run
-/root/ax-browser-broker/bin/ax-mac-profile-sync sync --report-issue
-/root/ax-browser-broker/bin/ax-mac-profile-autosync
+OPENBROWSER_BROKER_HOST=browser.example.com \
+OPENBROWSER_BROKER_USER=root \
+scripts/install-mac-reverse-tunnel.sh
 ```
 
-The wrapper verifies:
+The reverse SSH agent exposes workstation SSH only on broker localhost, not publicly.
 
-- Mac reverse SSH is reachable at AX41 `127.0.0.1:2222`.
-- Mac Chrome CDP is reachable through AX41 `http://127.0.0.1:19333`.
-- Mac Chrome profiles can be mirrored into `/root/browser-pool/profiles/chrome-*`.
+## Autosync
 
-If the Mac reverse tunnel is missing, reinstall the Mac launch agents from the Mac:
+The optional autosync timer mirrors profile metadata when the workstation tunnel is reachable:
 
 ```bash
-/root/ax-browser-broker/scripts/install-mac-reverse-tunnel.sh
-```
-
-The same installer is also available through the public handoff domain for Federico to run on the Mac:
-
-```bash
-curl -fsSL https://openbrowser-auth.floom.dev/mac/install-reverse-tunnel.sh | bash
-```
-
-The installer creates:
-
-- `~/Library/LaunchAgents/dev.ax41.mac-reverse-ssh.plist`
-- `~/Library/LaunchAgents/dev.ax41.chrome-cdp.plist`
-
-The reverse SSH agent exposes Mac SSH only on AX41 localhost, not publicly. The Chrome CDP launch agent uses `~/.hermes/chrome-cdp-clone` and port `9333` on the Mac; AX41 then connects through `/root/.codex/scripts/mac-chrome-cdp ensure`.
-
-On AX41, enable the autosync timer so the mirror runs as soon as the Mac tunnel reconnects:
-
-```bash
-cp /root/ax-browser-broker/systemd/ax-mac-profile-autosync.* /etc/systemd/system/
+cp systemd/ax-mac-profile-autosync.service /etc/systemd/system/openbrowser-profile-autosync.service
+cp systemd/ax-mac-profile-autosync.timer /etc/systemd/system/openbrowser-profile-autosync.timer
 systemctl daemon-reload
-systemctl enable --now ax-mac-profile-autosync.timer
-cat /root/ax-browser-broker/state/mac-profile-sync/latest.json
+systemctl enable --now openbrowser-profile-autosync.timer
 ```
 
-## Slot Behavior
-
-Imported `chrome-*` identities use `slot: "auto"` by default.
-
-- Two different Chrome identities can run concurrently when free pool slots exist.
-- The same identity remains exclusive and cannot be leased twice.
-- Pinned/proxied identities such as `linkedin-main` remain fixed to their configured slot.
-- Auto Chrome identities do not overwrite pinned/proxied slots.
-- Direct activation refuses a slot that already has an active lease.
-- Failed or contended lease attempts are recorded as broker telemetry events with `event_type: "error"`.
-
-## Concurrency Guard
-
-Lease selection runs under the broker lease-state file lock. During that locked section the broker:
-
-- Garbage-collects stale leases.
-- Rejects duplicate leases for the same identity.
-- Checks which slots are already in use.
-- Skips reserved pinned/proxied slots for auto Chrome identities.
-- Activates the selected identity on the chosen concrete slot.
-- Rechecks browser health before returning the lease.
-
-That sequence is the runtime race mitigation for parallel agents requesting different Chrome profiles at the same time.
-
-## Auth Cleanup
-
-The auth handoff uses temporary local-only VNC credentials.
-
-- If VNC startup is refused or fails, the temporary password file is removed.
-- If VNC starts successfully, completion stops VNC, websockify, Chrome, and Xvfb helper processes.
-- Completion removes the temporary password file.
-- Ports `6081` and `5901` are expected to be closed when no auth handoff is active.
+Pinned and proxied identities remain fixed to their configured slot and proxy policy.

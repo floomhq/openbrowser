@@ -73,7 +73,7 @@ def test_remote_mcp_browser_lease_posts_to_public_api(monkeypatch) -> None:
 
     result = remote_mcp_server.browser_lease(owner="pytest", identity_id="chrome-depontefede", ttl_seconds=120)
 
-    assert captured["url"] == "https://openbrowser-auth.floom.dev/openbrowser/v1/leases"
+    assert captured["url"] == "http://127.0.0.1:8767/openbrowser/v1/leases"
     assert captured["body"] == {"owner": "pytest", "ttl_seconds": 120, "identity_id": "chrome-depontefede"}
     assert result["lease_id"] == "lease-123"
 
