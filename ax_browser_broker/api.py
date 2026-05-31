@@ -1150,178 +1150,484 @@ def _auth_portal_html(
     safe_client_ip = html.escape(client_ip or "unknown")
     safe_start_error = html.escape(start_error or "")
     frame = ""
-    password_block = ""
+    floating_auth = ""
     if vnc:
         embed_url = _novnc_embed_url(vnc, trusted_client)
         safe_embed_url = html.escape(embed_url, quote=True)
         safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
-            password_block = """
-            <div class="handoff-note is-success">
-              <span class="status-dot" aria-hidden="true"></span>
-              <div><strong>Trusted connection</strong><span>The login view opens without a temporary VNC password prompt.</span></div>
+            floating_auth = f"""
+          <aside class="auth-card is-success" aria-label="Human auth request">
+            <div class="auth-logo">OB</div>
+            <div class="auth-copy">
+              <div class="auth-title">Trusted connection</div>
+              <div class="auth-subtitle">The browser opens without a temporary VNC password prompt.</div>
             </div>
+            <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Done</button></form>
+          </aside>
 """
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
-            password_block = f"""
-            <div class="handoff-note is-warning">
-              <span class="status-dot" aria-hidden="true"></span>
-              <div class="note-copy"><strong>Temporary VNC password</strong><span>Trusted IPs skip this prompt on future handoffs.</span></div>
-              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-ghost" type="button" id="copyPassword">Copy</button></div>
+            floating_auth = f"""
+          <aside class="auth-card is-warning" aria-label="Human auth request">
+            <div class="auth-logo">G</div>
+            <div class="auth-copy">
+              <div class="auth-title">Human auth request</div>
+              <div class="auth-subtitle">Temporary VNC password</div>
+              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small" type="button" id="copyPassword">Copy</button></div>
             </div>
+          </aside>
 """
         frame = f"""
-        <section class="browser-shell">
-          <div class="browser-toolbar">
-            <div class="toolbar-copy">
-              <div class="eyebrow">Live login view</div>
-              <div class="title-small">Secure browser session</div>
+        <section class="browser-stage">
+          <div class="stage-title">
+            <span>Live Browser Session</span>
+            <a class="button button-outline button-small" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
+          </div>
+          <div class="browser-shell">
+            <div class="browser-toolbar">
+              <div class="toolbar-left" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+              <div class="toolbar-url"><span class="lock">lock</span>{safe_url}</div>
+              <a class="icon-button" href="{safe_open_url}" target="_blank" rel="noopener noreferrer" aria-label="Open full screen">Open</a>
             </div>
-            <a class="button button-outline" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
+            <div class="browser-frame">
+              <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
+            </div>
           </div>
-          {password_block}
-          <div class="browser-frame">
-            <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
-          </div>
+          {floating_auth}
         </section>
 """
     else:
         frame = f"""
-        <section class="empty-state">
-          <div class="title-small">Browser login view is not running</div>
-          <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
-          <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
+        <section class="browser-stage">
+          <div class="stage-title"><span>Live Browser Session</span></div>
+          <div class="empty-state">
+            <div class="empty-icon">OB</div>
+            <div>
+              <div class="title-small">Browser login view is not running</div>
+              <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
+            </div>
+            <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
+          </div>
         </section>
 """
     return f"""
 <!doctype html>
-<html>
+<html data-theme="light">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenBrowser Login Handoff</title>
+    <script>
+      (() => {{
+        try {{
+          const saved = localStorage.getItem('openbrowser-theme');
+          const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.dataset.theme = saved || (prefersDark ? 'dark' : 'light');
+        }} catch (error) {{
+          document.documentElement.dataset.theme = 'light';
+        }}
+      }})();
+    </script>
     <style>
       :root {{
-        color-scheme: light;
-        --bg-app: #fafaf7;
-        --bg-card: #ffffff;
-        --bg-2: #f1eee8;
-        --bg-3: #ede8df;
-        --text-primary: #141414;
-        --text-muted: #6b6861;
-        --border-default: #e7e0d6;
-        --border-soft: #e8e3da;
-        --border-strong: #d8cfc2;
-        --primary: #181818;
+        color-scheme: light dark;
+        --page: #e7dfd0;
+        --paper: rgba(255,255,255,0.88);
+        --panel: rgba(255,255,255,0.74);
+        --panel-solid: #ffffff;
+        --soft: #f5f2ec;
+        --text: #1e1d1a;
+        --muted: #807a70;
+        --faint: #a8a196;
+        --border: rgba(58,48,38,0.12);
+        --border-strong: rgba(58,48,38,0.18);
+        --primary: #24231f;
         --primary-text: #ffffff;
-        --success: #2f8f5b;
-        --warning: #f9735b;
-        --pending: #e0b349;
-        --radius-card: 18px;
-        --radius-button: 12px;
+        --green: #47b274;
+        --amber: #ee9c44;
+        --red: #ec6a5f;
+        --blue: #4f78d9;
+        --radius-lg: 20px;
+        --radius-md: 14px;
+        --radius-sm: 10px;
         --radius-pill: 9999px;
-        --shadow-card: 0 12px 30px rgba(0,0,0,0.04);
-        --shadow-pop: 0 16px 36px rgba(0,0,0,0.10), 0 0 0 1px var(--border-default);
+        --shadow-window: 0 24px 80px rgba(33, 26, 17, 0.18), 0 1px 0 rgba(255,255,255,0.78) inset;
+        --shadow-float: 0 24px 64px rgba(33, 26, 17, 0.20), 0 0 0 1px var(--border);
         --ease: cubic-bezier(0.22, 1, 0.36, 1);
-        --spring: cubic-bezier(0.32, 1.06, 0.5, 1);
+      }}
+      [data-theme="dark"] {{
+        --page: #0f1211;
+        --paper: rgba(25,25,24,0.92);
+        --panel: rgba(33,33,31,0.76);
+        --panel-solid: #21211f;
+        --soft: #2b2a27;
+        --text: #f4f1ea;
+        --muted: #aaa49a;
+        --faint: #746f68;
+        --border: rgba(255,255,255,0.10);
+        --border-strong: rgba(255,255,255,0.18);
+        --primary: #f4f1ea;
+        --primary-text: #191918;
+        --green: #59c889;
+        --amber: #f2b15d;
+        --red: #f07b70;
+        --blue: #7fa0ff;
+        --shadow-window: 0 28px 90px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.08) inset;
+        --shadow-float: 0 28px 70px rgba(0,0,0,0.42), 0 0 0 1px var(--border);
       }}
       * {{ box-sizing: border-box; }}
-      html {{ background: var(--bg-app); }}
-      body {{ margin: 0; min-height: 100dvh; overflow: hidden; display: flex; flex-direction: column; font-family: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text-primary); background: var(--bg-app); font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1; }}
-      header {{ flex: 0 0 auto; padding: 16px 20px 10px; border-bottom: 1px solid var(--border-soft); background: color-mix(in srgb, var(--bg-app) 92%, white); }}
-      main {{ flex: 1 1 auto; min-height: 0; width: 100%; padding: 14px 16px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }}
-      .topbar {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
-      .brand {{ display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; letter-spacing: 0; }}
-      .brand::before {{ content: ""; width: 9px; height: 9px; border-radius: var(--radius-pill); background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent); }}
-      .meta {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
-      .pill {{ display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-pill); padding: 0 10px; color: var(--text-muted); background: var(--bg-card); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }}
-      .handoff-bar, .browser-shell, .empty-state {{ background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }}
-      .handoff-bar {{ padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; }}
-      .request-main {{ min-width: 0; display: grid; gap: 8px; }}
-      .request-line {{ display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; min-width: 0; }}
-      .field-label {{ display: inline-flex; align-items: center; height: 28px; color: var(--text-primary); font-size: 13px; font-weight: 650; }}
-      .details-row {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--text-muted); font-size: 12.5px; }}
-      .details-row b {{ color: var(--text-primary); font-weight: 550; }}
-      .browser-shell {{ min-height: 0; overflow: hidden; display: flex; flex-direction: column; transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease); }}
-      .browser-toolbar {{ flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); background: linear-gradient(180deg, #fff, var(--bg-card)); }}
-      .toolbar-copy {{ display: grid; gap: 2px; min-width: 0; }}
-      .browser-frame {{ flex: 1 1 auto; min-height: 0; background: #111; }}
-      iframe {{ width: 100%; height: 100%; min-height: 0; display: block; border: 0; background: white; }}
-      .eyebrow {{ color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }}
-      .title-small {{ font-size: 15px; font-weight: 650; line-height: 1.25; }}
-      .target {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: color-mix(in srgb, var(--text-primary) 86%, transparent); background: var(--bg-2); border: 1px solid var(--border-default); border-radius: var(--radius-button); padding: 7px 10px; }}
-      details {{ color: var(--text-muted); font-size: 12.5px; }}
-      summary {{ cursor: pointer; font-weight: 600; }}
-      .actions {{ display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }}
-      button, .button {{ appearance: none; display: inline-flex; height: 34px; align-items: center; justify-content: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--primary) 82%, transparent); border-radius: var(--radius-button); background: var(--primary); color: var(--primary-text); font-weight: 600; font-size: 13px; padding: 0 12px; text-decoration: none; cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,0.06); transition: transform 120ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease); white-space: nowrap; }}
-      button:hover, .button:hover {{ background: #2a2a2a; box-shadow: 0 8px 20px rgba(0,0,0,0.08); }}
+      html {{ min-height: 100%; background: var(--page); }}
+      body {{
+        margin: 0;
+        min-height: 100dvh;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        color: var(--text);
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--page) 82%, #ffffff) 0%, var(--page) 52%, color-mix(in srgb, var(--page) 86%, #5c6f86) 100%);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1;
+      }}
+      [data-theme="dark"] body {{
+        background: linear-gradient(180deg, #151716 0%, var(--page) 58%, #1d201e 100%);
+      }}
+      button, .button {{
+        appearance: none;
+        display: inline-flex;
+        height: 38px;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid color-mix(in srgb, var(--primary) 82%, transparent);
+        border-radius: var(--radius-sm);
+        background: var(--primary);
+        color: var(--primary-text);
+        font-weight: 650;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 14px;
+        text-decoration: none;
+        cursor: pointer;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+        transition: transform 120ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+        white-space: nowrap;
+      }}
+      button:hover, .button:hover {{ box-shadow: 0 10px 24px rgba(0,0,0,0.12); }}
       button:active, .button:active {{ transform: translateY(1px) scale(.985); }}
-      .button-outline {{ border-color: var(--border-default); background: var(--bg-card); color: var(--text-primary); }}
-      .button-outline:hover {{ background: var(--bg-2); border-color: var(--border-strong); }}
-      .button-ghost {{ height: 28px; border-color: var(--border-default); background: var(--bg-card); color: var(--text-primary); padding: 0 10px; }}
-      .button-ghost:hover {{ background: var(--bg-2); }}
-      .muted {{ color: var(--text-muted); font-size: 13px; }}
-      .handoff-note {{ flex: 0 0 auto; margin: 10px 14px; padding: 10px 12px; border-radius: var(--radius-button); border: 1px solid var(--border-default); display: flex; align-items: center; gap: 10px; font-size: 13px; }}
-      .handoff-note strong {{ display: block; color: var(--text-primary); font-weight: 650; }}
-      .handoff-note span:not(.status-dot) {{ color: var(--text-muted); }}
-      .handoff-note.is-success {{ background: color-mix(in srgb, var(--success) 8%, var(--bg-card)); border-color: color-mix(in srgb, var(--success) 22%, var(--border-default)); }}
-      .handoff-note.is-warning {{ background: color-mix(in srgb, var(--warning) 8%, var(--bg-card)); border-color: color-mix(in srgb, var(--warning) 28%, var(--border-default)); }}
-      .status-dot {{ width: 8px; height: 8px; flex: 0 0 auto; border-radius: var(--radius-pill); background: var(--success); }}
-      .is-warning .status-dot {{ background: var(--warning); }}
-      .note-copy {{ min-width: 0; flex: 1 1 auto; }}
-      .password-row {{ margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
-      code {{ background: rgba(0,0,0,.06); border: 1px solid rgba(0,0,0,.04); border-radius: 8px; padding: 4px 7px; font-family: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: var(--text-primary); }}
-      .empty-state {{ padding: 22px; }}
+      .button-outline, .button-soft {{
+        border-color: var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 86%, transparent);
+        color: var(--text);
+      }}
+      .button-outline:hover, .button-soft:hover {{ border-color: var(--border-strong); background: var(--soft); }}
+      .button-small {{ height: 32px; padding: 0 11px; font-size: 12px; }}
+      .app-window {{
+        width: min(1680px, calc(100vw - 56px));
+        height: min(940px, calc(100dvh - 56px));
+        min-height: 680px;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 86px minmax(0, 1fr);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--paper);
+        box-shadow: var(--shadow-window);
+        backdrop-filter: blur(22px) saturate(1.15);
+      }}
+      .window-bar {{
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 220px;
+        align-items: center;
+        gap: 16px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+      }}
+      .traffic-lights {{ display: flex; gap: 8px; align-items: center; }}
+      .traffic-lights span {{ width: 13px; height: 13px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--faint) 45%, transparent); border: 1px solid var(--border); }}
+      .traffic-lights span:nth-child(1) {{ background: color-mix(in srgb, var(--red) 62%, transparent); }}
+      .traffic-lights span:nth-child(2) {{ background: color-mix(in srgb, var(--amber) 62%, transparent); }}
+      .traffic-lights span:nth-child(3) {{ background: color-mix(in srgb, var(--green) 62%, transparent); }}
+      .brand-block {{ min-width: 0; text-align: center; }}
+      .brand-title {{ font-size: 21px; font-weight: 760; letter-spacing: 0; }}
+      .brand-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
+      .top-actions {{ display: flex; justify-content: flex-end; gap: 10px; align-items: center; }}
+      .api-link {{ color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }}
+      .app-grid {{
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr) 300px;
+      }}
+      .sidebar, .state-panel {{
+        min-width: 0;
+        padding: 26px 22px;
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+      }}
+      .sidebar {{ border-right: 1px solid var(--border); }}
+      .state-panel {{ border-left: 1px solid var(--border); }}
+      .panel-title {{ margin-bottom: 16px; color: var(--muted); font-size: 14px; font-weight: 760; }}
+      .session-list {{ display: grid; gap: 14px; }}
+      .session-card {{
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 16px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 72%, transparent);
+      }}
+      .session-card.is-active {{ background: color-mix(in srgb, var(--panel-solid) 92%, transparent); box-shadow: 0 10px 28px rgba(0,0,0,0.045); }}
+      .session-icon, .state-icon, .empty-icon, .auth-logo {{
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-pill);
+        background: var(--soft);
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }}
+      .session-icon {{ width: 38px; height: 38px; }}
+      .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
+      .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
+      .kebab {{ color: var(--faint); font-size: 24px; line-height: 1; }}
+      .request-card {{
+        margin-top: 18px;
+        display: grid;
+        gap: 13px;
+        padding: 15px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 66%, transparent);
+      }}
+      .request-row {{ min-width: 0; display: grid; gap: 4px; }}
+      .label {{ color: var(--muted); font-size: 12px; font-weight: 760; }}
+      .value {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }}
+      .value.mono {{ font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; }}
+      .actions {{ display: grid; gap: 9px; }}
+      .actions form, .actions button {{ width: 100%; }}
+      .actions button {{ width: 100%; }}
+      .browser-stage {{
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 18px;
+        padding: 26px 26px 22px;
+      }}
+      .stage-title {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; font-weight: 760; }}
+      .browser-shell {{
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 58px minmax(0, 1fr);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--panel-solid);
+        box-shadow: 0 14px 42px rgba(0,0,0,0.055);
+      }}
+      .browser-toolbar {{
+        min-width: 0;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+      }}
+      .toolbar-left {{ display: flex; gap: 8px; }}
+      .toolbar-left span {{ width: 14px; height: 14px; border-radius: var(--radius-pill); background: var(--soft); border: 1px solid var(--border); }}
+      .toolbar-url {{
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 0 14px;
+        color: var(--muted);
+        background: var(--soft);
+        font-size: 13px;
+        font-weight: 650;
+      }}
+      .lock {{ color: var(--green); font-size: 11px; text-transform: uppercase; }}
+      .icon-button {{
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        color: var(--muted);
+        text-decoration: none;
+        background: color-mix(in srgb, var(--panel-solid) 70%, transparent);
+      }}
+      .browser-frame {{ min-height: 0; background: #111; }}
+      iframe {{ width: 100%; height: 100%; min-height: 0; display: block; border: 0; background: white; }}
+      .auth-card {{
+        position: absolute;
+        right: 28px;
+        bottom: 32px;
+        width: min(420px, calc(100% - 56px));
+        display: grid;
+        grid-template-columns: 50px minmax(0, 1fr);
+        gap: 16px;
+        align-items: center;
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--panel-solid) 94%, transparent);
+        box-shadow: var(--shadow-float);
+        backdrop-filter: blur(18px) saturate(1.12);
+      }}
+      .auth-card form {{ grid-column: 2; }}
+      .auth-card button[type="submit"] {{ width: 100%; }}
+      .auth-logo {{
+        width: 48px;
+        height: 48px;
+        color: var(--blue);
+        background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid));
+      }}
+      .auth-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
+      .auth-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
+      .password-row {{ margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+      code {{
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 6px 8px;
+        background: var(--soft);
+        color: var(--text);
+        font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace;
+        font-size: 12px;
+      }}
+      .state-list {{ display: grid; gap: 22px; }}
+      .state-item {{ display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 13px; align-items: center; }}
+      .state-icon {{ width: 36px; height: 36px; }}
+      .state-title {{ font-size: 15px; font-weight: 760; }}
+      .state-subtitle {{ margin-top: 3px; color: var(--muted); font-size: 13px; font-weight: 560; }}
+      .state-dot {{ width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--green); }}
+      .empty-state {{
+        min-height: 0;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 16px;
+        padding: 32px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 82%, transparent);
+        text-align: center;
+      }}
+      .empty-icon {{ width: 56px; height: 56px; color: var(--blue); }}
+      .title-small {{ font-size: 17px; font-weight: 760; }}
+      .empty-state p {{ max-width: 420px; margin: 8px auto 0; color: var(--muted); line-height: 1.45; }}
       @media (max-width: 900px) {{
-        body {{ overflow: auto; }}
-        header {{ padding: 14px 14px 10px; }}
-        main {{ min-height: calc(100dvh - 92px); padding: 12px; grid-template-rows: auto 72dvh; }}
-        .handoff-bar {{ grid-template-columns: 1fr; }}
-        .request-line {{ grid-template-columns: 1fr; }}
-        .actions {{ justify-content: flex-start; }}
-        .browser-toolbar {{ align-items: flex-start; flex-direction: column; }}
-        .handoff-note {{ align-items: flex-start; flex-direction: column; }}
-        .password-row {{ margin-left: 0; }}
-        .button, button {{ width: auto; }}
+        body {{ overflow: auto; padding: 12px; place-items: start center; }}
+        .app-window {{
+          width: 100%;
+          height: auto;
+          min-height: calc(100dvh - 24px);
+          grid-template-rows: auto auto;
+          border-radius: 16px;
+        }}
+        .window-bar {{ grid-template-columns: 1fr; justify-items: start; padding: 16px; }}
+        .brand-block {{ text-align: left; }}
+        .top-actions {{ width: 100%; justify-content: space-between; }}
+        .app-grid {{ grid-template-columns: 1fr; }}
+        .sidebar, .state-panel {{ border: 0; padding: 18px 16px; }}
+        .sidebar {{ border-bottom: 1px solid var(--border); }}
+        .state-panel {{ border-top: 1px solid var(--border); }}
+        .browser-stage {{ min-height: 72dvh; padding: 18px 16px; }}
+        .stage-title {{ align-items: flex-start; }}
+        .browser-shell {{ min-height: 58dvh; grid-template-rows: auto minmax(0, 1fr); }}
+        .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
+        .toolbar-left {{ display: none; }}
+        .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
+        .auth-logo {{ width: 42px; height: 42px; }}
+        .auth-card form {{ grid-column: 1 / -1; }}
       }}
     </style>
   </head>
   <body>
-    <header>
-      <div class="topbar">
-        <div class="brand">OpenBrowser login handoff</div>
-        <div class="meta">
-          <span class="pill">Status: {safe_status}</span>
-          <span class="pill">Identity: {safe_identity}</span>
-          <span class="pill">Client: {safe_client_ip}</span>
+    <div class="app-window">
+      <header class="window-bar">
+        <div class="traffic-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brand-block">
+          <div class="brand-title">OpenBrowser</div>
+          <div class="brand-subtitle">The browser API for AI agents</div>
         </div>
-      </div>
-    </header>
-    <main>
-      <section class="handoff-bar">
-        <div class="request-main">
-          <div class="request-line">
-            <span class="field-label">Target</span>
-            <div class="target" title="{safe_url}">{safe_url}</div>
+        <div class="top-actions">
+          <button class="button-soft button-small" type="button" id="themeToggle" aria-label="Toggle day and night mode">Theme</button>
+          <a class="api-link" href="/docs" target="_blank" rel="noopener noreferrer">API</a>
+        </div>
+      </header>
+      <main class="app-grid">
+        <aside class="sidebar">
+          <div class="panel-title">Browser Sessions</div>
+          <div class="session-list">
+            <div class="session-card is-active">
+              <div class="session-icon">BR</div>
+              <div>
+                <div class="session-name">{safe_identity}</div>
+                <div class="session-status">{safe_status}</div>
+              </div>
+              <div class="kebab" aria-hidden="true">...</div>
+            </div>
           </div>
-          <div class="details-row">
-            <span>Agent <b>{safe_owner}</b></span>
-            <span>Reason <b>{safe_reason}</b></span>
-            <details>
-              <summary>Privacy</summary>
-              Passwords, tokens, cookies, proxy credentials, and the temporary VNC password stay out of agent chat.
-            </details>
+          <section class="request-card" aria-label="Handoff details">
+            <div class="request-row"><span class="label">Target</span><span class="value mono" title="{safe_url}">{safe_url}</span></div>
+            <div class="request-row"><span class="label">Agent</span><span class="value">{safe_owner}</span></div>
+            <div class="request-row"><span class="label">Reason</span><span class="value">{safe_reason}</span></div>
+            <div class="actions">
+              <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark complete</button></form>
+              <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="button-outline" type="submit">Stop view</button></form>
+            </div>
+          </section>
+        </aside>
+        {frame}
+        <aside class="state-panel">
+          <div class="panel-title">Session State</div>
+          <div class="state-list">
+            <div class="state-item"><div class="state-icon">ST</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Agent handoff active</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">ID</div><div><div class="state-title">Profile: {safe_identity}</div><div class="state-subtitle">Persistent broker identity</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">HA</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">IP</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Trusted IPs skip password prompts</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">CD</div><div><div class="state-title">noVNC scaling</div><div class="state-subtitle">resize=scale active</div></div><span class="state-dot"></span></div>
           </div>
-        </div>
-        <div class="actions">
-          <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark complete</button></form>
-          <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="button-outline" type="submit">Stop view</button></form>
-        </div>
-      </section>
-      {frame}
-    </main>
+        </aside>
+      </main>
+    </div>
     <script>
+      const themeButton = document.getElementById('themeToggle');
+      const setThemeButton = () => {{
+        const dark = document.documentElement.dataset.theme === 'dark';
+        themeButton.textContent = dark ? 'Day mode' : 'Night mode';
+      }};
+      if (themeButton) {{
+        setThemeButton();
+        themeButton.addEventListener('click', () => {{
+          const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+          document.documentElement.dataset.theme = next;
+          localStorage.setItem('openbrowser-theme', next);
+          setThemeButton();
+        }});
+      }}
       const copyButton = document.getElementById('copyPassword');
       if (copyButton) {{
         copyButton.addEventListener('click', async () => {{

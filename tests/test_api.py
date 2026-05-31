@@ -60,12 +60,17 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
     response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
 
     assert response.status_code == 200
-    assert "Live login view" in response.text
+    assert "OpenBrowser" in response.text
+    assert "The browser API for AI agents" in response.text
+    assert "Browser Sessions" in response.text
+    assert "Live Browser Session" in response.text
+    assert "Session State" in response.text
+    assert "Night mode" in response.text
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
     assert "#password=trust-pass" in response.text
     assert "Trusted connection" in response.text
-    assert "Temporary VNC password required" not in response.text
+    assert "Temporary VNC password" not in response.text
 
 
 def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatch) -> None:
@@ -93,6 +98,7 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
 
     assert response.status_code == 200
+    assert "Human auth request" in response.text
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
     assert "Temporary VNC password" in response.text
