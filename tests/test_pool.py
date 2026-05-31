@@ -12,6 +12,7 @@ def three_slot_pool(tmp_path, monkeypatch):
     monkeypatch.setattr(pool, "SLOTS", pool.SLOTS[:3])
     monkeypatch.setattr(pool, "read_slot_config", lambda _slot_name: {})
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
 
 
 def test_status_shape() -> None:
@@ -19,6 +20,22 @@ def test_status_shape() -> None:
     assert "slots" in data
     assert "leases" in data
     assert {slot["name"] for slot in data["slots"]} == {"pool-a", "pool-b", "pool-c"}
+    assert all(slot["maintenance"] is False for slot in data["slots"])
+
+
+def test_status_reports_active_maintenance(tmp_path, monkeypatch) -> None:
+    maintenance_dir = tmp_path / "maintenance"
+    maintenance_dir.mkdir()
+    (maintenance_dir / "pool-a.json").write_text('{"expires_at": 9999999999}\n', encoding="utf-8")
+    monkeypatch.setattr(pool, "BROWSER_POOL_MAINTENANCE_DIR", maintenance_dir)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
+
+    data = pool.status()
+
+    by_name = {slot["name"]: slot for slot in data["slots"]}
+    assert by_name["pool-a"]["maintenance"] is True
+    assert by_name["pool-b"]["maintenance"] is False
 
 
 def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
@@ -423,6 +440,128 @@ def test_auto_identity_skips_unhealthy_slot_after_activation(tmp_path, monkeypat
         assert active["pool-a"] == "chrome-one"
         assert active["pool-b"] == "chrome-one"
         assert healthy_calls["pool-a"] > 0
+    finally:
+        pool.release(lease.lease_id)
+
+
+def test_auto_identity_skips_maintenance_slot(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "leases.json"
+    maintenance_dir = tmp_path / "maintenance"
+    maintenance_dir.mkdir()
+    (maintenance_dir / "pool-a.json").write_text('{"expires_at": 9999999999}\n', encoding="utf-8")
+    active = {"pool-a": None, "pool-b": None, "pool-c": None}
+    activations = []
+
+    class Identity:
+        def __init__(self, identity_id: str) -> None:
+            self.identity_id = identity_id
+            self.slot = "auto"
+            self.profile_dir = str(tmp_path / identity_id)
+            self.proxy_ref = None
+            self.max_parallel_sessions = 1
+
+    identities = {"chrome-one": Identity("chrome-one")}
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
+        activations.append(slot_name)
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", state_file)
+    monkeypatch.setattr(pool, "BROWSER_POOL_MAINTENANCE_DIR", maintenance_dir)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda identity_id: identities[identity_id])
+    monkeypatch.setattr(pool, "load_identities", lambda: identities)
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+
+    lease = pool.lease("test-maintenance-skip", identity_id="chrome-one")
+    try:
+        assert lease.name == "pool-b"
+        assert activations == ["pool-b"]
+        assert active["pool-a"] is None
+    finally:
+        pool.release(lease.lease_id)
+
+
+def test_auto_identity_skips_slot_when_activation_raises(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "leases.json"
+    active = {"pool-a": None, "pool-b": None, "pool-c": None}
+    activations = []
+
+    class Identity:
+        def __init__(self, identity_id: str) -> None:
+            self.identity_id = identity_id
+            self.slot = "auto"
+            self.profile_dir = str(tmp_path / identity_id)
+            self.proxy_ref = None
+            self.max_parallel_sessions = 1
+
+    identities = {"chrome-one": Identity("chrome-one")}
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **_kwargs):
+        activations.append(slot_name)
+        if slot_name == "pool-a":
+            raise pool.IdentityError("slot failed to become healthy")
+        active[slot_name] = identity_id
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", state_file)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda identity_id: identities[identity_id])
+    monkeypatch.setattr(pool, "load_identities", lambda: identities)
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+
+    lease = pool.lease("test-activation-failure-skip", identity_id="chrome-one")
+    try:
+        assert lease.name == "pool-b"
+        assert activations == ["pool-a", "pool-b"]
+    finally:
+        pool.release(lease.lease_id)
+
+
+def test_auto_identity_first_lease_reconciles_stale_duplicate_slot(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "leases.json"
+    active = {"pool-a": "chrome-one", "pool-b": "chrome-one", "pool-c": None}
+    activations = []
+
+    class Identity:
+        def __init__(self, identity_id: str) -> None:
+            self.identity_id = identity_id
+            self.slot = "auto"
+            self.profile_dir = str(tmp_path / identity_id)
+            self.proxy_ref = None
+            self.max_parallel_sessions = 2
+
+    identities = {"chrome-one": Identity("chrome-one")}
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **kwargs):
+        activations.append((slot_name, kwargs.get("clear_existing")))
+        active[slot_name] = identity_id
+        if kwargs.get("clear_existing"):
+            for other_slot in active:
+                if other_slot != slot_name and active[other_slot] == identity_id:
+                    active[other_slot] = None
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", state_file)
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda identity_id: identities[identity_id])
+    monkeypatch.setattr(pool, "load_identities", lambda: identities)
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(
+        pool,
+        "read_slot_config",
+        lambda slot_name: {"PROFILE_DIR": str(tmp_path / "chrome-one")} if active.get(slot_name) == "chrome-one" else {},
+    )
+    monkeypatch.setattr(pool, "activate_identity", activate)
+
+    lease = pool.lease("test-stale-duplicate-reconcile", identity_id="chrome-one")
+    try:
+        assert lease.name == "pool-a"
+        assert activations == [("pool-a", True)]
+        assert active["pool-b"] is None
     finally:
         pool.release(lease.lease_id)
 

@@ -13,8 +13,25 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .config import BROWSER_POOL_DIR, LEASE_TTL_SECONDS, POOL_CONFIG_DIR, POOL_STATE_FILE, SLOTS, Slot, ensure_dirs
-from .identities import active_identity_id, activate_identity, identity_replica_profile_dir, load_identities, read_slot_config, require_identity
+from .config import (
+    BROWSER_POOL_DIR,
+    BROWSER_POOL_MAINTENANCE_DIR,
+    LEASE_TTL_SECONDS,
+    POOL_CONFIG_DIR,
+    POOL_STATE_FILE,
+    SLOTS,
+    Slot,
+    ensure_dirs,
+)
+from .identities import (
+    IdentityError,
+    active_identity_id,
+    activate_identity,
+    identity_replica_profile_dir,
+    load_identities,
+    read_slot_config,
+    require_identity,
+)
 
 
 class LeaseError(RuntimeError):
@@ -44,6 +61,24 @@ def healthy(port: int, timeout: float = 1.5) -> bool:
             return response.status == 200
     except Exception:
         return False
+
+
+def slot_in_maintenance(slot_name: str) -> bool:
+    path = BROWSER_POOL_MAINTENANCE_DIR / f"{slot_name}.json"
+    if not path.exists():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return True
+    expires_at = int(data.get("expires_at", 0) or 0)
+    if expires_at and time.time() > expires_at:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            return True
+        return False
+    return True
 
 
 @contextmanager
@@ -144,6 +179,8 @@ def _wait_healthy(port: int, timeout_seconds: float = 10.0) -> bool:
 
 
 def _activate_neutral_slot(slot: Slot) -> bool:
+    if slot_in_maintenance(slot.name):
+        return False
     config_path = POOL_CONFIG_DIR / f"{slot.name}.env"
     if config_path.exists():
         config_path.unlink()
@@ -206,6 +243,19 @@ def _is_replica_profile(profile_dir: str | None) -> bool:
     return True
 
 
+def _has_duplicate_profile_slot(identity_id: str, selected_slot: str, selected_profile_dir: str | None) -> bool:
+    if not selected_profile_dir:
+        return False
+    for slot in SLOTS:
+        if slot.name == selected_slot:
+            continue
+        if active_identity_id(slot.name) == identity_id:
+            profile_dir = read_slot_config(slot.name).get("PROFILE_DIR")
+            if profile_dir == selected_profile_dir:
+                return True
+    return False
+
+
 def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None) -> Lease:
     now = int(time.time())
     effective_ttl = max(60, min(int(ttl_seconds), LEASE_TTL_SECONDS))
@@ -223,11 +273,14 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
         in_use = {str(item["name"]) for item in state["leases"].values()}
         identities = load_identities()
         reclaimable_slots: list[Slot] = []
+        activation_errors: list[str] = []
         slots = _ordered_slots_for_identity(identity_id, identity) if identity_id and identity else list(SLOTS)
         for slot in slots:
             if allowed_slot and slot.name != allowed_slot:
                 continue
             if slot.name in in_use:
+                continue
+            if slot_in_maintenance(slot.name):
                 continue
             active_identity = active_identity_id(slot.name)
             if not identity_id and active_identity:
@@ -240,17 +293,30 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                     continue
             if identity_id and identity:
                 identity_profile_dir = _identity_profile_for_slot(identity_id, identity, slot, identity_lease_count, active_identity)
+            reconcile_stale_identity_slots = bool(
+                identity_id
+                and identity
+                and identity.slot == "auto"
+                and identity_lease_count == 0
+                and _has_duplicate_profile_slot(identity_id, slot.name, identity_profile_dir)
+            )
             if identity_id and (
                 active_identity != identity_id
                 or not healthy(slot.port)
+                or reconcile_stale_identity_slots
             ):
-                activate_identity(
-                    identity_id,
-                    slot.name,
-                    check_leases=False,
-                    profile_dir_override=Path(identity_profile_dir) if identity_profile_dir else None,
-                    clear_existing=getattr(identity, "max_parallel_sessions", 1) <= 1,
-                )
+                try:
+                    activate_identity(
+                        identity_id,
+                        slot.name,
+                        check_leases=False,
+                        profile_dir_override=Path(identity_profile_dir) if identity_profile_dir else None,
+                        clear_existing=reconcile_stale_identity_slots
+                        or getattr(identity, "max_parallel_sessions", 1) <= 1,
+                    )
+                except (IdentityError, subprocess.CalledProcessError) as error:
+                    activation_errors.append(f"{slot.name}: {error}")
+                    continue
             if not healthy(slot.port):
                 continue
             lease_id = str(uuid.uuid4())
@@ -286,6 +352,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                     "profile_dir": str(slot.profile_dir),
                 }
                 return _lease_from_state(lease_id, state["leases"][lease_id])
+    if identity_id and activation_errors:
+        raise LeaseError("No healthy free browser slots; activation failures: " + "; ".join(activation_errors))
     raise LeaseError("No healthy free browser slots")
 
 
@@ -337,6 +405,7 @@ def status() -> dict[str, Any]:
                 "active_identity_id": active_identity_id(slot.name),
                 "healthy": healthy(slot.port),
                 "leased": slot.name in leased_names,
+                "maintenance": slot_in_maintenance(slot.name),
             }
             for slot in SLOTS
         ],
