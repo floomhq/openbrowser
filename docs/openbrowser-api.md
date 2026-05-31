@@ -201,6 +201,8 @@ The remote MCP exposes browser leasing/actions, auth handoff, profile status, fe
 
 The API never exposes cookies, passwords, raw tokens, proxy credentials, or VNC passwords. Human login remains under `/auth/<token>` and noVNC remains temporary.
 
+Opening an auth portal starts or reuses the noVNC login view by default. Set `OPENBROWSER_AUTH_TRUSTED_CIDRS` to allow passwordless noVNC connection for specific operator IPs or CIDR ranges. Set `OPENBROWSER_AUTH_TRUST_X_FORWARDED_FOR=1` only behind a trusted reverse proxy that overwrites `X-Forwarded-For`.
+
 Use telemetry-only records for expected negative test cases and normal app validation failures. File feedback issues for broker, identity/proxy, auth handoff, upload, screenshot, keyboard, or adapter failures that block the task.
 
 ## Active Lease Human Control

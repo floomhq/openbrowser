@@ -30,9 +30,96 @@ def test_auth_portal_escapes_request_values(tmp_path, monkeypatch) -> None:
     response = client.get("/auth/" + request["token"])
 
     assert response.status_code == 200
-    assert "<script>" not in response.text
+    assert "https://example.com/?x=<script>" not in response.text
     assert "&lt;script&gt;" in response.text
     assert "&lt;owner&gt;" in response.text
+
+
+def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
+    monkeypatch.setattr(api, "AUTH_TRUST_X_FORWARDED_FOR", True)
+    monkeypatch.setattr(api, "AUTH_TRUSTED_CIDRS", ("203.0.113.10/32",))
+    monkeypatch.setattr(api, "current_auth_vnc", lambda _token: None)
+    monkeypatch.setattr(
+        api,
+        "start_auth_vnc",
+        lambda token: {
+            "token": token,
+            "display": ":870",
+            "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+            "local_websocket_url": "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=remote",
+            "websocket_port": 6081,
+            "vnc_port": 5901,
+            "password": "trust-pass",
+        },
+    )
+
+    request = auth.create_auth_request("tester", "https://example.com/login", identity_id=None)
+    client = TestClient(api.app)
+    response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
+
+    assert response.status_code == 200
+    assert "Live login view" in response.text
+    assert "#password=trust-pass" in response.text
+    assert "Trusted source IP detected" in response.text
+    assert "Temporary VNC password required" not in response.text
+
+
+def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
+    monkeypatch.setattr(api, "AUTH_TRUST_X_FORWARDED_FOR", False)
+    monkeypatch.setattr(api, "AUTH_TRUSTED_CIDRS", ("203.0.113.10/32",))
+    monkeypatch.setattr(api, "current_auth_vnc", lambda _token: None)
+    monkeypatch.setattr(
+        api,
+        "start_auth_vnc",
+        lambda token: {
+            "token": token,
+            "display": ":870",
+            "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+            "local_websocket_url": "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=remote",
+            "websocket_port": 6081,
+            "vnc_port": 5901,
+            "password": "manual-pass",
+        },
+    )
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+    client = TestClient(api.app)
+    response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
+
+    assert response.status_code == 200
+    assert "Temporary VNC password required" in response.text
+    assert "manual-pass" in response.text
+    assert "#password=manual-pass" not in response.text
+
+
+def test_auth_portal_reuses_existing_vnc_without_restart(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
+    monkeypatch.setattr(api, "AUTH_TRUSTED_CIDRS", ())
+    started = []
+    monkeypatch.setattr(
+        api,
+        "current_auth_vnc",
+        lambda _token: {
+            "token": "tok",
+            "display": ":870",
+            "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+            "password": "existing-pass",
+        },
+    )
+    monkeypatch.setattr(api, "start_auth_vnc", lambda _token: started.append(_token) or {})
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+    client = TestClient(api.app)
+    response = client.get("/auth/" + request["token"])
+
+    assert response.status_code == 200
+    assert "existing-pass" in response.text
+    assert started == []
 
 
 def test_lifespan_starts_and_stops_controller(monkeypatch) -> None:

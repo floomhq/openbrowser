@@ -48,6 +48,33 @@ def test_novnc_url_falls_back_to_localhost(monkeypatch) -> None:
     assert auth.novnc_url(6081) == "http://127.0.0.1:6081/vnc.html?autoconnect=1&resize=remote"
 
 
+def test_current_auth_vnc_returns_running_session_password(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    password_file = tmp_path / "vnc.passwd"
+    password_file.write_text("secret-pass\n", encoding="utf-8")
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "PUBLIC_NOVNC_BASE_URL", "https://browser.example.com")
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["vnc"] = {
+        "mode": "identity",
+        "identity_id": "work-main",
+        "display": ":870",
+        "websocket_port": 6081,
+        "vnc_port": 5901,
+        "password_file": str(password_file),
+    }
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    result = auth.current_auth_vnc(request["token"])
+
+    assert result is not None
+    assert result["password"] == "secret-pass"
+    assert result["websocket_url"] == "https://browser.example.com/vnc.html?autoconnect=1&resize=remote"
+    assert result["identity_id"] == "work-main"
+
+
 def test_stop_auth_vnc_removes_password_file(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     password_file = tmp_path / "vnc.passwd"

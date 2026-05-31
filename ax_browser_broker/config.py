@@ -49,6 +49,13 @@ PUBLIC_OPENBROWSER_BASE_URL = os.environ.get(
     "OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL",
     os.environ.get("AX_BROWSER_PUBLIC_OPENBROWSER_BASE_URL", PUBLIC_AUTH_BASE_URL),
 ).rstrip("/")
+AUTH_PORTAL_AUTOSTART = os.environ.get("OPENBROWSER_AUTH_PORTAL_AUTOSTART", "1").strip().lower() not in {"0", "false", "no", "off"}
+AUTH_TRUST_X_FORWARDED_FOR = os.environ.get("OPENBROWSER_AUTH_TRUST_X_FORWARDED_FOR", "0").strip().lower() in {"1", "true", "yes", "on"}
+AUTH_TRUSTED_CIDRS = tuple(
+    item.strip()
+    for item in os.environ.get("OPENBROWSER_AUTH_TRUSTED_CIDRS", "").split(",")
+    if item.strip()
+)
 LEASE_TTL_SECONDS = 60 * 60 * 4
 AUTH_REQUEST_TTL_SECONDS = 15 * 60
 LEASE_CONTROL_TTL_SECONDS = 15 * 60

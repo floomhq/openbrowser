@@ -29,6 +29,28 @@ flowchart LR
   Auth --> Pool
 ```
 
+## Auth Handoff UX
+
+Auth links are one-step by default. Opening `/auth/<token>` starts or reuses the browser login view and embeds it in the same page.
+
+```bash
+OPENBROWSER_AUTH_PORTAL_AUTOSTART=1
+```
+
+For trusted operator IPs, noVNC can connect without showing a temporary VNC password prompt:
+
+```bash
+OPENBROWSER_AUTH_TRUSTED_CIDRS="203.0.113.10/32,2001:db8::/64"
+```
+
+Only trust `X-Forwarded-For` when a trusted reverse proxy overwrites it:
+
+```bash
+OPENBROWSER_AUTH_TRUST_X_FORWARDED_FOR=1
+```
+
+The passwordless mode embeds the temporary VNC password into the noVNC URL fragment for matching source IPs. The agent still never receives passwords, cookies, raw tokens, proxy credentials, or VNC passwords through API or MCP tools.
+
 ## Proxy Check
 
 ```bash

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import hmac
 import html
+import ipaddress
 import json
 import os
 import base64
+import urllib.parse
 from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
@@ -18,13 +20,23 @@ from .auth import (
     AuthError,
     complete_auth_request,
     create_auth_request,
+    current_auth_vnc,
     get_auth_request,
     list_auth_requests,
     start_auth_vnc,
     stop_auth_vnc,
 )
 from .browser import controller
-from .config import BROKER_HOST, BROKER_PORT, OPENBROWSER_API_KEYS_FILE, PUBLIC_OPENBROWSER_BASE_URL, ensure_dirs
+from .config import (
+    AUTH_PORTAL_AUTOSTART,
+    AUTH_TRUST_X_FORWARDED_FOR,
+    AUTH_TRUSTED_CIDRS,
+    BROKER_HOST,
+    BROKER_PORT,
+    OPENBROWSER_API_KEYS_FILE,
+    PUBLIC_OPENBROWSER_BASE_URL,
+    ensure_dirs,
+)
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .identities import redacted_status
@@ -1080,67 +1092,222 @@ async def auth_request(request: AuthRequest) -> dict[str, Any]:
     return result
 
 
-@app.get("/auth/{token}", response_class=HTMLResponse)
-async def auth_portal(token: str) -> str:
+def _auth_client_ip(request: Request) -> str:
+    if AUTH_TRUST_X_FORWARDED_FOR:
+        forwarded = request.headers.get("x-forwarded-for", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return ""
+
+
+def _auth_client_is_trusted(request: Request) -> bool:
+    if not AUTH_TRUSTED_CIDRS:
+        return False
     try:
-        request = get_auth_request(token)
-    except AuthError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    safe_url = html.escape(str(request["url"]))
-    safe_owner = html.escape(str(request["owner"]))
-    safe_status = html.escape(str(request["status"]))
-    safe_identity = html.escape(str(request.get("identity_id") or "authenticated-chrome"))
+        client_ip = ipaddress.ip_address(_auth_client_ip(request))
+    except ValueError:
+        return False
+    for cidr in AUTH_TRUSTED_CIDRS:
+        try:
+            if client_ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _novnc_embed_url(vnc: dict[str, Any], passwordless: bool) -> str:
+    url = str(vnc["websocket_url"])
+    if not passwordless:
+        return url
+    password = str(vnc.get("password", ""))
+    parts = urllib.parse.urlsplit(url)
+    fragment = urllib.parse.urlencode({"password": password})
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, fragment))
+
+
+def _auth_portal_html(
+    token: str,
+    auth_request_data: dict[str, Any],
+    vnc: dict[str, Any] | None,
+    *,
+    trusted_client: bool,
+    client_ip: str,
+    start_error: str | None = None,
+) -> str:
+    safe_token = html.escape(token, quote=True)
+    safe_url = html.escape(str(auth_request_data["url"]))
+    safe_owner = html.escape(str(auth_request_data["owner"]))
+    safe_status = html.escape(str(auth_request_data["status"]))
+    safe_identity = html.escape(str(auth_request_data.get("identity_id") or "authenticated-chrome"))
+    safe_reason = html.escape(str(auth_request_data.get("reason") or "login_required"))
+    safe_client_ip = html.escape(client_ip or "unknown")
+    safe_start_error = html.escape(start_error or "")
+    frame = ""
+    password_block = ""
+    if vnc:
+        embed_url = _novnc_embed_url(vnc, trusted_client)
+        safe_embed_url = html.escape(embed_url, quote=True)
+        safe_open_url = html.escape(embed_url if trusted_client else str(vnc["websocket_url"]), quote=True)
+        if trusted_client:
+            password_block = """
+          <div class="notice ok">Trusted source IP detected. The login view connects without asking for the temporary VNC password.</div>
+"""
+        else:
+            safe_password = html.escape(str(vnc.get("password", "")))
+            password_block = f"""
+          <div class="notice warn">
+            <div><b>Temporary VNC password required</b></div>
+            <div class="password-row"><code id="vncPassword">{safe_password}</code><button type="button" id="copyPassword">Copy</button></div>
+            <div class="muted">Add this IP to <code>OPENBROWSER_AUTH_TRUSTED_CIDRS</code> to skip this prompt on future handoffs.</div>
+          </div>
+"""
+        frame = f"""
+      <section class="browser-shell">
+        <div class="browser-toolbar">
+          <div>
+            <div class="eyebrow">Live login view</div>
+            <div class="title-small">Complete the login inside the browser below</div>
+          </div>
+          <a class="button secondary" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
+        </div>
+        {password_block}
+        <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
+      </section>
+"""
+    else:
+        frame = f"""
+      <section class="empty-state">
+        <div class="title-small">Browser login view is not running</div>
+        <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
+        <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
+      </section>
+"""
     return f"""
 <!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
-    <title>OpenBrowser Broker Auth</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenBrowser Login Handoff</title>
     <style>
-      body {{ font-family: system-ui, sans-serif; margin: 40px; max-width: 760px; line-height: 1.45; }}
-      code, pre {{ background: #f3f4f6; padding: 2px 5px; border-radius: 4px; }}
-      button, a.button {{ background: #111827; color: white; border: 0; padding: 10px 14px; border-radius: 6px; text-decoration: none; cursor: pointer; }}
-      .row {{ margin: 18px 0; }}
-      .muted {{ color: #4b5563; }}
+      :root {{ color-scheme: light; --ink: #10151f; --muted: #667085; --line: #d8dee8; --soft: #f5f7fb; --panel: #ffffff; --accent: #1f6feb; --ok: #0f7b4f; --warn: #9a5b00; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 0; min-height: 100vh; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #eef2f7; }}
+      header {{ background: #10151f; color: white; padding: 18px 24px; }}
+      main {{ max-width: 1440px; margin: 0 auto; padding: 18px; }}
+      .topbar {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
+      .brand {{ font-size: 19px; font-weight: 700; letter-spacing: 0; }}
+      .meta {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+      .pill {{ border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 5px 10px; color: #d9e2ef; font-size: 13px; }}
+      .grid {{ display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }}
+      .panel, .browser-shell, .empty-state {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(16,21,31,.06); }}
+      .panel {{ padding: 16px; }}
+      .browser-shell {{ overflow: hidden; }}
+      .browser-toolbar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: #fbfcfe; }}
+      iframe {{ width: 100%; height: min(74vh, 900px); min-height: 620px; display: block; border: 0; background: white; }}
+      .eyebrow {{ color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }}
+      .title-small {{ font-size: 17px; font-weight: 700; }}
+      .target {{ overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #344054; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }}
+      dl {{ margin: 0; display: grid; gap: 10px; }}
+      dt {{ color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }}
+      dd {{ margin: 0; font-size: 14px; }}
+      .actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }}
+      button, .button {{ appearance: none; border: 0; border-radius: 8px; background: var(--ink); color: white; font-weight: 700; font-size: 14px; padding: 10px 13px; text-decoration: none; cursor: pointer; }}
+      .secondary {{ background: #eef4ff; color: #174ea6; border: 1px solid #c8dbff; }}
+      .muted {{ color: var(--muted); font-size: 13px; }}
+      .notice {{ margin: 0 16px 12px; padding: 12px; border-radius: 8px; font-size: 14px; }}
+      .notice.ok {{ background: #eefaf4; color: var(--ok); border: 1px solid #bde7d1; }}
+      .notice.warn {{ background: #fff7e8; color: #573600; border: 1px solid #f3d19a; }}
+      .password-row {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }}
+      code {{ background: rgba(16,21,31,.08); border-radius: 5px; padding: 2px 5px; }}
+      .empty-state {{ padding: 22px; }}
+      @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} iframe {{ min-height: 560px; height: 70vh; }} }}
     </style>
   </head>
   <body>
-    <h1>Auth refresh</h1>
-    <p class="muted">Requesting agent: <b>{safe_owner}</b></p>
-    <p class="muted">Status: <b>{safe_status}</b></p>
-    <p class="muted">Chrome identity: <b>{safe_identity}</b></p>
-    <div class="row">Target URL: <code>{safe_url}</code></div>
-    <div class="row">
-      <form method="post" action="/auth/{token}/start-vnc"><button type="submit">Start browser login view</button></form>
-    </div>
-    <div class="row">
-      <form method="post" action="/auth/{token}/complete"><button type="submit">Mark login complete</button></form>
-    </div>
+    <header>
+      <div class="topbar">
+        <div class="brand">OpenBrowser login handoff</div>
+        <div class="meta">
+          <span class="pill">Status: {safe_status}</span>
+          <span class="pill">Identity: {safe_identity}</span>
+          <span class="pill">Client: {safe_client_ip}</span>
+        </div>
+      </div>
+    </header>
+    <main>
+      <div class="grid">
+        <aside class="panel">
+          <dl>
+            <div><dt>Requesting agent</dt><dd>{safe_owner}</dd></div>
+            <div><dt>Reason</dt><dd>{safe_reason}</dd></div>
+            <div><dt>Target URL</dt><dd class="target">{safe_url}</dd></div>
+          </dl>
+          <div class="actions">
+            <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark login complete</button></form>
+            <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="secondary" type="submit">Stop browser view</button></form>
+          </div>
+          <p class="muted">Use this page for passwords, 2FA, QR scans, passkeys, and manual checks. The agent does not receive raw cookies, passwords, tokens, proxy credentials, or the temporary VNC password.</p>
+        </aside>
+        {frame}
+      </div>
+    </main>
+    <script>
+      const copyButton = document.getElementById('copyPassword');
+      if (copyButton) {{
+        copyButton.addEventListener('click', async () => {{
+          const value = document.getElementById('vncPassword').textContent;
+          await navigator.clipboard.writeText(value);
+          copyButton.textContent = 'Copied';
+          setTimeout(() => copyButton.textContent = 'Copy', 1200);
+        }});
+      }}
+    </script>
   </body>
 </html>
 """
+
+
+@app.get("/auth/{token}", response_class=HTMLResponse)
+async def auth_portal(token: str, request: Request) -> str:
+    try:
+        auth_request_data = get_auth_request(token)
+    except AuthError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    vnc = current_auth_vnc(token)
+    start_error = None
+    if vnc is None and AUTH_PORTAL_AUTOSTART:
+        try:
+            vnc = start_auth_vnc(token)
+        except AuthError as error:
+            start_error = str(error)
+    return _auth_portal_html(
+        token,
+        auth_request_data,
+        vnc,
+        trusted_client=_auth_client_is_trusted(request),
+        client_ip=_auth_client_ip(request),
+        start_error=start_error,
+    )
 
 
 @app.post("/auth/{token}/start-vnc", response_class=HTMLResponse)
-async def auth_start_vnc(token: str) -> str:
+async def auth_start_vnc(token: str, request: Request) -> str:
     try:
         vnc = start_auth_vnc(token)
+        auth_request_data = get_auth_request(token)
     except AuthError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    safe_websocket_url = html.escape(str(vnc["websocket_url"]), quote=True)
-    safe_password = html.escape(str(vnc["password"]))
-    return f"""
-<!doctype html>
-<html>
-  <head><meta charset="utf-8"><title>OpenBrowser Broker noVNC</title></head>
-  <body style="font-family: system-ui, sans-serif; margin: 40px">
-    <h1>Login view ready</h1>
-    <p>Open <a href="{safe_websocket_url}">{safe_websocket_url}</a>.</p>
-    <p>VNC password: <code>{safe_password}</code></p>
-    <p>After login, return to the auth page and mark the request complete.</p>
-  </body>
-</html>
-"""
+    return _auth_portal_html(
+        token,
+        auth_request_data,
+        vnc,
+        trusted_client=_auth_client_is_trusted(request),
+        client_ip=_auth_client_ip(request),
+    )
 
 
 @app.post("/auth/{token}/complete")

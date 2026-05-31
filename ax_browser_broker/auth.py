@@ -56,6 +56,34 @@ def novnc_url(websocket_port: int) -> str:
     return _local_novnc_url(websocket_port)
 
 
+def current_auth_vnc(token: str) -> dict[str, Any] | None:
+    request = get_auth_request(token)
+    vnc = request.get("vnc") or {}
+    if not vnc or vnc.get("stopped_at"):
+        return None
+    password_file = vnc.get("password_file")
+    if not password_file:
+        return None
+    try:
+        password = Path(str(password_file)).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    websocket_port = int(vnc.get("websocket_port", 6081))
+    vnc_port = int(vnc.get("vnc_port", 5901))
+    return {
+        "token": token,
+        "display": str(vnc.get("display", "")),
+        "websocket_url": novnc_url(websocket_port),
+        "local_websocket_url": _local_novnc_url(websocket_port),
+        "websocket_port": websocket_port,
+        "vnc_port": vnc_port,
+        "password": password,
+        "log": str(vnc.get("log", "")),
+        "mode": vnc.get("mode"),
+        "identity_id": vnc.get("identity_id"),
+    }
+
+
 @contextmanager
 def locked_auth_state() -> Any:
     ensure_dirs()
