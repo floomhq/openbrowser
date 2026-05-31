@@ -53,11 +53,13 @@ Use these identity concurrency modes:
 
 | Mode | Use For | Tradeoff |
 | --- | --- | --- |
-| Single canonical lease | Login, settings changes, sensitive account actions | Strongest persistence; one agent at a time |
+| Single canonical lease | Login, settings changes, sensitive account actions | Strongest persistence; one lease owner at a time; that owner can open multiple tabs |
 | Profile replicas | Parallel read/QA/background flows with the same seeded identity | Independent slots; sessions can diverge until replicas are refreshed |
-| Shared live browser tabs | Supervised workflows where agents may share one running Chrome process | No profile-lock conflict; agents can still interfere with focus or navigation |
+| Shared live browser coordinator | Future mode for several agents attached to one running Chrome process | Not the default lease contract; needs focus/navigation arbitration |
 
 The default contract is a single canonical lease unless the identity explicitly opts into replicas with `policy.max_parallel_sessions`.
+
+`max_parallel_sessions` is a policy cap, not a Chrome feature cap. The hard broker cap is the configured slot count. The default AX41 pool has eight slots (`pool-a` through `pool-h`), and each live Chrome slot consumes CPU, RAM, profile disk I/O, and possibly a proxy lane. Keep high-risk identities lower than the pool maximum unless the task explicitly needs more parallelism.
 
 ## Fast QA Lane
 

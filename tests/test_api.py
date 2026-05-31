@@ -64,7 +64,7 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
     assert "#password=trust-pass" in response.text
-    assert "Trusted source IP detected" in response.text
+    assert "Trusted connection" in response.text
     assert "Temporary VNC password required" not in response.text
 
 
@@ -95,7 +95,7 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert response.status_code == 200
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
-    assert "Temporary VNC password required" in response.text
+    assert "Temporary VNC password" in response.text
     assert "manual-pass" in response.text
     assert "#password=manual-pass" not in response.text
 

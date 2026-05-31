@@ -1157,25 +1157,28 @@ def _auth_portal_html(
         safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
             password_block = """
-            <div class="notice ok">Trusted source IP detected. The login view opens without a temporary VNC password prompt.</div>
+            <div class="handoff-note is-success">
+              <span class="status-dot" aria-hidden="true"></span>
+              <div><strong>Trusted connection</strong><span>The login view opens without a temporary VNC password prompt.</span></div>
+            </div>
 """
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
             password_block = f"""
-            <div class="notice warn">
-              <div><b>Temporary VNC password required</b></div>
-              <div class="password-row"><code id="vncPassword">{safe_password}</code><button type="button" id="copyPassword">Copy</button></div>
-              <div class="muted">Trusted IPs skip this prompt on future handoffs.</div>
+            <div class="handoff-note is-warning">
+              <span class="status-dot" aria-hidden="true"></span>
+              <div class="note-copy"><strong>Temporary VNC password</strong><span>Trusted IPs skip this prompt on future handoffs.</span></div>
+              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-ghost" type="button" id="copyPassword">Copy</button></div>
             </div>
 """
         frame = f"""
         <section class="browser-shell">
           <div class="browser-toolbar">
-            <div>
+            <div class="toolbar-copy">
               <div class="eyebrow">Live login view</div>
-              <div class="title-small">Complete the login inside the browser below</div>
+              <div class="title-small">Secure browser session</div>
             </div>
-            <a class="button secondary" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
+            <a class="button button-outline" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
           </div>
           {password_block}
           <div class="browser-frame">
@@ -1199,46 +1202,87 @@ def _auth_portal_html(
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenBrowser Login Handoff</title>
     <style>
-      :root {{ color-scheme: light; --ink: #10151f; --muted: #667085; --line: #d8dee8; --soft: #f5f7fb; --panel: #ffffff; --accent: #1f6feb; --ok: #0f7b4f; --warn: #9a5b00; }}
+      :root {{
+        color-scheme: light;
+        --bg-app: #fafaf7;
+        --bg-card: #ffffff;
+        --bg-2: #f1eee8;
+        --bg-3: #ede8df;
+        --text-primary: #141414;
+        --text-muted: #6b6861;
+        --border-default: #e7e0d6;
+        --border-soft: #e8e3da;
+        --border-strong: #d8cfc2;
+        --primary: #181818;
+        --primary-text: #ffffff;
+        --success: #2f8f5b;
+        --warning: #f9735b;
+        --pending: #e0b349;
+        --radius-card: 18px;
+        --radius-button: 12px;
+        --radius-pill: 9999px;
+        --shadow-card: 0 12px 30px rgba(0,0,0,0.04);
+        --shadow-pop: 0 16px 36px rgba(0,0,0,0.10), 0 0 0 1px var(--border-default);
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+        --spring: cubic-bezier(0.32, 1.06, 0.5, 1);
+      }}
       * {{ box-sizing: border-box; }}
-      body {{ margin: 0; min-height: 100dvh; overflow: hidden; display: flex; flex-direction: column; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #eef2f7; }}
-      header {{ flex: 0 0 auto; background: #10151f; color: white; padding: 12px 16px; }}
-      main {{ flex: 1 1 auto; min-height: 0; width: 100%; padding: 12px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }}
+      html {{ background: var(--bg-app); }}
+      body {{ margin: 0; min-height: 100dvh; overflow: hidden; display: flex; flex-direction: column; font-family: "Geist", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text-primary); background: var(--bg-app); font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1; }}
+      header {{ flex: 0 0 auto; padding: 16px 20px 10px; border-bottom: 1px solid var(--border-soft); background: color-mix(in srgb, var(--bg-app) 92%, white); }}
+      main {{ flex: 1 1 auto; min-height: 0; width: 100%; padding: 14px 16px 16px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; }}
       .topbar {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
-      .brand {{ font-size: 18px; font-weight: 700; letter-spacing: 0; }}
-      .meta {{ display: flex; gap: 8px; flex-wrap: wrap; }}
-      .pill {{ border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 5px 10px; color: #d9e2ef; font-size: 13px; }}
-      .handoff-bar, .browser-shell, .empty-state {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(16,21,31,.06); }}
-      .handoff-bar {{ padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }}
-      .request-main {{ min-width: 0; display: grid; gap: 7px; }}
-      .request-line {{ display: flex; gap: 10px; align-items: center; min-width: 0; flex-wrap: wrap; }}
-      .request-line strong {{ font-size: 14px; }}
-      .details-row {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 13px; }}
-      .browser-shell {{ min-height: 0; overflow: hidden; display: flex; flex-direction: column; }}
-      .browser-toolbar {{ flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fbfcfe; }}
-      .browser-frame {{ flex: 1 1 auto; min-height: 0; background: #111827; }}
+      .brand {{ display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 650; letter-spacing: 0; }}
+      .brand::before {{ content: ""; width: 9px; height: 9px; border-radius: var(--radius-pill); background: var(--success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--success) 12%, transparent); }}
+      .meta {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+      .pill {{ display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-pill); padding: 0 10px; color: var(--text-muted); background: var(--bg-card); font-size: 12px; font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }}
+      .handoff-bar, .browser-shell, .empty-state {{ background: var(--bg-card); border: 1px solid var(--border-default); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }}
+      .handoff-bar {{ padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; }}
+      .request-main {{ min-width: 0; display: grid; gap: 8px; }}
+      .request-line {{ display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; min-width: 0; }}
+      .field-label {{ display: inline-flex; align-items: center; height: 28px; color: var(--text-primary); font-size: 13px; font-weight: 650; }}
+      .details-row {{ display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--text-muted); font-size: 12.5px; }}
+      .details-row b {{ color: var(--text-primary); font-weight: 550; }}
+      .browser-shell {{ min-height: 0; overflow: hidden; display: flex; flex-direction: column; transition: border-color 180ms var(--ease), box-shadow 180ms var(--ease); }}
+      .browser-toolbar {{ flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border-soft); background: linear-gradient(180deg, #fff, var(--bg-card)); }}
+      .toolbar-copy {{ display: grid; gap: 2px; min-width: 0; }}
+      .browser-frame {{ flex: 1 1 auto; min-height: 0; background: #111; }}
       iframe {{ width: 100%; height: 100%; min-height: 0; display: block; border: 0; background: white; }}
-      .eyebrow {{ color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }}
-      .title-small {{ font-size: 16px; font-weight: 700; }}
-      .target {{ min-width: min(560px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #344054; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }}
-      details {{ color: var(--muted); font-size: 13px; }}
-      summary {{ cursor: pointer; font-weight: 700; }}
+      .eyebrow {{ color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }}
+      .title-small {{ font-size: 15px; font-weight: 650; line-height: 1.25; }}
+      .target {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: color-mix(in srgb, var(--text-primary) 86%, transparent); background: var(--bg-2); border: 1px solid var(--border-default); border-radius: var(--radius-button); padding: 7px 10px; }}
+      details {{ color: var(--text-muted); font-size: 12.5px; }}
+      summary {{ cursor: pointer; font-weight: 600; }}
       .actions {{ display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }}
-      button, .button {{ appearance: none; border: 0; border-radius: 8px; background: var(--ink); color: white; font-weight: 700; font-size: 14px; padding: 10px 13px; text-decoration: none; cursor: pointer; }}
-      .secondary {{ background: #eef4ff; color: #174ea6; border: 1px solid #c8dbff; }}
-      .muted {{ color: var(--muted); font-size: 13px; }}
-      .notice {{ flex: 0 0 auto; margin: 8px 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; }}
-      .notice.ok {{ background: #eefaf4; color: var(--ok); border: 1px solid #bde7d1; }}
-      .notice.warn {{ background: #fff7e8; color: #573600; border: 1px solid #f3d19a; }}
-      .password-row {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }}
-      code {{ background: rgba(16,21,31,.08); border-radius: 5px; padding: 2px 5px; }}
+      button, .button {{ appearance: none; display: inline-flex; height: 34px; align-items: center; justify-content: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--primary) 82%, transparent); border-radius: var(--radius-button); background: var(--primary); color: var(--primary-text); font-weight: 600; font-size: 13px; padding: 0 12px; text-decoration: none; cursor: pointer; box-shadow: 0 1px 0 rgba(0,0,0,0.06); transition: transform 120ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease); white-space: nowrap; }}
+      button:hover, .button:hover {{ background: #2a2a2a; box-shadow: 0 8px 20px rgba(0,0,0,0.08); }}
+      button:active, .button:active {{ transform: translateY(1px) scale(.985); }}
+      .button-outline {{ border-color: var(--border-default); background: var(--bg-card); color: var(--text-primary); }}
+      .button-outline:hover {{ background: var(--bg-2); border-color: var(--border-strong); }}
+      .button-ghost {{ height: 28px; border-color: var(--border-default); background: var(--bg-card); color: var(--text-primary); padding: 0 10px; }}
+      .button-ghost:hover {{ background: var(--bg-2); }}
+      .muted {{ color: var(--text-muted); font-size: 13px; }}
+      .handoff-note {{ flex: 0 0 auto; margin: 10px 14px; padding: 10px 12px; border-radius: var(--radius-button); border: 1px solid var(--border-default); display: flex; align-items: center; gap: 10px; font-size: 13px; }}
+      .handoff-note strong {{ display: block; color: var(--text-primary); font-weight: 650; }}
+      .handoff-note span:not(.status-dot) {{ color: var(--text-muted); }}
+      .handoff-note.is-success {{ background: color-mix(in srgb, var(--success) 8%, var(--bg-card)); border-color: color-mix(in srgb, var(--success) 22%, var(--border-default)); }}
+      .handoff-note.is-warning {{ background: color-mix(in srgb, var(--warning) 8%, var(--bg-card)); border-color: color-mix(in srgb, var(--warning) 28%, var(--border-default)); }}
+      .status-dot {{ width: 8px; height: 8px; flex: 0 0 auto; border-radius: var(--radius-pill); background: var(--success); }}
+      .is-warning .status-dot {{ background: var(--warning); }}
+      .note-copy {{ min-width: 0; flex: 1 1 auto; }}
+      .password-row {{ margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+      code {{ background: rgba(0,0,0,.06); border: 1px solid rgba(0,0,0,.04); border-radius: 8px; padding: 4px 7px; font-family: "Geist Mono", "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: var(--text-primary); }}
       .empty-state {{ padding: 22px; }}
       @media (max-width: 900px) {{
         body {{ overflow: auto; }}
-        main {{ min-height: calc(100dvh - 74px); grid-template-rows: auto 72dvh; }}
+        header {{ padding: 14px 14px 10px; }}
+        main {{ min-height: calc(100dvh - 92px); padding: 12px; grid-template-rows: auto 72dvh; }}
         .handoff-bar {{ grid-template-columns: 1fr; }}
+        .request-line {{ grid-template-columns: 1fr; }}
         .actions {{ justify-content: flex-start; }}
         .browser-toolbar {{ align-items: flex-start; flex-direction: column; }}
+        .handoff-note {{ align-items: flex-start; flex-direction: column; }}
+        .password-row {{ margin-left: 0; }}
         .button, button {{ width: auto; }}
       }}
     </style>
@@ -1258,12 +1302,12 @@ def _auth_portal_html(
       <section class="handoff-bar">
         <div class="request-main">
           <div class="request-line">
-            <strong>Target URL</strong>
+            <span class="field-label">Target</span>
             <div class="target" title="{safe_url}">{safe_url}</div>
           </div>
           <div class="details-row">
-            <span>Agent: {safe_owner}</span>
-            <span>Reason: {safe_reason}</span>
+            <span>Agent <b>{safe_owner}</b></span>
+            <span>Reason <b>{safe_reason}</b></span>
             <details>
               <summary>Privacy</summary>
               Passwords, tokens, cookies, proxy credentials, and the temporary VNC password stay out of agent chat.
@@ -1272,7 +1316,7 @@ def _auth_portal_html(
         </div>
         <div class="actions">
           <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark complete</button></form>
-          <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="secondary" type="submit">Stop view</button></form>
+          <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="button-outline" type="submit">Stop view</button></form>
         </div>
       </section>
       {frame}
