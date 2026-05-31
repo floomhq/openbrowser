@@ -24,7 +24,7 @@ flowchart TD
 | Remote MCP | Agents running outside the browser host | `openbrowser-remote-mcp` with `OPENBROWSER_API_KEY` and `OPENBROWSER_BASE_URL` |
 | OpenBrowser wrapper | OpenBrowser diagnostics and OpenBrowser MCP surface | `openbrowser-adapter --identity <id> ...` |
 | browser-use wrapper | browser-use task execution against broker-leased browsers | `openbrowser-use --identity <id> ...` |
-| Disposable browser | Anonymous QA, local dev-server screenshots, public pages, no account state | Tool-specific disposable browser command |
+| Fast disposable browser | Anonymous QA, local dev-server screenshots, public pages, no account state | gstack `/browse` or another disposable-browser command |
 
 ## Rules
 
@@ -46,6 +46,24 @@ openbrowser-use --identity work-main --json open https://example.com
 ```
 
 When `policy.max_parallel_sessions` is greater than one, parallel leases use per-slot replicas under `profiles/.replicas/<identity>/<slot>`.
+
+Do not launch several independent Chrome processes against the same `profile_dir`. Chrome profile locks, SQLite databases, and local state files are single-writer resources. On a laptop, several Chrome windows for the same profile still belong to one Chrome process; on the broker, separate agents normally receive separate Chrome processes.
+
+Use these identity concurrency modes:
+
+| Mode | Use For | Tradeoff |
+| --- | --- | --- |
+| Single canonical lease | Login, settings changes, sensitive account actions | Strongest persistence; one agent at a time |
+| Profile replicas | Parallel read/QA/background flows with the same seeded identity | Independent slots; sessions can diverge until replicas are refreshed |
+| Shared live browser tabs | Supervised workflows where agents may share one running Chrome process | No profile-lock conflict; agents can still interfere with focus or navigation |
+
+The default contract is a single canonical lease unless the identity explicitly opts into replicas with `policy.max_parallel_sessions`.
+
+## Fast QA Lane
+
+Use gstack `/browse` for public pages, local dev-server checks, screenshots, and fast UI assertions that do not need Federico's account state. It is intentionally disposable and optimized for quick verification.
+
+Use OpenBrowser Broker for persisted profiles, cookies, proxy-backed identities, login handoffs, rich-text keyboard events, telemetry, feedback issues, and auditable multi-agent browser work. The two routes are complementary: fast disposable browser for anonymous QA, OpenBrowser for anything authenticated or identity-sensitive.
 
 ## Profile Import
 

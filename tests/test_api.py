@@ -61,6 +61,8 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
 
     assert response.status_code == 200
     assert "Live login view" in response.text
+    assert "resize=scale" in response.text
+    assert "resize=remote" not in response.text
     assert "#password=trust-pass" in response.text
     assert "Trusted source IP detected" in response.text
     assert "Temporary VNC password required" not in response.text
@@ -91,6 +93,8 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
 
     assert response.status_code == 200
+    assert "resize=scale" in response.text
+    assert "resize=remote" not in response.text
     assert "Temporary VNC password required" in response.text
     assert "manual-pass" in response.text
     assert "#password=manual-pass" not in response.text
@@ -118,6 +122,8 @@ def test_auth_portal_reuses_existing_vnc_without_restart(tmp_path, monkeypatch) 
     response = client.get("/auth/" + request["token"])
 
     assert response.status_code == 200
+    assert "resize=scale" in response.text
+    assert "resize=remote" not in response.text
     assert "existing-pass" in response.text
     assert started == []
 

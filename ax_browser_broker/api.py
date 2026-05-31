@@ -1120,12 +1120,16 @@ def _auth_client_is_trusted(request: Request) -> bool:
 
 def _novnc_embed_url(vnc: dict[str, Any], passwordless: bool) -> str:
     url = str(vnc["websocket_url"])
-    if not passwordless:
-        return url
     password = str(vnc.get("password", ""))
     parts = urllib.parse.urlsplit(url)
-    fragment = urllib.parse.urlencode({"password": password})
-    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, parts.query, fragment))
+    query = [(key, value) for key, value in urllib.parse.parse_qsl(parts.query, keep_blank_values=True) if key != "resize"]
+    query.append(("resize", "scale"))
+    fragment = ""
+    if passwordless:
+        fragment = urllib.parse.urlencode({"password": password})
+    else:
+        fragment = parts.fragment
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(query), fragment))
 
 
 def _auth_portal_html(
@@ -1150,40 +1154,42 @@ def _auth_portal_html(
     if vnc:
         embed_url = _novnc_embed_url(vnc, trusted_client)
         safe_embed_url = html.escape(embed_url, quote=True)
-        safe_open_url = html.escape(embed_url if trusted_client else str(vnc["websocket_url"]), quote=True)
+        safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
             password_block = """
-          <div class="notice ok">Trusted source IP detected. The login view connects without asking for the temporary VNC password.</div>
+            <div class="notice ok">Trusted source IP detected. The login view opens without a temporary VNC password prompt.</div>
 """
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
             password_block = f"""
-          <div class="notice warn">
-            <div><b>Temporary VNC password required</b></div>
-            <div class="password-row"><code id="vncPassword">{safe_password}</code><button type="button" id="copyPassword">Copy</button></div>
-            <div class="muted">Add this IP to <code>OPENBROWSER_AUTH_TRUSTED_CIDRS</code> to skip this prompt on future handoffs.</div>
-          </div>
+            <div class="notice warn">
+              <div><b>Temporary VNC password required</b></div>
+              <div class="password-row"><code id="vncPassword">{safe_password}</code><button type="button" id="copyPassword">Copy</button></div>
+              <div class="muted">Trusted IPs skip this prompt on future handoffs.</div>
+            </div>
 """
         frame = f"""
-      <section class="browser-shell">
-        <div class="browser-toolbar">
-          <div>
-            <div class="eyebrow">Live login view</div>
-            <div class="title-small">Complete the login inside the browser below</div>
+        <section class="browser-shell">
+          <div class="browser-toolbar">
+            <div>
+              <div class="eyebrow">Live login view</div>
+              <div class="title-small">Complete the login inside the browser below</div>
+            </div>
+            <a class="button secondary" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
           </div>
-          <a class="button secondary" href="{safe_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
-        </div>
-        {password_block}
-        <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
-      </section>
+          {password_block}
+          <div class="browser-frame">
+            <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
+          </div>
+        </section>
 """
     else:
         frame = f"""
-      <section class="empty-state">
-        <div class="title-small">Browser login view is not running</div>
-        <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
-        <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
-      </section>
+        <section class="empty-state">
+          <div class="title-small">Browser login view is not running</div>
+          <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
+          <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
+        </section>
 """
     return f"""
 <!doctype html>
@@ -1195,36 +1201,46 @@ def _auth_portal_html(
     <style>
       :root {{ color-scheme: light; --ink: #10151f; --muted: #667085; --line: #d8dee8; --soft: #f5f7fb; --panel: #ffffff; --accent: #1f6feb; --ok: #0f7b4f; --warn: #9a5b00; }}
       * {{ box-sizing: border-box; }}
-      body {{ margin: 0; min-height: 100vh; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #eef2f7; }}
-      header {{ background: #10151f; color: white; padding: 18px 24px; }}
-      main {{ max-width: 1440px; margin: 0 auto; padding: 18px; }}
+      body {{ margin: 0; min-height: 100dvh; overflow: hidden; display: flex; flex-direction: column; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #eef2f7; }}
+      header {{ flex: 0 0 auto; background: #10151f; color: white; padding: 12px 16px; }}
+      main {{ flex: 1 1 auto; min-height: 0; width: 100%; padding: 12px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 10px; }}
       .topbar {{ display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }}
-      .brand {{ font-size: 19px; font-weight: 700; letter-spacing: 0; }}
+      .brand {{ font-size: 18px; font-weight: 700; letter-spacing: 0; }}
       .meta {{ display: flex; gap: 8px; flex-wrap: wrap; }}
       .pill {{ border: 1px solid rgba(255,255,255,.28); border-radius: 999px; padding: 5px 10px; color: #d9e2ef; font-size: 13px; }}
-      .grid {{ display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); gap: 16px; align-items: start; }}
-      .panel, .browser-shell, .empty-state {{ background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 30px rgba(16,21,31,.06); }}
-      .panel {{ padding: 16px; }}
-      .browser-shell {{ overflow: hidden; }}
-      .browser-toolbar {{ display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: #fbfcfe; }}
-      iframe {{ width: 100%; height: min(74vh, 900px); min-height: 620px; display: block; border: 0; background: white; }}
+      .handoff-bar, .browser-shell, .empty-state {{ background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(16,21,31,.06); }}
+      .handoff-bar {{ padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; }}
+      .request-main {{ min-width: 0; display: grid; gap: 7px; }}
+      .request-line {{ display: flex; gap: 10px; align-items: center; min-width: 0; flex-wrap: wrap; }}
+      .request-line strong {{ font-size: 14px; }}
+      .details-row {{ display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 13px; }}
+      .browser-shell {{ min-height: 0; overflow: hidden; display: flex; flex-direction: column; }}
+      .browser-toolbar {{ flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: #fbfcfe; }}
+      .browser-frame {{ flex: 1 1 auto; min-height: 0; background: #111827; }}
+      iframe {{ width: 100%; height: 100%; min-height: 0; display: block; border: 0; background: white; }}
       .eyebrow {{ color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }}
-      .title-small {{ font-size: 17px; font-weight: 700; }}
-      .target {{ overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #344054; background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }}
-      dl {{ margin: 0; display: grid; gap: 10px; }}
-      dt {{ color: var(--muted); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }}
-      dd {{ margin: 0; font-size: 14px; }}
-      .actions {{ display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }}
+      .title-small {{ font-size: 16px; font-weight: 700; }}
+      .target {{ min-width: min(560px, 100%); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; color: #344054; background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }}
+      details {{ color: var(--muted); font-size: 13px; }}
+      summary {{ cursor: pointer; font-weight: 700; }}
+      .actions {{ display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }}
       button, .button {{ appearance: none; border: 0; border-radius: 8px; background: var(--ink); color: white; font-weight: 700; font-size: 14px; padding: 10px 13px; text-decoration: none; cursor: pointer; }}
       .secondary {{ background: #eef4ff; color: #174ea6; border: 1px solid #c8dbff; }}
       .muted {{ color: var(--muted); font-size: 13px; }}
-      .notice {{ margin: 0 16px 12px; padding: 12px; border-radius: 8px; font-size: 14px; }}
+      .notice {{ flex: 0 0 auto; margin: 8px 12px; padding: 10px 12px; border-radius: 8px; font-size: 14px; }}
       .notice.ok {{ background: #eefaf4; color: var(--ok); border: 1px solid #bde7d1; }}
       .notice.warn {{ background: #fff7e8; color: #573600; border: 1px solid #f3d19a; }}
       .password-row {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0; }}
       code {{ background: rgba(16,21,31,.08); border-radius: 5px; padding: 2px 5px; }}
       .empty-state {{ padding: 22px; }}
-      @media (max-width: 900px) {{ .grid {{ grid-template-columns: 1fr; }} iframe {{ min-height: 560px; height: 70vh; }} }}
+      @media (max-width: 900px) {{
+        body {{ overflow: auto; }}
+        main {{ min-height: calc(100dvh - 74px); grid-template-rows: auto 72dvh; }}
+        .handoff-bar {{ grid-template-columns: 1fr; }}
+        .actions {{ justify-content: flex-start; }}
+        .browser-toolbar {{ align-items: flex-start; flex-direction: column; }}
+        .button, button {{ width: auto; }}
+      }}
     </style>
   </head>
   <body>
@@ -1239,21 +1255,27 @@ def _auth_portal_html(
       </div>
     </header>
     <main>
-      <div class="grid">
-        <aside class="panel">
-          <dl>
-            <div><dt>Requesting agent</dt><dd>{safe_owner}</dd></div>
-            <div><dt>Reason</dt><dd>{safe_reason}</dd></div>
-            <div><dt>Target URL</dt><dd class="target">{safe_url}</dd></div>
-          </dl>
-          <div class="actions">
-            <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark login complete</button></form>
-            <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="secondary" type="submit">Stop browser view</button></form>
+      <section class="handoff-bar">
+        <div class="request-main">
+          <div class="request-line">
+            <strong>Target URL</strong>
+            <div class="target" title="{safe_url}">{safe_url}</div>
           </div>
-          <p class="muted">Use this page for passwords, 2FA, QR scans, passkeys, and manual checks. The agent does not receive raw cookies, passwords, tokens, proxy credentials, or the temporary VNC password.</p>
-        </aside>
-        {frame}
-      </div>
+          <div class="details-row">
+            <span>Agent: {safe_owner}</span>
+            <span>Reason: {safe_reason}</span>
+            <details>
+              <summary>Privacy</summary>
+              Passwords, tokens, cookies, proxy credentials, and the temporary VNC password stay out of agent chat.
+            </details>
+          </div>
+        </div>
+        <div class="actions">
+          <form method="post" action="/auth/{safe_token}/complete"><button type="submit">Mark complete</button></form>
+          <form method="post" action="/auth/{safe_token}/stop-vnc"><button class="secondary" type="submit">Stop view</button></form>
+        </div>
+      </section>
+      {frame}
     </main>
     <script>
       const copyButton = document.getElementById('copyPassword');

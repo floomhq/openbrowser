@@ -42,6 +42,7 @@ OpenBrowser gives agents one operating contract: lease, act, release, report.
 - **Browser pool**: multiple isolated Chrome slots with CDP endpoints managed behind one broker.
 - **Persistent profiles**: named identities reuse Chrome profile directories and session cookies.
 - **Profile replicas**: selected identities can run in parallel without Chrome profile-lock conflicts.
+- **Fast QA routing**: pair OpenBrowser with disposable browser tools for public-page checks that do not need account state.
 - **Proxy routing**: identities can pin traffic to an HTTP/SOCKS proxy via `proxy_ref`.
 - **Remote API**: bearer-token protected `/openbrowser/v1` API for agents on any machine.
 - **MCP servers**: local MCP for same-host agents and remote MCP for HTTPS-backed access.
@@ -244,6 +245,8 @@ curl -fsS "$BASE/auth/request" \
 ```
 
 Open the returned `portal_url`, complete login in the browser view, then mark the request complete. Future leases for that identity reuse the saved profile state.
+
+For parallel work, set `policy.max_parallel_sessions` above `1`. OpenBrowser then seeds per-slot replicas instead of starting multiple Chrome processes against one profile directory. That matters: several windows in a desktop Chrome profile are one Chrome process, but several AX41 agents are independent Chrome processes. Directly sharing the same `profile_dir` across those processes risks Chrome singleton-lock failures and profile database corruption.
 
 ```mermaid
 flowchart LR
