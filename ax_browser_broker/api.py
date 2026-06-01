@@ -492,7 +492,7 @@ def _openbrowser_dashboard_html() -> str:
         min-height: 100dvh;
         overflow: auto;
         overflow-x: hidden;
-        padding: 18px 28px;
+        padding: 22px 28px;
         color: var(--text);
         background:
           linear-gradient(180deg, rgba(247,244,236,0.58) 0%, rgba(231,223,208,0.70) 44%, rgba(231,223,208,0.88) 100%),
@@ -506,17 +506,17 @@ def _openbrowser_dashboard_html() -> str:
           url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
       }}
       .page-shell {{
-        width: min(1560px, calc(100vw - 96px));
+        width: min(1440px, calc(100vw - 96px));
         max-width: 100%;
         margin: 0 auto;
         display: grid;
-        gap: 22px;
+        gap: 30px;
       }}
       .product-hero {{
         display: grid;
         justify-items: center;
         text-align: center;
-        gap: 8px;
+        gap: 10px;
         padding-top: 2px;
         text-shadow: 0 1px 28px rgba(255,255,255,0.62);
       }}
@@ -526,7 +526,7 @@ def _openbrowser_dashboard_html() -> str:
         align-items: center;
         justify-content: center;
         gap: 18px;
-        font-size: clamp(34px, 3.1vw, 48px);
+        font-size: clamp(38px, 3.7vw, 58px);
         line-height: 0.92;
         font-weight: 820;
         letter-spacing: 0;
@@ -548,7 +548,7 @@ def _openbrowser_dashboard_html() -> str:
         border: .11em solid currentColor;
         border-radius: 22%;
       }}
-      .hero-line {{ color: color-mix(in srgb, var(--text) 72%, var(--muted)); font-size: clamp(18px, 1.45vw, 24px); font-weight: 560; }}
+      .hero-line {{ color: color-mix(in srgb, var(--text) 72%, var(--muted)); font-size: clamp(20px, 1.6vw, 26px); font-weight: 560; }}
       .hero-subline {{ display: none; }}
       button, .button {{
         appearance: none;
@@ -586,9 +586,9 @@ def _openbrowser_dashboard_html() -> str:
       .app-window {{
         position: relative;
         width: 100%;
-        height: auto;
+        height: min(850px, calc(100dvh - 176px));
         min-height: 0;
-        overflow: visible;
+        overflow: hidden;
         max-width: 100%;
         display: grid;
         grid-template-rows: 74px auto;
@@ -633,15 +633,15 @@ def _openbrowser_dashboard_html() -> str:
       .api-link {{ min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }}
       .app-grid {{
         min-height: 0;
+        height: 100%;
         display: grid;
-        grid-template-columns: 270px minmax(0, 1fr) 270px;
+        grid-template-columns: 260px minmax(0, 1fr) 260px;
         align-items: stretch;
       }}
       .sidebar, .state-panel {{
         min-width: 0;
         min-height: 0;
-        overflow-y: visible;
-        overflow-x: hidden;
+        overflow: visible;
         padding: 28px 20px;
         background: color-mix(in srgb, var(--panel) 70%, transparent);
       }}
@@ -732,13 +732,14 @@ def _openbrowser_dashboard_html() -> str:
       .mono, code, pre {{ font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; }}
       code {{ overflow-wrap: anywhere; word-break: break-word; }}
       .browser-stage {{
-        position: relative;
+        position: static;
         min-width: 0;
         min-height: 0;
+        height: 100%;
         display: grid;
-        grid-template-rows: auto auto;
-        gap: 18px;
-        padding: 26px 16px 118px;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 16px;
+        padding: 22px 16px 86px;
       }}
       .stage-title {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; font-weight: 760; text-transform: uppercase; letter-spacing: .04em; }}
       .stage-title-main {{ display: inline-flex; align-items: center; gap: 12px; min-width: 0; }}
@@ -748,6 +749,7 @@ def _openbrowser_dashboard_html() -> str:
       .browser-shell {{
         min-width: 0;
         min-height: 0;
+        height: 100%;
         overflow: visible;
         display: block;
         border: 0;
@@ -798,13 +800,14 @@ def _openbrowser_dashboard_html() -> str:
       }}
       .console-canvas {{
         min-height: 0;
+        height: 100%;
         overflow-y: visible;
         overflow-x: visible;
         padding: 0;
         background: transparent;
       }}
       .operator-hero {{
-        display: grid;
+        display: none;
         grid-template-columns: minmax(0, 1fr) 260px;
         gap: 18px;
         align-items: stretch;
@@ -817,15 +820,17 @@ def _openbrowser_dashboard_html() -> str:
         padding: 18px;
       }}
       .session-demo {{
-        position: relative;
+        position: static;
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: 18px;
-        min-height: 610px;
-        margin-bottom: 22px;
+        min-height: 0;
+        height: 100%;
+        margin-bottom: 0;
       }}
       .mock-browser {{
         min-width: 0;
+        height: 100%;
         overflow: hidden;
         display: grid;
         grid-template-rows: 62px minmax(0, 1fr);
@@ -935,8 +940,8 @@ def _openbrowser_dashboard_html() -> str:
       .handoff-card {{
         position: absolute;
         z-index: 20;
-        left: -210px;
-        bottom: -86px;
+        left: 78px;
+        bottom: 56px;
         width: 330px;
         padding: 20px;
         border: 1px solid var(--border);
@@ -964,11 +969,16 @@ def _openbrowser_dashboard_html() -> str:
         background: color-mix(in srgb, var(--panel-solid) 72%, transparent);
       }}
       .feature-strip {{
+        position: absolute;
+        z-index: 14;
+        left: 50%;
+        bottom: 28px;
+        transform: translateX(-50%);
         display: grid;
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 24px;
         width: min(760px, 74%);
-        margin: 12px auto 72px;
+        margin: 0;
         padding: 14px 20px;
         border: 1px solid var(--border);
         border-radius: 14px;
@@ -1002,7 +1012,7 @@ def _openbrowser_dashboard_html() -> str:
       .operator-tile span, .metric span {{ display: block; color: var(--muted); font-size: 11px; font-weight: 760; }}
       .operator-tile b, .metric b {{ display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; }}
       .dashboard-panels {{
-        display: grid;
+        display: none;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 18px;
         margin-bottom: 18px;
@@ -1065,7 +1075,7 @@ def _openbrowser_dashboard_html() -> str:
       .steps {{ display: grid; gap: 12px; }}
       .step {{ display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: start; }}
       .num {{ width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--soft); border: 1px solid var(--border); color: var(--muted); font-weight: 800; }}
-      .snippet-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }}
+      .snippet-grid {{ display: none; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }}
       .snippet-head {{ display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }}
       pre {{
         margin: 0;
@@ -1119,6 +1129,10 @@ def _openbrowser_dashboard_html() -> str:
         .status-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
         .agent-card {{ right: 26px; bottom: 104px; width: min(310px, 42%); }}
       }}
+      @media (min-width: 901px) and (max-width: 1280px) {{
+        .app-window {{ height: min(850px, calc(100dvh - 176px)); overflow: hidden; }}
+        .app-grid {{ height: 100%; }}
+      }}
       @media (max-width: 900px) {{
         body {{ padding: 12px; overflow: auto; }}
         .page-shell {{ width: 100%; gap: 16px; }}
@@ -1135,6 +1149,7 @@ def _openbrowser_dashboard_html() -> str:
         .sidebar, .state-panel {{ border: 0; border-top: 1px solid var(--border); }}
         .lease-summary {{ width: auto; margin-top: 16px; }}
         .browser-stage {{ padding: 18px; }}
+        .feature-strip {{ position: static; transform: none; width: 100%; margin: 0; }}
         .stage-title {{ align-items: start; }}
         .browser-toolbar {{ display: none; }}
         .operator-strip, .state-list {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
@@ -1154,7 +1169,7 @@ def _openbrowser_dashboard_html() -> str:
         .profile-head .kebab {{ display: none; }}
         .mock-browser {{ order: 1; max-height: none; }}
         .mock-page {{ grid-template-rows: 62px minmax(0, 1fr); }}
-        .handoff-card {{ order: 2; }}
+        .handoff-card {{ order: 0; }}
         .agent-card {{ order: 2; }}
         .agent-card, .handoff-card {{ position: static; width: 100%; margin-top: 0; }}
         .session-demo {{ gap: 12px; }}
@@ -1202,7 +1217,8 @@ def _openbrowser_dashboard_html() -> str:
           text-align: center;
         }}
         .mobile-quick-state b {{ color: var(--text); font-size: 13px; }}
-        .session-demo {{ position: relative; padding-bottom: 0; }}
+        .session-demo {{ position: relative; height: auto; min-height: 0; padding-bottom: 0; }}
+        .mock-browser {{ height: auto; }}
         .handoff-card {{
           position: static;
           order: 0;
