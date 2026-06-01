@@ -312,6 +312,87 @@ def test_parallel_identity_limit_is_enforced(tmp_path, monkeypatch) -> None:
         pool.release(second.lease_id)
 
 
+def test_identity_lease_reactivates_warm_slot_when_proxy_forwarder_is_missing(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": None}
+    proxy_ready = {"pool-a": False, "pool-b": True, "pool-c": True}
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = tmp_path / "canonical"
+        proxy_ref = "iproyal:main"
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    def activate(identity_id: str, slot_name: str, check_leases: bool = True, **kwargs):
+        activations.append((identity_id, slot_name, kwargs))
+        active[slot_name] = identity_id
+        proxy_ready[slot_name] = True
+        return {"active": True}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "_slot_proxy_ready", lambda slot_name: proxy_ready[slot_name])
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "activate_identity", activate)
+    monkeypatch.setattr(
+        pool,
+        "read_slot_config",
+        lambda slot_name: {"PROFILE_DIR": str(identity.profile_dir), "PROXY_REF": "iproyal:main"}
+        if slot_name == "pool-a"
+        else {},
+    )
+
+    lease = pool.lease("parallel-1", identity_id="chrome-one")
+    try:
+        assert lease.name == "pool-a"
+        assert activations == [("chrome-one", "pool-a", {"profile_dir_override": identity.profile_dir, "clear_existing": False})]
+    finally:
+        pool.release(lease.lease_id)
+
+
+def test_require_lease_rejects_slot_with_dead_configured_proxy(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": None}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "_slot_proxy_ready", lambda slot_name: slot_name != "pool-a")
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
+
+    with pool.locked_state() as state:
+        state["leases"]["lease-proxy-dead"] = {
+            "name": "pool-a",
+            "owner": "agent",
+            "created_at": int(pool.time.time()),
+            "heartbeat_at": int(pool.time.time()),
+            "identity_id": "chrome-one",
+        }
+
+    with pytest.raises(pool.LeaseError, match="not healthy"):
+        pool.require_lease("lease-proxy-dead")
+
+
+def test_status_marks_configured_proxy_slot_unhealthy_when_forwarder_is_missing(tmp_path, monkeypatch) -> None:
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": None}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "_slot_proxy_ready", lambda slot_name: slot_name != "pool-a")
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+
+    data = pool.status()
+
+    by_name = {slot["name"]: slot for slot in data["slots"]}
+    assert by_name["pool-a"]["cdp_healthy"] is True
+    assert by_name["pool-a"]["proxy_ready"] is False
+    assert by_name["pool-a"]["healthy"] is False
+
+
 def test_warm_replica_slot_is_reused_without_destructive_refresh(tmp_path, monkeypatch) -> None:
     active = {"pool-a": "chrome-one", "pool-b": "chrome-one", "pool-c": None}
     activations = []

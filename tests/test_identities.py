@@ -180,6 +180,113 @@ def test_activate_identity_writes_slot_config_and_launches_profile(tmp_path, mon
     assert ([str(tmp_path / "browser-pool" / "bin" / "launch_chrome.sh"), "pool-a", "9223"], True) in calls
 
 
+def test_activate_identity_waits_for_proxy_ready(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    pool_config_dir = tmp_path / "pool-config"
+    profile_dir = tmp_path / "chrome-openpaper"
+    identity_file.write_text(
+        json.dumps(
+            {
+                "identities": {
+                    "chrome-openpaper": {
+                        "slot": "pool-a",
+                        "profile_dir": str(profile_dir),
+                        "proxy_ref": "residential:work-main",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(
+        json.dumps(
+            {
+                "proxies": {
+                    "residential:work-main": {
+                        "scheme": "http",
+                        "host": "proxy.example",
+                        "port": 1234,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    proxy_checks = []
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", tmp_path / "browser-pool")
+    monkeypatch.setattr(identities, "_healthy", lambda _port: True)
+    monkeypatch.setattr(identities.subprocess, "run", lambda args, check=False: calls.append((args, check)) or type("Result", (), {"returncode": 1})())
+
+    def proxy_ready(slot_name: str) -> bool:
+        proxy_checks.append(slot_name)
+        return len(proxy_checks) > 1
+
+    monkeypatch.setattr(identities, "_slot_proxy_ready", proxy_ready)
+
+    result = identities.activate_identity("chrome-openpaper")
+
+    assert result["active"] is True
+    assert proxy_checks == ["pool-a", "pool-a"]
+
+
+def test_activate_identity_fails_when_proxy_never_ready(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    proxy_file = tmp_path / "proxies.json"
+    pool_config_dir = tmp_path / "pool-config"
+    profile_dir = tmp_path / "chrome-openpaper"
+    identity_file.write_text(
+        json.dumps(
+            {
+                "identities": {
+                    "chrome-openpaper": {
+                        "slot": "pool-a",
+                        "profile_dir": str(profile_dir),
+                        "proxy_ref": "residential:work-main",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    proxy_file.write_text(
+        json.dumps(
+            {
+                "proxies": {
+                    "residential:work-main": {
+                        "scheme": "http",
+                        "host": "proxy.example",
+                        "port": 1234,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "PROXIES_FILE", proxy_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", tmp_path / "browser-pool")
+    monkeypatch.setattr(identities, "_healthy", lambda _port: True)
+    monkeypatch.setattr(identities, "_slot_proxy_ready", lambda _slot_name: False)
+    monkeypatch.setattr(identities.time, "sleep", lambda _seconds: None)
+    start = [100.0]
+
+    def fake_time() -> float:
+        start[0] += 1.0
+        return start[0]
+
+    monkeypatch.setattr(identities.time, "time", fake_time)
+    monkeypatch.setattr(identities.subprocess, "run", lambda _args, check=False: type("Result", (), {"returncode": 1})())
+
+    with pytest.raises(identities.IdentityError, match="did not become healthy"):
+        identities.activate_identity("chrome-openpaper")
+
+
 def test_activate_auto_identity_clears_duplicate_slot_config(tmp_path, monkeypatch) -> None:
     identity_file = tmp_path / "identities.json"
     proxy_file = tmp_path / "proxies.json"

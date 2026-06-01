@@ -43,6 +43,43 @@ sys.exit(0)
 PY
 }
 
+proxy_active() {
+  local config_file="${BROWSER_POOL_DIR}/config/${1}.env"
+  [[ -f "$config_file" ]] || return 0
+  local has_proxy
+  has_proxy="$(grep -E '^PROXY_REF=' "$config_file" 2>/dev/null || true)"
+  [[ -n "$has_proxy" ]] || return 0
+  local proxy_port
+  proxy_port="$(python3 - "$config_file" <<'PY'
+import ast
+import sys
+
+config = {}
+for line in open(sys.argv[1], encoding="utf-8"):
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#") or "=" not in stripped:
+        continue
+    key, value = stripped.split("=", 1)
+    try:
+        config[key] = ast.literal_eval(value)
+    except Exception:
+        config[key] = value
+print(config.get("PROXY_LOCAL_PORT") or "")
+PY
+)"
+  [[ -n "$proxy_port" ]] || return 1
+  python3 - "$proxy_port" <<'PY'
+import socket
+import sys
+
+try:
+    with socket.create_connection(("127.0.0.1", int(sys.argv[1])), timeout=0.3):
+        sys.exit(0)
+except OSError:
+    sys.exit(1)
+PY
+}
+
 while true; do
   for slot in "${SLOTS[@]}"; do
     name="${slot%%:*}"
@@ -50,7 +87,7 @@ while true; do
     if maintenance_active "${BROWSER_POOL_DIR}/state/maintenance/${name}.json"; then
       continue
     fi
-    if ! curl -fsS "http://127.0.0.1:${port}/json/version" >/dev/null 2>&1; then
+    if ! curl -fsS "http://127.0.0.1:${port}/json/version" >/dev/null 2>&1 || ! proxy_active "$name"; then
       "${BROKER_ROOT}/browser_pool/bin/launch_chrome.sh" "$name" "$port" || true
       sleep 2
     fi

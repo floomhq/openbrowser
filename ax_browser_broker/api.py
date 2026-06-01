@@ -490,17 +490,66 @@ def _openbrowser_dashboard_html() -> str:
       body {{
         margin: 0;
         min-height: 100dvh;
-        overflow: hidden;
+        overflow: auto;
         overflow-x: hidden;
-        display: grid;
-        place-items: center;
-        padding: 28px;
+        padding: 32px 28px;
         color: var(--text);
-        background: linear-gradient(180deg, color-mix(in srgb, var(--page) 82%, #ffffff) 0%, var(--page) 52%, color-mix(in srgb, var(--page) 86%, #5c6f86) 100%);
+        background:
+          linear-gradient(180deg, rgba(247,244,236,0.58) 0%, rgba(231,223,208,0.70) 44%, rgba(231,223,208,0.88) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1;
       }}
-      [data-theme="dark"] body {{ background: linear-gradient(180deg, #151716 0%, var(--page) 58%, #1d201e 100%); }}
+      [data-theme="dark"] body {{
+        background:
+          linear-gradient(180deg, rgba(12,15,14,0.72) 0%, rgba(12,15,14,0.84) 56%, rgba(12,15,14,0.92) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
+      }}
+      .page-shell {{
+        width: min(1600px, calc(100vw - 56px));
+        max-width: 100%;
+        margin: 0 auto;
+        display: grid;
+        gap: 22px;
+      }}
+      .product-hero {{
+        display: grid;
+        justify-items: center;
+        text-align: center;
+        gap: 8px;
+        padding-top: 2px;
+        text-shadow: 0 1px 28px rgba(255,255,255,0.62);
+      }}
+      [data-theme="dark"] .product-hero {{ text-shadow: 0 1px 28px rgba(0,0,0,0.62); }}
+      .hero-logo {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        font-size: clamp(38px, 3.7vw, 58px);
+        line-height: 0.92;
+        font-weight: 820;
+        letter-spacing: 0;
+      }}
+      .hero-logo sup {{ margin-left: -10px; align-self: flex-start; font-size: 15px; font-weight: 850; }}
+      .brand-mark {{
+        position: relative;
+        width: .96em;
+        height: .96em;
+        flex: 0 0 auto;
+        border: .12em solid currentColor;
+        border-radius: 24%;
+        transform: rotate(30deg);
+      }}
+      .brand-mark::after {{
+        content: "";
+        position: absolute;
+        inset: 23%;
+        border: .11em solid currentColor;
+        border-radius: 22%;
+      }}
+      .hero-line {{ font-size: clamp(20px, 2vw, 30px); font-weight: 760; }}
+      .hero-subline {{ color: var(--muted); font-size: clamp(16px, 1.4vw, 20px); font-weight: 620; }}
       button, .button {{
         appearance: none;
         display: inline-flex;
@@ -533,27 +582,27 @@ def _openbrowser_dashboard_html() -> str:
         background: color-mix(in srgb, var(--panel-solid) 86%, transparent);
         color: var(--text);
       }}
-      .button-small {{ height: 32px; padding: 0 11px; font-size: 12px; }}
+      .button-small {{ height: 36px; padding: 0 12px; font-size: 12px; }}
       .app-window {{
-        width: min(1720px, calc(100vw - 56px));
-        height: min(940px, calc(100dvh - 56px));
-        min-height: 680px;
+        width: 100%;
+        height: auto;
+        min-height: 0;
         overflow: hidden;
         max-width: 100%;
         display: grid;
-        grid-template-rows: 86px minmax(0, 1fr);
+        grid-template-rows: 78px auto;
         border: 1px solid var(--border);
         border-radius: var(--radius-lg);
         background: var(--paper);
         box-shadow: var(--shadow-window);
-        backdrop-filter: blur(22px) saturate(1.15);
+        backdrop-filter: blur(26px) saturate(1.2);
       }}
       .window-bar {{
         display: grid;
         grid-template-columns: 220px minmax(0, 1fr) 220px;
         align-items: center;
         gap: 16px;
-        padding: 18px 22px;
+        padding: 16px 20px;
         border-bottom: 1px solid var(--border);
       }}
       .traffic-lights {{ display: flex; gap: 8px; align-items: center; }}
@@ -569,14 +618,15 @@ def _openbrowser_dashboard_html() -> str:
       .app-grid {{
         min-height: 0;
         display: grid;
-        grid-template-columns: 300px minmax(0, 1fr) 300px;
+        grid-template-columns: 280px minmax(0, 1fr) 280px;
+        align-items: stretch;
       }}
       .sidebar, .state-panel {{
         min-width: 0;
         min-height: 0;
-        overflow-y: auto;
+        overflow-y: visible;
         overflow-x: hidden;
-        padding: 26px 22px;
+        padding: 24px 20px;
         background: color-mix(in srgb, var(--panel) 92%, transparent);
       }}
       .sidebar {{ border-right: 1px solid var(--border); }}
@@ -606,6 +656,15 @@ def _openbrowser_dashboard_html() -> str:
         font-size: 12px;
         font-weight: 800;
       }}
+      .session-icon svg, .state-icon svg, .inline-icon {{
+        width: 20px;
+        height: 20px;
+        stroke: currentColor;
+        stroke-width: 2;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }}
       .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
       .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
       .kebab {{ color: var(--faint); font-size: 24px; line-height: 1; }}
@@ -618,9 +677,17 @@ def _openbrowser_dashboard_html() -> str:
         border-radius: var(--radius-md);
         background: color-mix(in srgb, var(--panel-solid) 66%, transparent);
       }}
+      .copy-source {{
+        position: absolute;
+        left: -10000px;
+        top: auto;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+      }}
       .request-row {{ min-width: 0; display: grid; gap: 4px; }}
       .label {{ color: var(--muted); font-size: 12px; font-weight: 760; }}
-      .value {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }}
+      .value {{ min-width: 0; overflow: hidden; overflow-wrap: anywhere; white-space: normal; font-size: 13px; font-weight: 600; }}
       .mono, code, pre {{ font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; }}
       code {{ overflow-wrap: anywhere; word-break: break-word; }}
       .browser-stage {{
@@ -628,17 +695,16 @@ def _openbrowser_dashboard_html() -> str:
         min-width: 0;
         min-height: 0;
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: auto auto;
         gap: 18px;
-        padding: 26px 26px 22px;
+        padding: 24px 24px 22px;
       }}
       .stage-title {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; font-weight: 760; }}
       .browser-shell {{
         min-width: 0;
         min-height: 0;
         overflow: hidden;
-        display: grid;
-        grid-template-rows: 58px minmax(0, 1fr);
+        display: block;
         border: 1px solid var(--border);
         border-radius: var(--radius-md);
         background: var(--panel-solid);
@@ -687,9 +753,9 @@ def _openbrowser_dashboard_html() -> str:
       }}
       .console-canvas {{
         min-height: 0;
-        overflow-y: auto;
+        overflow-y: visible;
         overflow-x: hidden;
-        padding: 22px;
+        padding: 16px;
         background: linear-gradient(180deg, color-mix(in srgb, var(--panel-solid) 96%, transparent), color-mix(in srgb, var(--soft) 62%, transparent));
       }}
       .operator-hero {{
@@ -705,6 +771,168 @@ def _openbrowser_dashboard_html() -> str:
         background: color-mix(in srgb, var(--panel-solid) 82%, transparent);
         padding: 18px;
       }}
+      .session-demo {{
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 18px;
+        min-height: 380px;
+        margin-bottom: 16px;
+      }}
+      .mock-browser {{
+        min-width: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 50px minmax(0, 1fr);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 84%, transparent);
+        box-shadow: 0 20px 54px rgba(38,31,21,0.10);
+      }}
+      .mock-topbar {{
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 13px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 78%, transparent);
+      }}
+      .mock-actions {{ display: flex; align-items: center; gap: 9px; color: var(--muted); }}
+      .mock-actions span {{ width: 11px; height: 11px; border-radius: var(--radius-pill); background: var(--faint); opacity: .56; }}
+      .mock-url {{
+        min-width: 0;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 0 13px;
+        color: var(--muted);
+        background: color-mix(in srgb, var(--soft) 88%, transparent);
+        font-size: 12px;
+        font-weight: 650;
+      }}
+      .mock-page {{
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 58px minmax(0, 1fr);
+        background: color-mix(in srgb, var(--panel-solid) 94%, transparent);
+      }}
+      .mock-nav {{
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr) repeat(5, 40px);
+        gap: 10px;
+        align-items: center;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--border);
+      }}
+      .li-badge {{
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: #0a66c2;
+        color: white;
+        font-weight: 850;
+        font-size: 20px;
+      }}
+      .search-pill {{ height: 34px; border-radius: 9px; background: var(--soft); border: 1px solid var(--border); }}
+      .nav-dot {{ height: 30px; border-radius: 9px; background: color-mix(in srgb, var(--soft) 84%, transparent); border: 1px solid var(--border); }}
+      .mock-content {{
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr);
+        gap: 14px;
+        padding: 14px;
+      }}
+      .filter-panel, .profile-panel, .agent-card, .highlights {{
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 80%, transparent);
+      }}
+      .filter-panel {{ display: grid; gap: 10px; align-content: start; padding: 14px; }}
+      .filter-line {{ height: 30px; border-radius: 8px; background: var(--soft); border: 1px solid var(--border); }}
+      .profile-panel {{ min-width: 0; overflow: hidden; }}
+      .profile-head {{ display: grid; grid-template-columns: 86px minmax(0,1fr) auto; gap: 14px; align-items: center; padding: 16px; border-bottom: 1px solid var(--border); }}
+      .avatar {{
+        width: 66px;
+        height: 66px;
+        border-radius: 50%;
+        background:
+          radial-gradient(circle at 48% 36%, #f5c8a8 0 18%, transparent 19%),
+          radial-gradient(circle at 50% 62%, #26313d 0 30%, transparent 31%),
+          linear-gradient(135deg, #d8e5ef, #7192aa);
+        border: 5px solid color-mix(in srgb, var(--panel-solid) 88%, transparent);
+        box-shadow: 0 10px 26px rgba(0,0,0,0.14);
+      }}
+      .profile-name {{ font-size: 21px; font-weight: 820; letter-spacing: 0; }}
+      .profile-role {{ margin-top: 5px; color: var(--muted); font-weight: 650; }}
+      .profile-actions {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }}
+      .mini-button {{ height: 32px; padding: 0 12px; display: inline-flex; align-items: center; border-radius: 8px; border: 1px solid var(--border); background: var(--soft); font-size: 12px; font-weight: 750; }}
+      .mini-button.primary {{ background: #0a66c2; color: white; border-color: #0a66c2; }}
+      .profile-body {{ display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 14px; padding: 14px 16px 16px; }}
+      .note-list {{ margin: 10px 0 0; padding-left: 18px; color: var(--text); font-size: 13px; line-height: 1.7; }}
+      .highlights {{ padding: 14px; }}
+      .agent-card {{
+        position: absolute;
+        right: 26px;
+        bottom: 28px;
+        width: min(300px, 38%);
+        padding: 15px;
+        background: color-mix(in srgb, #eef9f1 82%, var(--panel-solid));
+        box-shadow: var(--shadow-float);
+      }}
+      [data-theme="dark"] .agent-card {{ background: color-mix(in srgb, #203328 66%, var(--panel-solid)); }}
+      .handoff-card {{
+        position: absolute;
+        left: -28px;
+        bottom: 20px;
+        width: min(370px, 48%);
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--panel-solid) 82%, transparent);
+        box-shadow: var(--shadow-float);
+        backdrop-filter: blur(24px) saturate(1.15);
+      }}
+      .handoff-head {{ display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; }}
+      .handoff-icon {{ width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: white; background: #0a66c2; font-weight: 850; }}
+      .handoff-actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }}
+      .status-rail {{
+        display: none;
+        gap: 16px;
+      }}
+      .status-card {{
+        min-width: 0;
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 72%, transparent);
+      }}
+      .feature-strip {{
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 66%, transparent);
+      }}
+      .feature-item {{ display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 10px; align-items: center; min-width: 0; }}
+      .feature-item b {{ display: block; font-size: 12px; }}
+      .feature-item span {{ color: var(--muted); font-size: 11px; }}
       .eyebrow {{ margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }}
       h1, h2, h3, p {{ margin-top: 0; }}
       h1 {{ margin-bottom: 10px; font-size: clamp(28px, 2.4vw, 36px); line-height: 1.06; letter-spacing: 0; }}
@@ -806,7 +1034,7 @@ def _openbrowser_dashboard_html() -> str:
         overflow-wrap: break-word;
         word-break: normal;
       }}
-      .request-card pre {{ max-height: 172px; }}
+      .request-card pre {{ max-height: none; }}
       .state-list {{ display: grid; gap: 19px; }}
       .state-item {{ display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; gap: 12px; align-items: center; }}
       .state-title {{ min-width: 0; overflow-wrap: anywhere; font-weight: 760; }}
@@ -815,34 +1043,68 @@ def _openbrowser_dashboard_html() -> str:
       .state-dot {{ width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--green); }}
       .danger {{ color: var(--red); }}
       @media (max-width: 1280px) {{
-        body {{ overflow: auto; place-items: start center; }}
+        body {{ overflow: auto; }}
         .app-window {{ height: auto; min-height: 0; }}
-        .app-grid {{ grid-template-columns: 300px minmax(0, 1fr); }}
+        .app-grid {{ grid-template-columns: 280px minmax(0, 1fr); }}
         .state-panel {{ grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }}
         .state-list {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
         .snippet-grid {{ grid-template-columns: 1fr; }}
+        .session-demo {{ grid-template-columns: 1fr; }}
+        .status-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
+        .agent-card {{ right: 26px; bottom: 104px; width: min(310px, 42%); }}
       }}
       @media (max-width: 900px) {{
         body {{ padding: 12px; overflow: auto; }}
+        .page-shell {{ width: 100%; gap: 16px; }}
+        .product-hero {{ padding-top: 8px; }}
+        .hero-logo {{ gap: 10px; font-size: 34px; }}
+        .hero-line {{ max-width: 340px; font-size: 18px; line-height: 1.12; text-wrap: balance; }}
+        .hero-subline {{ max-width: 320px; font-size: 15px; line-height: 1.3; text-wrap: balance; }}
         .app-window {{ width: 100%; grid-template-rows: auto auto; border-radius: 18px; }}
         .window-bar {{ grid-template-columns: 1fr; text-align: left; }}
         .brand-block {{ text-align: left; }}
-        .top-actions {{ justify-content: flex-start; }}
+        .top-actions {{ justify-content: flex-start; align-items: center; }}
         .app-grid, .operator-hero, .dashboard-panels {{ grid-template-columns: 1fr; }}
+        .browser-stage {{ order: -1; }}
         .sidebar, .state-panel {{ border: 0; border-top: 1px solid var(--border); }}
         .browser-stage {{ padding: 18px; }}
-        .browser-shell {{ grid-template-rows: auto minmax(0, 1fr); }}
-        .browser-toolbar {{ grid-template-columns: 1fr; }}
+        .browser-toolbar {{ display: none; }}
         .operator-strip, .state-list {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+        .mock-content, .profile-body, .feature-strip, .status-rail {{ grid-template-columns: 1fr; }}
+        .filter-panel, .profile-body {{ display: none; }}
+        .mock-nav {{ grid-template-columns: 38px minmax(0, 1fr) 36px 36px; }}
+        .mock-nav .nav-dot:nth-of-type(n+4) {{ display: none; }}
+        .mock-url {{ font-size: 0; }}
+        .mock-url .lock {{ font-size: 11px; }}
+        .mock-url::after {{ content: "linkedin.com"; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 12px; font-weight: 650; }}
+        .profile-head {{ grid-template-columns: 76px minmax(0,1fr); }}
+        .avatar {{ width: 72px; height: 72px; }}
+        .profile-head .kebab {{ display: none; }}
+        .mock-browser {{ order: 1; max-height: 360px; }}
+        .handoff-card {{ order: -1; }}
+        .agent-card {{ order: 2; }}
+        .agent-card, .handoff-card {{ position: static; width: 100%; margin-top: 0; }}
+        .session-demo {{ gap: 12px; }}
+        .button-small, .api-link, .icon-button {{ min-width: 44px; min-height: 44px; }}
       }}
       @media (max-width: 560px) {{
         .operator-strip, .metric-grid, .state-list {{ grid-template-columns: 1fr; }}
         .copy-row, .status-row {{ grid-template-columns: 1fr; }}
+        .dashboard-panels, .snippet-grid {{ gap: 12px; }}
+        .section-panel {{ padding: 16px; }}
         h1 {{ font-size: 32px; }}
+        .hero-logo {{ font-size: 38px; }}
+        .hero-line {{ font-size: 20px; }}
       }}
     </style>
   </head>
   <body>
+    <div class="page-shell">
+      <section class="product-hero" aria-label="OpenBrowser overview">
+        <div class="hero-logo"><span class="brand-mark" aria-hidden="true"></span><span>OpenBrowser</span><sup>TM</sup></div>
+        <div class="hero-line">The browser infrastructure for AI agents.</div>
+        <div class="hero-subline">Real browsers. Real logins. Human in the loop.</div>
+      </section>
     <div class="app-window">
       <header class="window-bar">
         <div class="traffic-lights" aria-hidden="true"><span></span><span></span><span></span></div>
@@ -860,7 +1122,7 @@ def _openbrowser_dashboard_html() -> str:
           <div class="panel-title">Browser Profiles</div>
           <div class="session-list">
             <div class="session-card is-active">
-              <div class="session-icon">OB</div>
+              <div class="session-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg></div>
               <div>
                 <div class="session-name">openbrowser-api</div>
                 <div class="session-status">{safe_api_key_state}</div>
@@ -868,7 +1130,7 @@ def _openbrowser_dashboard_html() -> str:
               <div class="kebab">...</div>
             </div>
             <div class="session-card">
-              <div class="session-icon">PR</div>
+              <div class="session-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.7-4 14.3-4 16 0"></path></svg></div>
               <div>
                 <div class="session-name">profiles</div>
                 <div class="session-status">{safe_public_identity_count} identities</div>
@@ -893,7 +1155,8 @@ def _openbrowser_dashboard_html() -> str:
           </section>
           <section class="request-card">
             <div class="label">Remote install</div>
-            <pre id="remoteMcpSnippet"><code>{safe_remote_mcp_snippet}</code></pre>
+            <p class="muted">Install the remote MCP on another machine, then connect with your OpenBrowser API key.</p>
+            <pre class="copy-source" id="remoteMcpSnippet"><code>{safe_remote_mcp_snippet}</code></pre>
             <button class="secondary" type="button" data-copy-target="remoteMcpSnippet">Copy Remote MCP</button>
           </section>
         </aside>
@@ -909,6 +1172,94 @@ def _openbrowser_dashboard_html() -> str:
               <a class="icon-button" href="/openbrowser/reference" aria-label="Open API reference">API</a>
             </div>
             <div class="console-canvas">
+              <section class="session-demo" aria-label="OpenBrowser product preview">
+                <div class="mock-browser">
+                  <div class="mock-topbar">
+                    <div class="mock-actions" aria-hidden="true"><span></span><span></span><span></span></div>
+                    <div class="mock-url"><span class="lock">CDP</span>https://www.linkedin.com/search/results/people/</div>
+                    <a class="icon-button" href="/openbrowser/reference" aria-label="Open API reference">API</a>
+                  </div>
+                  <div class="mock-page">
+                    <div class="mock-nav">
+                      <div class="li-badge">in</div>
+                      <div class="search-pill"></div>
+                      <div class="nav-dot"></div>
+                      <div class="nav-dot"></div>
+                      <div class="nav-dot"></div>
+                      <div class="nav-dot"></div>
+                      <div class="nav-dot"></div>
+                    </div>
+                    <div class="mock-content">
+                      <aside class="filter-panel" aria-label="Search filters">
+                        <div class="label">Keywords</div>
+                        <div class="filter-line"></div>
+                        <div class="label">Location</div>
+                        <div class="filter-line"></div>
+                        <div class="label">Company</div>
+                        <div class="filter-line"></div>
+                        <div class="label">Connections</div>
+                        <div class="filter-line"></div>
+                      </aside>
+                      <section class="profile-panel">
+                        <div class="profile-head">
+                          <div class="avatar" aria-hidden="true"></div>
+                          <div>
+                            <div class="profile-name">Alex Chen <span class="pill">2nd</span></div>
+                            <div class="profile-role">Head of Infrastructure · Scale AI</div>
+                            <div class="muted">San Francisco, California, United States</div>
+                            <div class="profile-actions">
+                              <span class="mini-button primary">Message</span>
+                              <span class="mini-button">Save to list</span>
+                              <span class="mini-button">More</span>
+                            </div>
+                          </div>
+                          <div class="kebab">...</div>
+                        </div>
+                        <div class="profile-body">
+                          <div>
+                            <h3>Agent notes <span class="pill">Private</span></h3>
+                            <ul class="note-list">
+                              <li>Strong background in infra at scale</li>
+                              <li>Led Kubernetes migration that improved reliability by 35%</li>
+                              <li>Good fit for Director, Infrastructure role</li>
+                            </ul>
+                          </div>
+                          <aside class="highlights">
+                            <h3>Highlights</h3>
+                            <p class="muted">You both know Sophie Park and 12 others.</p>
+                          </aside>
+                        </div>
+                      </section>
+                    </div>
+                  </div>
+                </div>
+                <aside class="status-rail">
+                  <div class="status-card"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M4.93 4.93l2.83 2.83"></path><path d="M16.24 16.24l2.83 2.83"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><path d="M4.93 19.07l2.83-2.83"></path><path d="M16.24 7.76l2.83-2.83"></path></svg></div><div><div class="state-title">Active lease</div><div class="state-subtitle">Expires in 28m 47s</div></div><span class="state-dot"></span></div>
+                  <div class="status-card"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.7-4 14.3-4 16 0"></path></svg></div><div><div class="state-title">Profile</div><div class="state-subtitle">chrome-depontefede</div></div><span class="state-dot"></span></div>
+                  <div class="status-card"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg></div><div><div class="state-title">Human handoff</div><div class="state-subtitle">Waiting for approval</div></div><span class="state-dot"></span></div>
+                  <div class="status-card"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"></path></svg></div><div><div class="state-title">Connection</div><div class="state-subtitle">CDP connected</div></div><span class="state-dot"></span></div>
+                </aside>
+                <div class="agent-card">
+                  <div class="label">Agent action</div>
+                  <div class="state-title">Save to “AI Infra · Prospects”</div>
+                  <p class="muted">Keyboard, click, upload, and tab actions flow through the leased browser.</p>
+                </div>
+                <div class="handoff-card">
+                  <div class="handoff-head">
+                    <div class="handoff-icon">in</div>
+                    <div><div class="label">Human auth request</div><div class="state-title">LinkedIn sign-in needs approval</div><div class="state-subtitle">chrome-depontefede browser profile</div></div>
+                    <svg class="inline-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                  </div>
+                  <p class="muted">The agent asks for approval, you finish login in the browser view, and the profile stays persisted for future sessions.</p>
+                  <div class="handoff-actions"><button class="secondary" type="button">Decline</button><button type="button">Approve</button></div>
+                </div>
+              </section>
+              <div class="feature-strip" aria-label="Core OpenBrowser guarantees">
+                <div class="feature-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path></svg></div><div><b>Real browsers</b><span>No emulation</span></div></div>
+                <div class="feature-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path></svg></div><div><b>Isolated & secure</b><span>Per-session sandboxes</span></div></div>
+                <div class="feature-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div><div><b>You stay in control</b><span>Human approval</span></div></div>
+                <div class="feature-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z"></path><path d="M8 8h8"></path><path d="M8 12h8"></path><path d="M8 16h5"></path></svg></div><div><b>Audit ready</b><span>Logs & traceability</span></div></div>
+              </div>
               <section class="operator-hero">
                 <div class="hero-copy">
                   <p class="eyebrow">Operator console</p>
@@ -973,25 +1324,16 @@ def _openbrowser_dashboard_html() -> str:
         <aside class="state-panel">
           <div class="panel-title">Session State</div>
           <div class="state-list">
-            <div class="state-item"><div class="state-icon">ST</div><div><div class="state-title">API key: {safe_api_key_state}</div><div class="state-subtitle">Remote agents use bearer auth</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">SL</div><div><div class="state-title">Pool slots: {safe_public_slot_count}</div><div class="state-subtitle">Isolated CDP sessions</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">ID</div><div><div class="state-title">Profiles: {safe_public_identity_count}</div><div class="state-subtitle">Persistent broker identities</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">IP</div><div><div class="state-title">Proxies: {safe_public_proxy_count}</div><div class="state-subtitle">Redacted proxy routes</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">LC</div><div><div class="state-title">Leases: {safe_public_lease_count}</div><div class="state-subtitle">Currently held sessions</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">HA</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Auth links use the same UI</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7a4 4 0 1 0-3 3.87"></path><path d="M14 14l7-7"></path><path d="M17 7h4v4"></path></svg></div><div><div class="state-title">API key: {safe_api_key_state}</div><div class="state-subtitle">Remote agents use bearer auth</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg></div><div><div class="state-title">Pool slots: {safe_public_slot_count}</div><div class="state-subtitle">Isolated CDP sessions</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.7-4 14.3-4 16 0"></path></svg></div><div><div class="state-title">Profiles: {safe_public_identity_count}</div><div class="state-subtitle">Persistent broker identities</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a15.3 15.3 0 0 1 0 20"></path><path d="M12 2a15.3 15.3 0 0 0 0 20"></path></svg></div><div><div class="state-title">Proxies: {safe_public_proxy_count}</div><div class="state-subtitle">Redacted proxy routes</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg></div><div><div class="state-title">Leases: {safe_public_lease_count}</div><div class="state-subtitle">Currently held sessions</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg></div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Auth links use the same UI</div></div><span class="state-dot"></span></div>
           </div>
-          <section class="surface">
-            <div class="status-row">
-              <div><div class="label">Remote API base</div><div class="muted"><code>{safe_base_url}</code></div></div>
-              <button class="secondary button-small" type="button" data-copy="{safe_base_url}">Copy</button>
-            </div>
-            <div class="status-row">
-              <div><div class="label">Bearer token</div><div class="muted">Remote machines use <code>Authorization: Bearer &lt;OPENBROWSER_API_KEY&gt;</code>.</div></div>
-              <span class="pill"><span class="dot {safe_api_dot}"></span>{safe_api_key_state}</span>
-            </div>
-          </section>
         </aside>
       </main>
+    </div>
     </div>
     <script>
       const displayBaseUrl = {_script_json(base_url)};
@@ -1156,18 +1498,21 @@ def _openbrowser_reference_html() -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>OpenBrowser API Reference</title>
     <style>
-      :root {{ color-scheme: light dark; --page:#f4f1ea; --panel:#fff; --text:#20201d; --muted:#756f66; --border:rgba(42,35,27,.14); --soft:#f6f4ef; --strong:#24231f; --strong-text:#fff; }}
-      @media (prefers-color-scheme: dark) {{ :root {{ --page:#101211; --panel:#20201e; --text:#f4f1ea; --muted:#aaa49a; --border:rgba(255,255,255,.12); --soft:#2a2926; --strong:#f4f1ea; --strong-text:#191918; }} }}
+      :root {{ color-scheme: light dark; --page:#f4f1ea; --panel:rgba(255,255,255,.88); --text:#20201d; --muted:#756f66; --border:rgba(42,35,27,.14); --soft:#f6f4ef; --strong:#24231f; --strong-text:#fff; --shadow:0 24px 80px rgba(33,26,17,.16); }}
+      @media (prefers-color-scheme: dark) {{ :root {{ --page:#101211; --panel:rgba(32,32,30,.9); --text:#f4f1ea; --muted:#aaa49a; --border:rgba(255,255,255,.12); --soft:#2a2926; --strong:#f4f1ea; --strong-text:#191918; --shadow:0 28px 90px rgba(0,0,0,.44); }} }}
       * {{ box-sizing: border-box; }}
-      body {{ margin:0; background:var(--page); color:var(--text); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-      main {{ width:min(1040px, calc(100vw - 32px)); margin:28px auto 48px; }}
-      header, section {{ border:1px solid var(--border); background:var(--panel); border-radius:16px; padding:22px; margin-bottom:14px; }}
-      h1 {{ margin:0; font-size:30px; letter-spacing:0; }}
+      body {{ margin:0; min-height:100dvh; background:linear-gradient(180deg, rgba(247,244,236,.62), rgba(231,223,208,.88)), url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover fixed no-repeat; color:var(--text); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+      @media (prefers-color-scheme: dark) {{ body {{ background:linear-gradient(180deg, rgba(12,15,14,.78), rgba(12,15,14,.94)), url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover fixed no-repeat; }} }}
+      main {{ width:min(1160px, calc(100vw - 32px)); margin:32px auto 52px; }}
+      header, section {{ border:1px solid var(--border); background:var(--panel); border-radius:18px; padding:24px; margin-bottom:16px; box-shadow:var(--shadow); backdrop-filter:blur(22px) saturate(1.15); }}
+      h1 {{ margin:0; display:flex; align-items:center; gap:12px; font-size:34px; letter-spacing:0; }}
       h2 {{ margin:0 0 12px; font-size:18px; }}
       p {{ color:var(--muted); line-height:1.5; }}
       a, button {{ color:inherit; }}
       .actions {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:18px; }}
-      .button {{ display:inline-flex; align-items:center; height:38px; padding:0 14px; border-radius:10px; border:1px solid var(--border); background:var(--strong); color:var(--strong-text); text-decoration:none; font-weight:760; }}
+      .button {{ display:inline-flex; align-items:center; min-height:44px; padding:0 16px; border-radius:10px; border:1px solid var(--border); background:var(--strong); color:var(--strong-text); text-decoration:none; font-weight:760; }}
+      .brand-mark {{ width:34px; height:34px; border:.12em solid currentColor; border-radius:24%; transform:rotate(30deg); position:relative; flex:0 0 auto; }}
+      .brand-mark::after {{ content:""; position:absolute; inset:23%; border:.11em solid currentColor; border-radius:22%; }}
       code, pre {{ font-family:"SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; }}
       pre {{ white-space:pre-wrap; overflow-wrap:break-word; background:var(--soft); border:1px solid var(--border); border-radius:12px; padding:14px; font-size:13px; }}
       table {{ width:100%; border-collapse:collapse; }}
@@ -1179,7 +1524,7 @@ def _openbrowser_reference_html() -> str:
   <body>
     <main>
       <header>
-        <h1>OpenBrowser API Reference</h1>
+        <h1><span class="brand-mark" aria-hidden="true"></span><span>OpenBrowser API Reference</span></h1>
         <p>Remote browser sessions use <code>Authorization: Bearer &lt;OPENBROWSER_API_KEY&gt;</code>. Base URL: <code>{safe_base_url}</code>.</p>
         <div class="actions">
           <a class="button" href="/openbrowser">Dashboard</a>
@@ -1219,6 +1564,12 @@ async def openbrowser_dashboard() -> str:
 @app.get("/openbrowser/reference", response_class=HTMLResponse)
 async def openbrowser_reference() -> str:
     return _openbrowser_reference_html()
+
+
+@app.get("/favicon.ico")
+async def openbrowser_favicon() -> Response:
+    svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#111827"/><path d="M32 9 52 20.5v23L32 55 12 43.5v-23L32 9Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M32 22 41 27.2v9.6L32 42 23 36.8v-9.6L32 22Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/></svg>"""
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @app.get("/openbrowser/v1/health")
@@ -2152,6 +2503,13 @@ def _auth_portal_html(
     safe_reason = html.escape(str(auth_request_data.get("reason") or "login_required"))
     safe_client_ip = html.escape(client_ip or "unknown")
     safe_start_error = html.escape(start_error or "")
+    mark_svg = """<svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.4 7.3v9.4L12 21.4l-8.4-4.7V7.3L12 2.6Z"></path><path d="M12 7.2 16.2 9.6v4.8L12 16.8l-4.2-2.4V9.6L12 7.2Z"></path></svg>"""
+    browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
+    status_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M4.93 4.93l2.83 2.83"></path><path d="M16.24 16.24l2.83 2.83"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><path d="M4.93 19.07l2.83-2.83"></path><path d="M16.24 7.76l2.83-2.83"></path></svg>"""
+    identity_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.7-4 14.3-4 16 0"></path></svg>"""
+    handoff_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>"""
+    network_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a15 15 0 0 1 0 20"></path><path d="M12 2a15 15 0 0 0 0 20"></path></svg>"""
+    cdp_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"></path></svg>"""
     frame = ""
     floating_auth = ""
     if vnc:
@@ -2161,7 +2519,7 @@ def _auth_portal_html(
         if trusted_client:
             floating_auth = f"""
           <aside class="auth-card is-success" aria-label="Human auth request">
-            <div class="auth-logo">OB</div>
+            <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Trusted connection</div>
               <div class="auth-subtitle">The browser opens without a temporary VNC password prompt.</div>
@@ -2173,7 +2531,7 @@ def _auth_portal_html(
             safe_password = html.escape(str(vnc.get("password", "")))
             floating_auth = f"""
           <aside class="auth-card is-warning" aria-label="Human auth request">
-            <div class="auth-logo">OB</div>
+            <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Human auth request</div>
               <div class="auth-subtitle">Temporary VNC password: enter it in the browser prompt, finish login, then mark complete.</div>
@@ -2207,7 +2565,7 @@ def _auth_portal_html(
         <section class="browser-stage">
           <div class="stage-title"><span>Live Browser Session</span></div>
           <div class="empty-state">
-            <div class="empty-icon">OB</div>
+            <div class="empty-icon">{mark_svg}</div>
             <div>
               <div class="title-small">Browser login view is not running</div>
               <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
@@ -2292,17 +2650,20 @@ def _auth_portal_html(
         padding: 28px;
         color: var(--text);
         background:
-          linear-gradient(180deg, color-mix(in srgb, var(--page) 82%, #ffffff) 0%, var(--page) 52%, color-mix(in srgb, var(--page) 86%, #5c6f86) 100%);
+          linear-gradient(180deg, rgba(247,244,236,0.58) 0%, rgba(231,223,208,0.70) 44%, rgba(231,223,208,0.88) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1;
       }}
       [data-theme="dark"] body {{
-        background: linear-gradient(180deg, #151716 0%, var(--page) 58%, #1d201e 100%);
+        background:
+          linear-gradient(180deg, rgba(12,15,14,0.72) 0%, rgba(12,15,14,0.84) 56%, rgba(12,15,14,0.92) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
       }}
       button, .button {{
         appearance: none;
         display: inline-flex;
-        height: 38px;
+        min-height: 44px;
         align-items: center;
         justify-content: center;
         gap: 8px;
@@ -2328,7 +2689,7 @@ def _auth_portal_html(
         color: var(--text);
       }}
       .button-outline:hover, .button-soft:hover {{ border-color: var(--border-strong); background: var(--soft); }}
-      .button-small {{ height: 32px; padding: 0 11px; font-size: 12px; }}
+      .button-small {{ min-height: 36px; padding: 0 12px; font-size: 12px; }}
       .app-window {{
         width: min(1680px, calc(100vw - 56px));
         height: min(940px, calc(100dvh - 56px));
@@ -2356,7 +2717,8 @@ def _auth_portal_html(
       .traffic-lights span:nth-child(2) {{ background: color-mix(in srgb, var(--amber) 62%, transparent); }}
       .traffic-lights span:nth-child(3) {{ background: color-mix(in srgb, var(--green) 62%, transparent); }}
       .brand-block {{ min-width: 0; text-align: center; }}
-      .brand-title {{ font-size: 21px; font-weight: 760; letter-spacing: 0; }}
+      .brand-title {{ display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 21px; font-weight: 760; letter-spacing: 0; }}
+      .brand-title .brand-icon {{ width: 26px; height: 26px; color: currentColor; }}
       .brand-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
       .top-actions {{ display: flex; justify-content: flex-end; gap: 10px; align-items: center; }}
       .api-link {{ color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }}
@@ -2395,6 +2757,16 @@ def _auth_portal_html(
         font-size: 12px;
         font-weight: 800;
       }}
+      .session-icon svg, .state-icon svg, .empty-icon svg, .auth-logo svg {{
+        width: 19px;
+        height: 19px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }}
+      .empty-icon svg, .auth-logo svg {{ width: 25px; height: 25px; }}
       .session-icon {{ width: 38px; height: 38px; }}
       .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
       .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
@@ -2467,8 +2839,8 @@ def _auth_portal_html(
       }}
       .lock {{ color: var(--green); font-size: 11px; text-transform: uppercase; }}
       .icon-button {{
-        width: 34px;
-        height: 34px;
+        width: 44px;
+        height: 44px;
         display: grid;
         place-items: center;
         border: 1px solid var(--border);
@@ -2562,7 +2934,7 @@ def _auth_portal_html(
         .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
         .toolbar-left {{ display: none; }}
         .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
-        .auth-logo {{ width: 42px; height: 42px; }}
+        .auth-logo {{ width: 44px; height: 44px; }}
         .auth-card form {{ grid-column: 1 / -1; }}
       }}
     </style>
@@ -2572,7 +2944,7 @@ def _auth_portal_html(
       <header class="window-bar">
         <div class="traffic-lights" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="brand-block">
-          <div class="brand-title">OpenBrowser</div>
+          <div class="brand-title">{mark_svg}<span>OpenBrowser</span></div>
           <div class="brand-subtitle">The browser API for AI agents</div>
         </div>
         <div class="top-actions">
@@ -2585,7 +2957,7 @@ def _auth_portal_html(
           <div class="panel-title">Browser Sessions</div>
           <div class="session-list">
             <div class="session-card is-active">
-              <div class="session-icon">BR</div>
+              <div class="session-icon">{browser_svg}</div>
               <div>
                 <div class="session-name">{safe_identity}</div>
                 <div class="session-status">{safe_status}</div>
@@ -2608,11 +2980,11 @@ def _auth_portal_html(
         <aside class="state-panel">
           <div class="panel-title">Session State</div>
           <div class="state-list">
-            <div class="state-item"><div class="state-icon">ST</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Agent handoff active</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">ID</div><div><div class="state-title">Profile: {safe_identity}</div><div class="state-subtitle">Persistent broker identity</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">HA</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">IP</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Trusted IPs skip password prompts</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">CD</div><div><div class="state-title">noVNC scaling</div><div class="state-subtitle">resize=scale active</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Agent handoff active</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{identity_svg}</div><div><div class="state-title">Profile: {safe_identity}</div><div class="state-subtitle">Persistent broker identity</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{handoff_svg}</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{network_svg}</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Trusted IPs skip password prompts</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">noVNC scaling</div><div class="state-subtitle">resize=scale active</div></div><span class="state-dot"></span></div>
           </div>
         </aside>
       </main>

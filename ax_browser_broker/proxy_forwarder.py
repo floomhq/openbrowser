@@ -57,10 +57,13 @@ def _relay(left: socket.socket, right: socket.socket) -> None:
             return
         for source in readable:
             target = right if source is left else left
-            data = source.recv(BUFFER_SIZE)
-            if not data:
+            try:
+                data = source.recv(BUFFER_SIZE)
+                if not data:
+                    return
+                target.sendall(data)
+            except (BrokenPipeError, ConnectionResetError, OSError):
                 return
-            target.sendall(data)
 
 
 class ThreadedTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):

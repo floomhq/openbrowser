@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import socket
 import sqlite3
 import subprocess
 import threading
@@ -61,6 +62,27 @@ def healthy(port: int, timeout: float = 1.5) -> bool:
             return response.status == 200
     except Exception:
         return False
+
+
+def _slot_proxy_ready(slot_name: str, timeout: float = 0.3) -> bool:
+    config = read_slot_config(slot_name)
+    if not config.get("PROXY_REF"):
+        return True
+    try:
+        local_port = int(config.get("PROXY_LOCAL_PORT") or 0)
+    except ValueError:
+        return False
+    if local_port <= 0:
+        return False
+    try:
+        with socket.create_connection(("127.0.0.1", local_port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _slot_ready(slot: Slot) -> bool:
+    return healthy(slot.port) and _slot_proxy_ready(slot.name)
 
 
 def slot_in_maintenance(slot_name: str) -> bool:
@@ -178,6 +200,15 @@ def _wait_healthy(port: int, timeout_seconds: float = 10.0) -> bool:
     return False
 
 
+def _wait_slot_ready(slot: Slot, timeout_seconds: float = 10.0) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if _slot_ready(slot):
+            return True
+        time.sleep(0.2)
+    return False
+
+
 def _activate_neutral_slot(slot: Slot) -> bool:
     if slot_in_maintenance(slot.name):
         return False
@@ -185,7 +216,7 @@ def _activate_neutral_slot(slot: Slot) -> bool:
     if config_path.exists():
         config_path.unlink()
     subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), slot.name, str(slot.port)], check=True)
-    return _wait_healthy(slot.port)
+    return _wait_slot_ready(slot)
 
 
 def _identity_lease_count(state: dict[str, Any], identity_id: str) -> int:
@@ -302,7 +333,7 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
             )
             if identity_id and (
                 active_identity != identity_id
-                or not healthy(slot.port)
+                or not _slot_ready(slot)
                 or reconcile_stale_identity_slots
             ):
                 try:
@@ -317,7 +348,7 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 except (IdentityError, subprocess.CalledProcessError) as error:
                     activation_errors.append(f"{slot.name}: {error}")
                     continue
-            if not healthy(slot.port):
+            if not _slot_ready(slot):
                 continue
             lease_id = str(uuid.uuid4())
             state["leases"][lease_id] = {
@@ -385,7 +416,8 @@ def require_lease(lease_id: str) -> Lease:
         lease_obj = _lease_from_state(lease_id, state["leases"][lease_id])
         state["leases"][lease_id]["heartbeat_at"] = int(time.time())
         state["leases"][lease_id]["ts"] = int(time.time())
-    if not healthy(lease_obj.port):
+    slot = _slot_by_name(lease_obj.name)
+    if slot is None or not _slot_ready(slot):
         raise LeaseError(f"Browser slot {lease_obj.name} is not healthy")
     return lease_obj
 
@@ -395,6 +427,13 @@ def status() -> dict[str, Any]:
         expired = gc_leases(state)
         leases = {lease_id: asdict(_lease_from_state(lease_id, lease)) for lease_id, lease in state["leases"].items()}
     leased_names = {lease["name"] for lease in leases.values()}
+    slot_health = {
+        slot.name: {
+            "cdp_healthy": healthy(slot.port),
+            "proxy_ready": _slot_proxy_ready(slot.name),
+        }
+        for slot in SLOTS
+    }
     return {
         "slots": [
             {
@@ -403,7 +442,9 @@ def status() -> dict[str, Any]:
                 "cdp": slot.cdp,
                 "profile_dir": str(slot.profile_dir),
                 "active_identity_id": active_identity_id(slot.name),
-                "healthy": healthy(slot.port),
+                "healthy": slot_health[slot.name]["cdp_healthy"] and slot_health[slot.name]["proxy_ready"],
+                "cdp_healthy": slot_health[slot.name]["cdp_healthy"],
+                "proxy_ready": slot_health[slot.name]["proxy_ready"],
                 "leased": slot.name in leased_names,
                 "maintenance": slot_in_maintenance(slot.name),
             }

@@ -4,6 +4,7 @@ import argparse
 import ast
 import json
 import os
+import socket
 import stat
 import subprocess
 import time
@@ -103,6 +104,27 @@ def _healthy(port: int, timeout: float = 1.5) -> bool:
             return response.status == 200
     except Exception:
         return False
+
+
+def _slot_proxy_ready(slot_name: str, timeout: float = 0.3) -> bool:
+    config = read_slot_config(slot_name)
+    if not config.get("PROXY_REF"):
+        return True
+    try:
+        local_port = int(config.get("PROXY_LOCAL_PORT") or 0)
+    except ValueError:
+        return False
+    if local_port <= 0:
+        return False
+    try:
+        with socket.create_connection(("127.0.0.1", local_port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _slot_ready(slot_name: str, port: int) -> bool:
+    return _healthy(port) and _slot_proxy_ready(slot_name)
 
 
 def _slot_has_active_lease(slot_name: str) -> bool:
@@ -342,19 +364,19 @@ def activate_identity(
     try:
         if supervisor_was_active:
             subprocess.run(["systemctl", "stop", "browser-pool-supervisor.service"], check=True)
-        health_ports = [slot.port]
+        health_ports = [(slot.name, slot.port)]
         for cleared_slot in cleared_slots:
             cleared = _slot_by_name(cleared_slot)
             if cleared is not None:
                 subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), cleared.name, str(cleared.port)], check=True)
-                health_ports.append(cleared.port)
+                health_ports.append((cleared.name, cleared.port))
         subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), target_slot, str(slot.port)], check=True)
     finally:
         if supervisor_was_active:
             subprocess.run(["systemctl", "start", "browser-pool-supervisor.service"], check=False)
     deadline = time.time() + 10
     while time.time() < deadline:
-        if all(_healthy(port) for port in health_ports):
+        if all(_slot_ready(slot_name, port) for slot_name, port in health_ports):
             return {
                 "identity_id": identity.identity_id,
                 "slot": target_slot,

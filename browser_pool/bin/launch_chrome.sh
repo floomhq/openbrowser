@@ -70,7 +70,30 @@ if [[ -n "${PROXY_REF:-}" ]]; then
     --listen-port "$PROXY_LOCAL_PORT" \
     >>"$LOG" 2>&1 &
   echo $! > "$PROXY_PID_FILE"
-  sleep 1
+  if ! python3 - "$PROXY_LOCAL_PORT" <<'PY'
+import socket
+import sys
+import time
+
+port = int(sys.argv[1])
+deadline = time.time() + 5
+while time.time() < deadline:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            sys.exit(0)
+    except OSError:
+        time.sleep(0.1)
+sys.exit(1)
+PY
+  then
+    echo "$(date -Is) ${NAME} proxy forwarder failed to listen on 127.0.0.1:${PROXY_LOCAL_PORT}" >>"$LOG"
+    old_proxy_pid="$(cat "$PROXY_PID_FILE" 2>/dev/null || true)"
+    if [[ -n "$old_proxy_pid" ]]; then
+      kill "$old_proxy_pid" 2>/dev/null || true
+    fi
+    rm -f "$PROXY_PID_FILE"
+    exit 1
+  fi
   PROXY_ARGS=(--proxy-server="http://127.0.0.1:${PROXY_LOCAL_PORT}")
 fi
 
