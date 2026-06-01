@@ -192,7 +192,6 @@ def redacted_status() -> dict[str, Any]:
         out["identities"][identity_id] = {
             "label": identity.label,
             "slot": identity.slot,
-            "profile_dir": str(identity.profile_dir),
             "proxy_ref": identity.proxy_ref,
             "proxy": None
             if proxy is None

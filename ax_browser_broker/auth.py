@@ -58,6 +58,8 @@ def novnc_url(websocket_port: int) -> str:
 
 def current_auth_vnc(token: str) -> dict[str, Any] | None:
     request = get_auth_request(token)
+    if request.get("status") != "pending" or int(request.get("expires_at", 0)) <= int(time.time()):
+        return None
     vnc = request.get("vnc") or {}
     if not vnc or vnc.get("stopped_at"):
         return None
@@ -109,6 +111,27 @@ def gc_auth_requests(state: dict[str, Any]) -> list[str]:
     for token, request in list(state["requests"].items()):
         if request.get("status") == "pending" and now > int(request.get("expires_at", 0)):
             request["status"] = "expired"
+            vnc = request.get("vnc") or {}
+            if vnc and not vnc.get("stopped_at"):
+                vnc["stopped_at"] = now
+                vnc["expired_at"] = now
+                stopped = []
+                for key in ("x11vnc_pid", "websockify_pid", "chrome_pid", "xvfb_pid", "proxy_pid"):
+                    pid = vnc.get(key)
+                    if not pid:
+                        continue
+                    int_pid = int(pid)
+                    if _terminate_process_group(int_pid):
+                        stopped.append(int_pid)
+                vnc["stopped_pids"] = stopped
+                maintenance_slots = [str(item) for item in vnc.get("maintenance_slots", [])]
+                vnc["cleared_maintenance_slots"] = _clear_auth_maintenance(maintenance_slots)
+                password_file = vnc.get("password_file")
+                if password_file:
+                    try:
+                        Path(str(password_file)).unlink(missing_ok=True)
+                    except OSError:
+                        pass
             expired.append(token)
     return expired
 
@@ -146,6 +169,15 @@ def get_auth_request(token: str) -> dict[str, Any]:
         return dict(request)
 
 
+def get_pending_auth_request(token: str) -> dict[str, Any]:
+    request = get_auth_request(token)
+    if request.get("status") != "pending":
+        raise AuthError(f"Auth request is {request.get('status', 'not pending')}")
+    if int(request.get("expires_at", 0)) <= int(time.time()):
+        raise AuthError("Auth request expired")
+    return request
+
+
 def list_auth_requests() -> dict[str, Any]:
     with locked_auth_state() as state:
         expired = gc_auth_requests(state)
@@ -159,6 +191,8 @@ def complete_auth_request(token: str) -> dict[str, Any]:
         request = state["requests"].get(token)
         if not request:
             raise AuthError("Auth request not found")
+        if request.get("status") != "pending":
+            raise AuthError(f"Auth request is {request.get('status', 'not pending')}")
         request["status"] = "complete"
         request["completed_at"] = now
         return dict(request)
@@ -490,7 +524,7 @@ def _start_identity_auth_vnc(
 
 
 def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901) -> dict[str, Any]:
-    request = get_auth_request(token)
+    request = get_pending_auth_request(token)
     if request["status"] not in {"pending", "complete"}:
         raise AuthError(f"Auth request is {request['status']}")
     x11vnc = shutil.which("x11vnc")

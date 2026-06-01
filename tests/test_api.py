@@ -70,6 +70,7 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
     assert "resize=remote" not in response.text
     assert "#password=trust-pass" in response.text
     assert "Trusted connection" in response.text
+    assert 'data-async-action="Auth handoff marked complete"' in response.text
     assert "Temporary VNC password" not in response.text
 
 
@@ -102,6 +103,7 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
     assert "Temporary VNC password" in response.text
+    assert "enter it in the browser prompt" in response.text
     assert "manual-pass" in response.text
     assert "#password=manual-pass" not in response.text
 
@@ -132,6 +134,39 @@ def test_auth_portal_reuses_existing_vnc_without_restart(tmp_path, monkeypatch) 
     assert "resize=remote" not in response.text
     assert "existing-pass" in response.text
     assert started == []
+
+
+def test_auth_portal_rejects_expired_requests_before_vnc(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
+    started = []
+    monkeypatch.setattr(api, "start_auth_vnc", lambda _token: started.append(_token) or {})
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+    data = auth.json.loads((tmp_path / "auth.json").read_text(encoding="utf-8"))
+    data["requests"][request["token"]]["expires_at"] = 1
+    (tmp_path / "auth.json").write_text(auth.json.dumps(data), encoding="utf-8")
+
+    client = TestClient(api.app)
+    response = client.get("/auth/" + request["token"])
+
+    assert response.status_code == 410
+    assert started == []
+    assert "vnc.html" not in response.text
+
+
+def test_auth_complete_returns_gone_for_expired_request(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+    data = auth.json.loads((tmp_path / "auth.json").read_text(encoding="utf-8"))
+    data["requests"][request["token"]]["expires_at"] = 1
+    (tmp_path / "auth.json").write_text(auth.json.dumps(data), encoding="utf-8")
+
+    client = TestClient(api.app)
+    response = client.post("/auth/" + request["token"] + "/complete")
+
+    assert response.status_code == 410
 
 
 def test_lifespan_starts_and_stops_controller(monkeypatch) -> None:
@@ -171,6 +206,83 @@ def test_audit_endpoint(monkeypatch) -> None:
     assert response.json() == {"score": 100, "window_hours": 3}
 
 
+def test_openbrowser_dashboard_explains_remote_setup_without_leaking_key(tmp_path, monkeypatch) -> None:
+    key_file = tmp_path / "keys.json"
+    key_file.write_text('{"tokens":{"test":"super-secret-openbrowser-key"}}', encoding="utf-8")
+    monkeypatch.setattr(api, "OPENBROWSER_API_KEYS_FILE", key_file)
+    monkeypatch.setattr(api, "PUBLIC_OPENBROWSER_BASE_URL", "https://browser.example.com")
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser")
+
+    assert response.status_code == 200
+    assert "Remote API base" in response.text
+    assert "https://browser.example.com/openbrowser/v1" in response.text
+    assert "openbrowser-remote-mcp" in response.text
+    assert "OPENBROWSER_API_KEY" in response.text
+    assert "Identities And Proxies" in response.text
+    assert "Sessions And Audit" in response.text
+    assert "Operator console" in response.text
+    assert "Public broker summary" in response.text
+    assert 'href="/openbrowser/reference"' in response.text
+    assert "sessionStorage" in response.text
+    assert "textContent = String(title" in response.text
+    assert "replaceChildren" in response.text
+    assert "innerHTML" not in response.text
+    assert "white-space: pre-wrap" in response.text
+    assert "overflow-wrap: break-word" in response.text
+    assert "Copy failed" in response.text
+    assert "data-copy-target=\"remoteMcpSnippet\"" in response.text
+    assert "API Smoke Test" in response.text
+    assert "Live operator summary" in response.text
+    assert "apiBaseUrl = new URL('/openbrowser/v1', window.location.origin)" in response.text
+    assert "Live load failed:" in response.text
+    assert "telemetry.count" in response.text
+    assert "super-secret-openbrowser-key" not in response.text
+
+
+def test_openbrowser_reference_is_specific_to_openbrowser(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(api, "PUBLIC_OPENBROWSER_BASE_URL", "https://browser.example.com")
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser/reference")
+
+    assert response.status_code == 200
+    assert "OpenBrowser API Reference" in response.text
+    assert "https://browser.example.com/openbrowser/v1" in response.text
+    assert "POST" in response.text
+    assert "/browser/keyboard-type" in response.text
+    assert "/auth/batch" in response.text
+    assert "/profiles/status" in response.text
+    assert "/browser/upload" in response.text
+    assert "/telemetry/events" in response.text
+
+
+def test_openbrowser_dashboard_canonicalizes_full_base_url(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(api, "OPENBROWSER_API_KEYS_FILE", tmp_path / "missing.json")
+    monkeypatch.setattr(api, "PUBLIC_OPENBROWSER_BASE_URL", "https://browser.example.com/openbrowser/v1")
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser")
+
+    assert response.status_code == 200
+    assert "https://browser.example.com/openbrowser/v1/openbrowser/v1" not in response.text
+    assert "Bearer token" in response.text
+    assert "Missing" in response.text
+
+
+def test_openbrowser_dashboard_script_escapes_configured_base_url(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(api, "OPENBROWSER_API_KEYS_FILE", tmp_path / "missing.json")
+    monkeypatch.setattr(api, "PUBLIC_OPENBROWSER_BASE_URL", "https://example.com</script><script>alert(1)</script>")
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser")
+
+    assert response.status_code == 200
+    assert "</script><script>alert(1)</script>" not in response.text
+    assert "\\u003c/script\\u003e\\u003cscript\\u003ealert(1)\\u003c/script\\u003e/openbrowser/v1" in response.text
+
+
 def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     client = TestClient(api.app)
@@ -183,8 +295,75 @@ def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
     assert wrong.status_code == 401
     assert ok.status_code == 200
     assert ok.json()["service"] == "openbrowser"
+    assert ok.json()["dashboard"] == "/openbrowser"
     assert ok.json()["endpoints"]["keyboard_type"] == "POST /openbrowser/v1/browser/keyboard-type"
     assert ok.json()["endpoints"]["keyboard_press"] == "POST /openbrowser/v1/browser/keyboard-press"
+    assert ok.json()["endpoints"]["upload"] == "POST /openbrowser/v1/browser/upload"
+
+
+def test_openbrowser_health_redacts_profile_paths(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "status",
+        lambda: {
+            "slots": [
+                {
+                    "name": "pool-a",
+                    "profile_dir": "/root/browser-pool/profiles/pool-a",
+                    "healthy": True,
+                }
+            ],
+            "leases": {
+                "lease-one": {
+                    "lease_id": "lease-one",
+                    "profile_dir": "/root/browser-pool/profiles/pool-a",
+                    "owner": "pytest",
+                }
+            },
+            "expired": [],
+        },
+    )
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser/v1/health", headers={"authorization": "Bearer test-openbrowser-key"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["pool"]["slots"][0]["name"] == "pool-a"
+    assert "profile_dir" not in body["pool"]["slots"][0]
+    assert "profile_dir" not in body["pool"]["leases"]["lease-one"]
+    assert "/root/browser-pool" not in response.text
+
+
+def test_openbrowser_docs_reflect_live_identity_metadata(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "redacted_status",
+        lambda: {
+            "identities": {
+                "chrome-test": {
+                    "label": "Test",
+                    "proxy_ref": "residential:test",
+                    "max_parallel_sessions": 2,
+                    "active_on_slot": True,
+                    "profile_dir": "/secret/profile",
+                }
+            },
+            "proxy_refs": ["residential:test"],
+        },
+    )
+    client = TestClient(api.app)
+
+    response = client.get("/openbrowser/v1/docs", headers={"authorization": "Bearer test-openbrowser-key"})
+
+    assert response.status_code == 200
+    configured = response.json()["identities"]["configured"]["chrome-test"]
+    assert configured["label"] == "Test"
+    assert configured["proxy_ref"] == "residential:test"
+    assert configured["max_parallel_sessions"] == 2
+    assert "profile_dir" not in configured
 
 
 def test_openbrowser_identities_requires_key_and_returns_redacted_status(monkeypatch) -> None:
@@ -549,6 +728,9 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "&lt;human&gt;" in portal.text
     assert "Manual browser control" in portal.text
     assert "session cookies" in portal.text
+    assert "Unix time" not in portal.text
+    assert "OpenBrowser Manual Control" in portal.text
+    assert "if (!response.ok) throw new Error" in portal.text
     assert shot.status_code == 200
     assert shot.headers["content-type"] == "image/png"
     assert shot.content == b"png-bytes"

@@ -75,6 +75,41 @@ def test_current_auth_vnc_returns_running_session_password(tmp_path, monkeypatch
     assert result["identity_id"] == "work-main"
 
 
+def test_current_auth_vnc_rejects_expired_request_and_removes_password(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    password_file = tmp_path / "vnc.passwd"
+    password_file.write_text("secret-pass\n", encoding="utf-8")
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    terminated = []
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
+    monkeypatch.setattr(auth, "_clear_auth_maintenance", lambda slots: slots)
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["expires_at"] = 1
+    data["requests"][request["token"]]["vnc"] = {
+        "display": ":870",
+        "websocket_port": 6081,
+        "vnc_port": 5901,
+        "password_file": str(password_file),
+        "x11vnc_pid": 123,
+        "websockify_pid": 456,
+        "maintenance_slots": ["pool-a"],
+    }
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    result = auth.current_auth_vnc(request["token"])
+
+    assert result is None
+    assert not password_file.exists()
+    updated = json.loads(state_file.read_text())
+    assert updated["requests"][request["token"]]["status"] == "expired"
+    assert updated["requests"][request["token"]]["vnc"]["stopped_at"] >= 1
+    assert updated["requests"][request["token"]]["vnc"]["stopped_pids"] == [123, 456]
+    assert updated["requests"][request["token"]]["vnc"]["cleared_maintenance_slots"] == ["pool-a"]
+    assert terminated == [123, 456]
+
+
 def test_stop_auth_vnc_removes_password_file(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     password_file = tmp_path / "vnc.passwd"
