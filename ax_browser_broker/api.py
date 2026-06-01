@@ -506,18 +506,18 @@ def _openbrowser_dashboard_html() -> str:
           url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
       }}
       .page-shell {{
-        width: min(1440px, calc(100vw - 96px));
+        width: min(1500px, calc(100vw - 96px));
         max-width: 100%;
         margin: 0 auto;
         display: grid;
-        gap: 30px;
+        gap: 28px;
       }}
       .product-hero {{
         display: grid;
         justify-items: center;
         text-align: center;
         gap: 10px;
-        padding-top: 2px;
+        padding-top: 34px;
         text-shadow: 0 1px 28px rgba(255,255,255,0.62);
       }}
       [data-theme="dark"] .product-hero {{ text-shadow: 0 1px 28px rgba(0,0,0,0.62); }}
@@ -586,7 +586,7 @@ def _openbrowser_dashboard_html() -> str:
       .app-window {{
         position: relative;
         width: 100%;
-        height: min(850px, calc(100dvh - 176px));
+        height: 836px;
         min-height: 0;
         overflow: hidden;
         max-width: 100%;
@@ -706,6 +706,7 @@ def _openbrowser_dashboard_html() -> str:
         border-radius: 14px;
         background: color-mix(in srgb, var(--panel-solid) 66%, transparent);
       }}
+      .lease-summary .button-small {{ display: none; }}
       .lease-summary .metric-line {{ display: grid; gap: 4px; }}
       .lease-summary b {{ font-size: 22px; }}
       .kebab {{ color: var(--faint); font-size: 24px; line-height: 1; }}
@@ -940,10 +941,10 @@ def _openbrowser_dashboard_html() -> str:
       .handoff-card {{
         position: absolute;
         z-index: 20;
-        left: 78px;
-        bottom: 56px;
-        width: 330px;
-        padding: 20px;
+        left: 28px;
+        bottom: 20px;
+        width: 286px;
+        padding: 16px;
         border: 1px solid var(--border);
         border-radius: 18px;
         background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
@@ -952,7 +953,7 @@ def _openbrowser_dashboard_html() -> str:
       }}
       .handoff-head {{ display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; }}
       .handoff-icon {{ width: 42px; height: 42px; display: grid; place-items: center; border-radius: 12px; color: white; background: #0a66c2; font-weight: 850; }}
-      .handoff-actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }}
+      .handoff-actions {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }}
       .status-rail {{
         display: none;
         gap: 16px;
@@ -1118,7 +1119,26 @@ def _openbrowser_dashboard_html() -> str:
       }}
       .li-mini {{ display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; background: #0a66c2; color: white; font-size: 14px; font-weight: 850; }}
       .danger {{ color: var(--red); }}
-      @media (max-width: 1280px) {{
+      @media (min-width: 1101px) and (max-width: 1400px) {{
+        body {{ padding: 18px 20px; }}
+        .page-shell {{ width: min(1320px, calc(100vw - 64px)); }}
+        .hero-logo {{ font-size: 44px; }}
+        .hero-line {{ font-size: 22px; }}
+        .app-grid {{ grid-template-columns: 240px minmax(0, 1fr) 240px; }}
+        .sidebar, .state-panel {{ padding: 26px 20px; }}
+        .session-card {{ grid-template-columns: 40px minmax(0, 1fr) auto; padding: 16px 14px; }}
+        .state-item {{ grid-template-columns: 40px minmax(0, 1fr) auto; min-height: 82px; padding: 16px; }}
+        .profile-head {{ grid-template-columns: 124px minmax(0,1fr) 150px; gap: 18px; padding: 28px 24px; }}
+        .avatar {{ width: 108px; height: 108px; }}
+        .profile-name {{ font-size: 25px; }}
+        .profile-role {{ font-size: 15px; }}
+        .profile-body {{ grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; padding: 24px; }}
+        .mock-nav {{ grid-template-columns: 42px minmax(130px, 1fr) repeat(5, minmax(44px, 76px)); gap: 10px; padding: 14px 18px; }}
+        .mock-content {{ padding: 0 18px 18px; }}
+        .feature-strip {{ width: min(690px, 70%); }}
+        .handoff-card {{ width: 286px; }}
+      }}
+      @media (max-width: 1100px) {{
         body {{ overflow: auto; }}
         .app-window {{ height: auto; min-height: 0; }}
         .app-grid {{ grid-template-columns: 280px minmax(0, 1fr); }}
@@ -1129,8 +1149,8 @@ def _openbrowser_dashboard_html() -> str:
         .status-rail {{ grid-template-columns: repeat(2, minmax(0,1fr)); }}
         .agent-card {{ right: 26px; bottom: 104px; width: min(310px, 42%); }}
       }}
-      @media (min-width: 901px) and (max-width: 1280px) {{
-        .app-window {{ height: min(850px, calc(100dvh - 176px)); overflow: hidden; }}
+      @media (min-width: 901px) and (max-width: 1100px) {{
+        .app-window {{ height: 836px; overflow: hidden; }}
         .app-grid {{ height: 100%; }}
       }}
       @media (max-width: 900px) {{
