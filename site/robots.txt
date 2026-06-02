@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://openbrowser.floom.dev/sitemap.xml
+Sitemap: https://browser.floom.dev/sitemap.xml
