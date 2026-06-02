@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">OpenBrowser</title>
+  <desc id="desc">Browser infrastructure for AI agents</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#eaf2ff"/>
+      <stop offset="0.45" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="dark" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#101827"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="28" stdDeviation="34" flood-color="#0f172a" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#sky)"/>
+  <path d="M0 510 C170 400 250 445 370 345 C485 250 615 300 725 210 C850 105 1015 180 1200 70 L1200 630 L0 630 Z" fill="#d8e6f4"/>
+  <path d="M0 560 C190 465 315 500 460 410 C595 325 710 380 850 282 C990 185 1080 235 1200 165 L1200 630 L0 630 Z" fill="#b8cadc"/>
+  <g filter="url(#shadow)">
+    <rect x="96" y="104" width="1008" height="422" rx="30" fill="#ffffff" fill-opacity="0.88" stroke="#d9e2ec"/>
+    <rect x="136" y="178" width="236" height="284" rx="20" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="406" y="178" width="424" height="284" rx="20" fill="#ffffff" stroke="#e2e8f0"/>
+    <rect x="864" y="178" width="200" height="284" rx="20" fill="#f8fafc" stroke="#e2e8f0"/>
+    <rect x="446" y="218" width="344" height="46" rx="23" fill="#edf2f7"/>
+    <rect x="446" y="302" width="188" height="22" rx="11" fill="#0b1220"/>
+    <rect x="446" y="344" width="292" height="16" rx="8" fill="#cbd5e1"/>
+    <rect x="446" y="382" width="138" height="40" rx="12" fill="#2563eb"/>
+    <rect x="606" y="382" width="118" height="40" rx="12" fill="#e2e8f0"/>
+    <circle cx="170" cy="216" r="21" fill="#2563eb"/>
+    <rect x="210" y="200" width="104" height="14" rx="7" fill="#0b1220"/>
+    <rect x="210" y="226" width="78" height="12" rx="6" fill="#10b981"/>
+    <circle cx="900" cy="222" r="11" fill="#10b981"/>
+    <rect x="922" y="210" width="96" height="14" rx="7" fill="#0b1220"/>
+    <rect x="922" y="236" width="68" height="12" rx="6" fill="#64748b"/>
+  </g>
+  <g transform="translate(431 50)">
+    <path d="M48 0 96 27.7v55.4L48 110 0 83.1V27.7L48 0Zm0 14.7L12.8 35v40L48 95.3 83.2 75V35L48 14.7Zm0 22.8 22.5 13v26L48 89.5l-22.5-13v-26L48 37.5Zm0 14.6-9.8 5.6v11.2l9.8 5.7 9.8-5.7V57.7L48 52.1Z" fill="#0b1220"/>
+    <text x="126" y="72" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="800" fill="#0b1220">OpenBrowser</text>
+  </g>
+  <text x="600" y="583" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="700" fill="#334155">Browser infrastructure for AI agents</text>
+</svg>

@@ -5,6 +5,8 @@
 [![MCP](https://img.shields.io/badge/MCP-ready-black.svg)](docs/browser-routing.md)
 [![Remote API](https://img.shields.io/badge/API-remote%20browser%20control-purple.svg)](docs/openbrowser-api.md)
 
+[Website](https://openbrowser.floom.dev) · [API docs](docs/openbrowser-api.md) · [Browser routing](docs/browser-routing.md)
+
 OpenBrowser is browser infrastructure for AI agents: isolated Chrome sessions, persistent profiles, proxy-aware identities, human login handoff, a remote API, and MCP tools.
 
 It lets Claude, Codex, Cursor, browser-use, OpenBrowser-style agents, and custom workers share real Chrome browsers without fighting over one CDP port. Agents lease a browser, use a named profile when account state is needed, route selected identities through proxies, hand login challenges to a human, and leave behind telemetry plus issue reports that can be audited later.

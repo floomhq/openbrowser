@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/floomhq/openbrowser"
+Homepage = "https://openbrowser.floom.dev"
 Documentation = "https://github.com/floomhq/openbrowser#readme"
 Issues = "https://github.com/floomhq/openbrowser/issues"
 
