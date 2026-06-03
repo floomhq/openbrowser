@@ -50,9 +50,30 @@ class BrowserController:
             raise RuntimeError("No browser context available")
         context = browser.contexts[0]
         pages = context.pages
-        page = pages[0] if pages else await context.new_page()
+        page = self._select_existing_page(pages) if pages else await context.new_page()
         self._active_pages[lease.lease_id] = page
         return page
+
+    @staticmethod
+    def _is_meaningful_page_url(url: str) -> bool:
+        normalized = (url or "").strip().lower()
+        if not normalized:
+            return False
+        if normalized == "about:blank":
+            return False
+        if normalized.startswith("chrome://newtab"):
+            return False
+        if normalized.startswith("chrome://welcome"):
+            return False
+        return True
+
+    def _select_existing_page(self, pages: list[Page]) -> Page:
+        # Prefer the most recently opened meaningful tab so human-auth handoff
+        # and follow-up automation attach to the same working context.
+        for page in reversed(pages):
+            if self._is_meaningful_page_url(page.url):
+                return page
+        return pages[-1]
 
     async def navigate(self, lease: Lease, url: str, wait_until: str = "domcontentloaded") -> dict[str, Any]:
         page = await self.page(lease)

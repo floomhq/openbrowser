@@ -189,3 +189,40 @@ def test_screenshot_falls_back_to_cdp_capture(tmp_path, monkeypatch) -> None:
     assert result["fallback"] is True
     assert result["base64"] == base64.b64encode(b"png-bytes").decode("ascii")
     assert (tmp_path / result["path"].split("/")[-1]).read_bytes() == b"png-bytes"
+
+
+def test_page_prefers_last_meaningful_existing_tab() -> None:
+    class FakeExistingPage:
+        def __init__(self, url: str) -> None:
+            self.url = url
+
+        def is_closed(self) -> bool:
+            return False
+
+    class FakeContext:
+        def __init__(self, pages):
+            self.pages = pages
+
+        async def new_page(self):
+            raise AssertionError("new_page should not be called when existing tabs are present")
+
+    class FakeBrowser:
+        def __init__(self, pages):
+            self.contexts = [FakeContext(pages)]
+
+    controller = BrowserController()
+    lease = make_lease()
+    pages = [
+        FakeExistingPage("chrome://newtab/"),
+        FakeExistingPage("about:blank"),
+        FakeExistingPage("https://google.com/"),
+        FakeExistingPage("https://lovable.dev/projects/abc"),
+    ]
+
+    async def fake_browser(_lease):
+        return FakeBrowser(pages)
+
+    controller.browser = fake_browser  # type: ignore[method-assign]
+
+    selected = asyncio.run(controller.page(lease))
+    assert selected.url == "https://lovable.dev/projects/abc"
