@@ -2696,7 +2696,7 @@ def _auth_portal_html(
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
             floating_auth = f"""
-          <aside class="auth-card is-warning" aria-label="Human auth request">
+          <aside class="auth-card is-warning" id="authPasswordCard" aria-label="Human auth request">
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Human auth request</div>
@@ -2704,6 +2704,7 @@ def _auth_portal_html(
               <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small" type="button" id="copyPassword">Copy</button></div>
             </div>
           </aside>
+          <button class="auth-reopen" type="button" id="showPasswordCard">Show VNC password</button>
 """
         frame = f"""
         <section class="browser-stage">
@@ -3033,8 +3034,24 @@ def _auth_portal_html(
         box-shadow: var(--shadow-float);
         backdrop-filter: blur(18px) saturate(1.12);
       }}
+      .auth-card.is-hidden {{ display: none; }}
       .auth-card form {{ grid-column: 2; }}
       .auth-card button[type="submit"] {{ width: 100%; }}
+      .auth-reopen {{
+        position: absolute;
+        right: 28px;
+        bottom: 28px;
+        display: none;
+        width: auto;
+        padding: 9px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+        color: var(--text);
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(14px);
+      }}
+      .auth-reopen.is-visible {{ display: inline-flex; }}
       .auth-logo {{
         width: 48px;
         height: 48px;
@@ -3100,6 +3117,7 @@ def _auth_portal_html(
         .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
         .toolbar-left {{ display: none; }}
         .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
+        .auth-reopen {{ position: static; justify-self: end; margin-top: 12px; }}
         .auth-logo {{ width: 44px; height: 44px; }}
         .auth-card form {{ grid-column: 1 / -1; }}
       }}
@@ -3171,14 +3189,24 @@ def _auth_portal_html(
         }});
       }}
       const copyButton = document.getElementById('copyPassword');
+      const authPasswordCard = document.getElementById('authPasswordCard');
+      const showPasswordCard = document.getElementById('showPasswordCard');
       if (copyButton) {{
         copyButton.addEventListener('click', async () => {{
           const value = document.getElementById('vncPassword').textContent;
           await navigator.clipboard.writeText(value);
           copyButton.textContent = 'Copied';
-          setTimeout(() => copyButton.textContent = 'Copy', 1200);
+          setTimeout(() => {{
+            authPasswordCard?.classList.add('is-hidden');
+            showPasswordCard?.classList.add('is-visible');
+            copyButton.textContent = 'Copy';
+          }}, 250);
         }});
       }}
+      showPasswordCard?.addEventListener('click', () => {{
+        authPasswordCard?.classList.remove('is-hidden');
+        showPasswordCard.classList.remove('is-visible');
+      }});
       const portalStatus = document.getElementById('portalStatus');
       document.querySelectorAll('form[data-async-action]').forEach((form) => {{
         form.addEventListener('submit', async (event) => {{

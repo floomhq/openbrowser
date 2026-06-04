@@ -106,6 +106,10 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert "enter it in the browser prompt" in response.text
     assert "manual-pass" in response.text
     assert "#password=manual-pass" not in response.text
+    assert 'id="authPasswordCard"' in response.text
+    assert 'id="showPasswordCard"' in response.text
+    assert "authPasswordCard?.classList.add('is-hidden')" in response.text
+    assert "showPasswordCard?.classList.add('is-visible')" in response.text
 
 
 def test_auth_portal_reuses_existing_vnc_without_restart(tmp_path, monkeypatch) -> None:
