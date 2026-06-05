@@ -9,6 +9,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from .config import BROKER_PORT
+from .docs import docs as local_docs
 
 
 BROKER_URL = f"http://127.0.0.1:{BROKER_PORT}"
@@ -40,7 +41,7 @@ def browser_status() -> dict[str, Any]:
 @mcp.tool()
 def broker_docs(topic: str = "quickstart") -> dict[str, Any]:
     """Return agent-facing docs. Topics: topics, quickstart, identities, browser-use, openbrowser, auth, feedback, telemetry, audit, safety."""
-    return _request("GET", f"/agent-docs?topic={urllib.parse.quote(topic)}")
+    return local_docs(topic)
 
 
 @mcp.tool()

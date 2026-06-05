@@ -5,12 +5,12 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
 from .config import BROKER_PORT, OPENBROWSER_API_KEYS_FILE
+from .docs import docs as local_docs
 
 
 BASE_URL = f"http://127.0.0.1:{BROKER_PORT}"
@@ -84,8 +84,7 @@ def cmd_status(_args: argparse.Namespace) -> int:
 
 
 def cmd_docs(args: argparse.Namespace) -> int:
-    topic = urllib.parse.quote(args.topic)
-    return _print(_request("GET", f"/agent-docs?topic={topic}"))
+    return _print(local_docs(args.topic))
 
 
 def cmd_open(args: argparse.Namespace) -> int:
