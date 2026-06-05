@@ -957,7 +957,15 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "Live Browser Session" in portal.text
     assert "Session State" in portal.text
     assert "Manual control" in portal.text
-    assert "session cookies" in portal.text
+    assert "Cookies, passwords, and proxy credentials stay hidden." in portal.text
+    assert "Manual control active" in portal.text
+    assert "Same browser session" in portal.text
+    assert "Typing enabled" in portal.text
+    assert "Screenshot clicks enabled" in portal.text
+    assert "Private by design" in portal.text
+    assert 'data-key="PageDown"' in portal.text
+    assert "Refreshing screenshot..." in portal.text
+    assert "Screenshot refreshed" in portal.text
     assert "Unix time" not in portal.text
     assert "OpenBrowser Manual Control" in portal.text
     assert "if (!response.ok) throw new Error" in portal.text

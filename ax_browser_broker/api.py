@@ -2416,6 +2416,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         padding: 0 15px;
       }}
       button.secondary {{ background: var(--panel-strong); color: var(--text); }}
+      button:disabled {{ opacity: .58; cursor: wait; }}
       input {{
         height: 42px;
         border: 1px solid var(--border);
@@ -2429,14 +2430,14 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }}
       code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
       .muted {{ color: var(--muted); }}
-      .app {{ width: min(1780px, calc(100vw - 48px)); margin: 28px auto; }}
-      .brand-hero {{ text-align: center; padding: 22px 0 24px; }}
+      .app {{ width: min(1780px, calc(100vw - 32px)); margin: 16px auto; }}
+      .brand-hero {{ display: none; }}
       .brand-title {{ display: inline-flex; align-items: center; gap: 13px; font-size: clamp(30px, 4vw, 58px); font-weight: 850; letter-spacing: 0; }}
       .brand-mark {{ width: 44px; height: 44px; border: 6px solid currentColor; border-radius: 14px; display: inline-grid; place-items: center; transform: rotate(30deg); }}
       .brand-mark::after {{ content: ""; width: 13px; height: 13px; border: 5px solid currentColor; border-radius: 5px; }}
-      .subtitle {{ margin-top: 8px; font-size: 20px; font-weight: 700; color: var(--muted); }}
+      .subtitle {{ margin-top: 4px; font-size: 18px; font-weight: 700; color: var(--muted); }}
       .shell {{
-        min-height: min(820px, calc(100vh - 150px));
+        min-height: calc(100vh - 32px);
         overflow: hidden;
         border: 1px solid var(--border);
         border-radius: 24px;
@@ -2451,7 +2452,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .dot:nth-child(3) {{ background: #8dccad; }}
       .top-title {{ text-align: center; font-weight: 850; font-size: 22px; }}
       .top-actions {{ justify-self: end; display: flex; gap: 10px; align-items: center; }}
-      .layout {{ display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr) minmax(250px, 330px); min-height: calc(min(820px, calc(100vh - 150px)) - 78px); }}
+      .layout {{ display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr) minmax(250px, 330px); min-height: calc(100vh - 110px); }}
       .sidebar {{ padding: 26px 24px; border-right: 1px solid var(--border); }}
       .statebar {{ padding: 26px 24px; border-left: 1px solid var(--border); }}
       .panel-title {{ font-size: 13px; letter-spacing: .04em; text-transform: uppercase; font-weight: 850; color: var(--muted); margin-bottom: 18px; }}
@@ -2485,12 +2486,13 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .address {{ height: 38px; border: 1px solid var(--border); border-radius: 999px; background: var(--soft); display: flex; align-items: center; gap: 10px; padding: 0 16px; min-width: 0; color: var(--muted); font-weight: 800; }}
       .address span {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
       .live {{ color: var(--ok); font-size: 12px; letter-spacing: .04em; }}
-      .screen-wrap {{ background: #fff; min-height: 420px; max-height: calc(100vh - 360px); overflow: auto; }}
-      #screen {{ display: block; width: 100%; height: auto; min-height: 420px; object-fit: contain; background: #fff; cursor: crosshair; }}
-      .control-dock {{ margin-top: 14px; display: grid; grid-template-columns: minmax(220px, 1fr) auto minmax(130px, 180px) auto auto; gap: 10px; align-items: center; }}
-      #status {{ min-height: 22px; color: var(--muted); font-size: 13px; font-weight: 700; }}
+      .screen-wrap {{ background: #fff; min-height: 440px; height: calc(100vh - 450px); overflow: auto; }}
+      #screen {{ display: block; width: 100%; height: auto; min-height: 440px; object-fit: contain; background: #fff; cursor: crosshair; }}
+      .control-dock {{ display: grid; grid-template-columns: auto minmax(220px, 1fr) auto minmax(120px, 170px) auto auto auto auto; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-strong); }}
+      #status {{ min-height: 22px; color: var(--muted); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }}
+      .left-status {{ margin-top: 10px; }}
       .state-list {{ display: grid; gap: 16px; }}
-      .state-card {{ display: grid; grid-template-columns: 46px 1fr auto; gap: 14px; align-items: center; }}
+      .state-card {{ display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; }}
       .state-main {{ font-weight: 850; }}
       .state-sub {{ color: var(--muted); font-weight: 700; font-size: 13px; margin-top: 2px; }}
       .pulse {{ width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }}
@@ -2545,9 +2547,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
               </div>
               <div>
                 <div class="meta-label">Control</div>
-                <div class="meta-value">Click screenshot, type, or press keys into the held tab.</div>
+                <div class="meta-value">Click the screenshot, type into the focused field, or use the scroll buttons.</div>
               </div>
-              <button id="refresh" type="button">Refresh screenshot</button>
+              <div id="status" class="left-status" data-expires-at="{safe_expires_at}">Control link active.</div>
             </div>
           </aside>
           <section class="center">
@@ -2561,26 +2563,29 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
                 <div class="address"><b class="live">LIVE</b><span>lease-control/{safe_token}</span></div>
                 <button class="secondary" type="button" onclick="window.open(location.href, '_blank', 'noopener')">Open</button>
               </div>
+              <div class="control-dock">
+                <button id="refresh" type="button">Refresh screenshot</button>
+                <input id="text" autocomplete="off" placeholder="Type into focused field">
+                <button id="typeButton" type="button">Type</button>
+                <input id="key" autocomplete="off" value="Enter" aria-label="Key">
+                <button id="pressButton" type="button">Press</button>
+                <button class="secondary keyButton" type="button" data-key="PageUp">Page up</button>
+                <button class="secondary keyButton" type="button" data-key="PageDown">Page down</button>
+                <button class="secondary keyButton" type="button" data-key="Escape">Escape</button>
+              </div>
               <div class="screen-wrap">
                 <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
               </div>
-            </div>
-            <div class="control-dock">
-              <input id="text" autocomplete="off" placeholder="Type into focused field">
-              <button id="typeButton" type="button">Type</button>
-              <input id="key" autocomplete="off" value="Enter" aria-label="Key">
-              <button id="pressButton" type="button">Press</button>
-              <div id="status" data-expires-at="{safe_expires_at}">Control link active.</div>
             </div>
           </section>
           <aside class="statebar">
             <div class="panel-title">Session State</div>
             <div class="state-list">
-              <div class="state-card"><div class="icon-circle">LC</div><div><div class="state-main">Manual control</div><div class="state-sub">Human handoff active</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div class="icon-circle">ID</div><div><div class="state-main">Held browser</div><div class="state-sub">Same lease, same tab</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div class="icon-circle">KB</div><div><div class="state-main">Keyboard input</div><div class="state-sub">Type and key press enabled</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div class="icon-circle">SC</div><div><div class="state-main">Screenshot control</div><div class="state-sub">Coordinates mapped</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div class="icon-circle">PR</div><div><div class="state-main">Private session</div><div class="state-sub">No session cookies or saved passwords exposed</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div><div class="state-main">Manual control active</div><div class="state-sub">You are controlling the held browser tab.</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div><div class="state-main">Same browser session</div><div class="state-sub">Actions stay on this lease and tab.</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div><div class="state-main">Typing enabled</div><div class="state-sub">Text and key presses go to the focused field.</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div><div class="state-main">Screenshot clicks enabled</div><div class="state-sub">Clicks are mapped to browser coordinates.</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div><div class="state-main">Private by design</div><div class="state-sub">Cookies, passwords, and proxy credentials stay hidden.</div></div><span class="pulse"></span></div>
             </div>
           </aside>
         </div>
@@ -2602,7 +2607,26 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }});
       const expiresAt = Number(statusBox.dataset.expiresAt || 0);
       if (expiresAt) setStatus(`Control link expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
-      const refresh = () => {{ screen.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`; }};
+      const refreshButton = document.getElementById('refresh');
+      let refreshing = false;
+      const refresh = () => {{
+        if (refreshing) return;
+        refreshing = true;
+        refreshButton.disabled = true;
+        setStatus('Refreshing screenshot...');
+        screen.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`;
+      }};
+      screen.addEventListener('load', () => {{
+        if (!refreshing) return;
+        refreshing = false;
+        refreshButton.disabled = false;
+        setStatus('Screenshot refreshed');
+      }});
+      screen.addEventListener('error', () => {{
+        refreshing = false;
+        refreshButton.disabled = false;
+        setStatus('Screenshot refresh failed');
+      }});
       const postJson = async (path, body) => {{
         const response = await fetch(path, {{
           method: 'POST',
@@ -2660,6 +2684,22 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           event.preventDefault();
           document.getElementById('pressButton').click();
         }}
+      }});
+      document.querySelectorAll('.keyButton').forEach((button) => {{
+        button.addEventListener('click', async () => {{
+          const key = button.dataset.key || 'Enter';
+          setStatus(`Pressing ${{key}}...`);
+          button.disabled = true;
+          try {{
+            await postJson(`/auth/lease-control/${{token}}/keyboard-press`, {{key}});
+            setStatus(`Pressed ${{key}}`);
+            setTimeout(refresh, 700);
+          }} catch (error) {{
+            setStatus(`Key failed: ${{String(error.message || error).slice(0, 180)}}`);
+          }} finally {{
+            button.disabled = false;
+          }}
+        }});
       }});
       document.getElementById('done').addEventListener('click', async () => {{
         try {{
