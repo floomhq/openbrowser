@@ -518,7 +518,7 @@ def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monk
     monkeypatch.setattr(
         api,
         "create_control_session",
-        lambda owner, lease_id: {
+        lambda owner, lease_id, **_kwargs: {
             "token": "control-token",
             "owner": owner,
             "lease_id": lease_id,
@@ -880,10 +880,12 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     events = []
     lease = make_lease()
 
-    def fake_create_control_session(owner, lease_id, ttl_seconds):
+    def fake_create_control_session(owner, lease_id, ttl_seconds, **kwargs):
         assert owner == "pytest-control"
         assert lease_id == "lease-api"
         assert ttl_seconds == 600
+        assert kwargs["identity_id"] == lease.identity_id
+        assert kwargs["slot"] == lease.name
         return {
             "token": "control-token",
             "owner": owner,
@@ -937,6 +939,10 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
             "token": "tok",
             "owner": "<human>",
             "lease_id": "lease-api",
+            "identity_id": "chrome-test",
+            "url": "https://example.com/dashboard",
+            "reason": "approval",
+            "slot": "pool-b",
             "expires_at": 123,
         }
 
@@ -955,16 +961,21 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
 
     assert portal.status_code == 200
     assert "&lt;human&gt;" in portal.text
-    assert "OpenBrowser Manual Control" in portal.text
+    assert "OpenBrowser Browser Control" in portal.text
+    assert "The browser API for AI agents" in portal.text
+    assert "Browser Sessions" in portal.text
+    assert "Live Browser Session" in portal.text
+    assert "Session State" in portal.text
+    assert "chrome-test" in portal.text
+    assert "https://example.com/dashboard" in portal.text
     assert "Manual browser control" in portal.text
     assert "Refresh screenshot" in portal.text
     assert "Text to type into focused field" in portal.text
     assert "Press key" in portal.text
     assert "End control link" in portal.text
     assert "Click the screenshot to control the held browser tab." in portal.text
-    assert "This view does not expose session cookies, saved passwords, or proxy credentials." in portal.text
-    assert "Browser Sessions" not in portal.text
-    assert "Session State" not in portal.text
+    assert "This view never exposes session cookies, saved passwords, or proxy credentials." in portal.text
+    assert "No cookies or passwords exposed" in portal.text
     assert 'data-key="PageDown"' not in portal.text
     assert "Unix time" not in portal.text
     assert "if (!response.ok) throw new Error" in portal.text

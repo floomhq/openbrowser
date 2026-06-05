@@ -214,7 +214,13 @@ def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: 
     lease_id = _active_identity_lease_id(identity_id)
     if not lease_id:
         return None
-    control = create_control_session(str(auth_request_data.get("owner") or "auth-handoff"), lease_id)
+    control = create_control_session(
+        str(auth_request_data.get("owner") or "auth-handoff"),
+        lease_id,
+        identity_id=identity_id,
+        url=str(auth_request_data.get("url") or ""),
+        reason=str(auth_request_data.get("reason") or "login_required"),
+    )
     _safe_record_event(
         source=str(auth_request_data.get("owner") or "auth-handoff"),
         event_type="session",
@@ -232,7 +238,13 @@ def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | 
     lease_id = _active_identity_lease_id(request.identity_id)
     if not lease_id:
         return None
-    control = create_control_session(request.owner, lease_id)
+    control = create_control_session(
+        request.owner,
+        lease_id,
+        identity_id=request.identity_id,
+        url=request.url,
+        reason=request.reason,
+    )
     _safe_record_event(
         source=request.owner,
         event_type="session",
@@ -2335,7 +2347,13 @@ async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any
 async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
     try:
         lease_obj = require_lease(request.lease_id)
-        result = create_control_session(request.owner, lease_obj.lease_id, request.ttl_seconds)
+        result = create_control_session(
+            request.owner,
+            lease_obj.lease_id,
+            request.ttl_seconds,
+            identity_id=lease_obj.identity_id,
+            slot=lease_obj.name,
+        )
         _safe_record_event(
             source=request.owner,
             event_type="session",
@@ -2363,13 +2381,24 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     safe_lease_id = html.escape(str(session.get("lease_id", "")))
     safe_token = html.escape(token, quote=True)
     safe_expires_at = html.escape(str(session.get("expires_at", "")))
+    safe_identity = html.escape(str(session.get("identity_id") or "held-browser"))
+    safe_slot = html.escape(str(session.get("slot") or "active slot"))
+    safe_url = html.escape(str(session.get("url") or "Current browser tab"))
+    safe_reason = html.escape(str(session.get("reason") or "Manual browser control"))
+    mark_svg = """<img class="brand-icon" src="/openbrowser/assets/brand/logo/mark/openbrowser-mark.svg" alt="">"""
+    browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
+    pointer_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6.8 1.4L9 20z"></path></svg>"""
+    keyboard_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M7 10h.01M10 10h.01M13 10h.01M16 10h.01M7 14h10"></path></svg>"""
+    cdp_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"></path></svg>"""
+    lock_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>"""
+    status_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>"""
     return f"""
 <!doctype html>
 <html data-theme="light">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>OpenBrowser Manual Control</title>
+    <title>OpenBrowser Browser Control</title>
     <script>
       (() => {{
         try {{
@@ -2384,63 +2413,404 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     <style>
       :root {{
         color-scheme: light dark;
-        --page: #f4f1ea;
-        --panel: #ffffff;
-        --soft: #f6f4ef;
-        --text: #20201d;
-        --muted: #777269;
-        --border: rgba(42,35,27,0.14);
-        --strong: #24231f;
-        --strong-text: #ffffff;
+        --page: #f1f5f9;
+        --paper: rgba(255,255,255,0.88);
+        --panel: rgba(255,255,255,0.74);
+        --panel-solid: #ffffff;
+        --soft: #f8fafc;
+        --text: #0b1220;
+        --muted: #475569;
+        --faint: #94a3b8;
+        --border: rgba(15,23,42,0.09);
+        --border-strong: rgba(15,23,42,0.16);
+        --primary: #0b1220;
+        --primary-text: #ffffff;
+        --green: #10b981;
+        --amber: #ee9c44;
+        --red: #ec6a5f;
+        --blue: #2563eb;
+        --radius-lg: 28px;
+        --radius-md: 12px;
+        --radius-sm: 8px;
+        --radius-pill: 9999px;
+        --shadow-window: 0 24px 80px rgba(15,23,42,0.16), 0 1px 0 rgba(255,255,255,0.78) inset;
+        --shadow-float: 0 24px 64px rgba(15,23,42,0.18), 0 0 0 1px var(--border);
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
       }}
       [data-theme="dark"] {{
-        --page: #101211;
-        --panel: #20201e;
-        --soft: #2a2926;
-        --text: #f4f1ea;
-        --muted: #aaa49a;
-        --border: rgba(255,255,255,0.12);
-        --strong: #f4f1ea;
-        --strong-text: #191918;
+        --page: #0b1220;
+        --paper: rgba(15,23,42,0.90);
+        --panel: rgba(15,23,42,0.74);
+        --panel-solid: #111827;
+        --soft: #1f2937;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --faint: #64748b;
+        --border: rgba(255,255,255,0.10);
+        --border-strong: rgba(255,255,255,0.18);
+        --primary: #f8fafc;
+        --primary-text: #0b1220;
+        --shadow-window: 0 28px 90px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.08) inset;
+        --shadow-float: 0 28px 70px rgba(0,0,0,0.42), 0 0 0 1px var(--border);
       }}
       * {{ box-sizing: border-box; }}
-      body {{ font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: var(--page); color: var(--text); }}
-      header {{ padding: 18px 22px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }}
-      main {{ padding: 16px; max-width: 1280px; margin: 0 auto; }}
-      button {{ background: var(--strong); color: var(--strong-text); border: 1px solid var(--border); padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 700; }}
-      button.secondary {{ background: var(--panel); color: var(--text); }}
-      input {{ padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; min-width: min(520px, 70vw); background: var(--soft); color: var(--text); }}
-      .muted {{ color: var(--muted); }}
-      .panel {{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin: 14px 0; }}
-      .toolbar {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
-      #screen {{ display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 14px; background: white; cursor: crosshair; }}
-      #status {{ font-size: 14px; color: var(--muted); min-height: 20px; }}
+      html {{ min-height: 100%; background: var(--page); }}
+      body {{
+        margin: 0;
+        min-height: 100dvh;
+        overflow: hidden;
+        display: grid;
+        place-items: center;
+        padding: 28px;
+        color: var(--text);
+        background:
+          linear-gradient(180deg, rgba(247,244,236,0.58) 0%, rgba(231,223,208,0.70) 44%, rgba(231,223,208,0.88) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-feature-settings: "cv11" 1, "ss01" 1, "calt" 1;
+      }}
+      [data-theme="dark"] body {{
+        background:
+          linear-gradient(180deg, rgba(12,15,14,0.72) 0%, rgba(12,15,14,0.84) 56%, rgba(12,15,14,0.92) 100%),
+          url('https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=2400&q=80') center / cover no-repeat;
+      }}
+      button, .button {{
+        appearance: none;
+        display: inline-flex;
+        min-height: 44px;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border: 1px solid color-mix(in srgb, var(--primary) 82%, transparent);
+        border-radius: var(--radius-sm);
+        background: var(--primary);
+        color: var(--primary-text);
+        font-weight: 650;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 14px;
+        text-decoration: none;
+        cursor: pointer;
+        box-shadow: 0 1px 0 rgba(0,0,0,0.08);
+        transition: transform 120ms var(--ease), background-color 150ms var(--ease), border-color 150ms var(--ease), box-shadow 150ms var(--ease);
+        white-space: nowrap;
+      }}
+      button:hover, .button:hover {{ box-shadow: 0 10px 24px rgba(0,0,0,0.12); }}
+      button:active, .button:active {{ transform: translateY(1px) scale(.985); }}
+      .button-outline, .button-soft {{
+        border-color: var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 86%, transparent);
+        color: var(--text);
+      }}
+      .button-outline:hover, .button-soft:hover {{ border-color: var(--border-strong); background: var(--soft); }}
+      .button-small {{ min-height: 36px; padding: 0 12px; font-size: 12px; }}
+      input {{
+        width: 100%;
+        min-width: 0;
+        min-height: 44px;
+        padding: 0 13px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+        color: var(--text);
+        font: inherit;
+        font-weight: 620;
+      }}
+      .app-window {{
+        width: min(1680px, calc(100vw - 56px));
+        height: min(940px, calc(100dvh - 56px));
+        min-height: 680px;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 86px minmax(0, 1fr);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--paper);
+        box-shadow: var(--shadow-window);
+        backdrop-filter: blur(22px) saturate(1.15);
+      }}
+      .window-bar {{
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr) 220px;
+        align-items: center;
+        gap: 16px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--border);
+      }}
+      .traffic-lights {{ display: flex; gap: 8px; align-items: center; }}
+      .traffic-lights span {{ width: 13px; height: 13px; border-radius: var(--radius-pill); background: color-mix(in srgb, var(--faint) 45%, transparent); border: 1px solid var(--border); }}
+      .traffic-lights span:nth-child(1) {{ background: color-mix(in srgb, var(--red) 62%, transparent); }}
+      .traffic-lights span:nth-child(2) {{ background: color-mix(in srgb, var(--amber) 62%, transparent); }}
+      .traffic-lights span:nth-child(3) {{ background: color-mix(in srgb, var(--green) 62%, transparent); }}
+      .brand-block {{ min-width: 0; text-align: center; }}
+      .brand-title {{ display: inline-flex; align-items: center; justify-content: center; gap: 10px; font-size: 21px; font-weight: 760; letter-spacing: 0; }}
+      .brand-title .brand-icon {{ width: 26px; height: 26px; color: currentColor; }}
+      .brand-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
+      .top-actions {{ display: flex; justify-content: flex-end; gap: 10px; align-items: center; }}
+      .api-link {{ color: var(--muted); font-size: 13px; font-weight: 700; text-decoration: none; }}
+      .app-grid {{
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 320px minmax(0, 1fr) 300px;
+      }}
+      .sidebar, .state-panel {{
+        min-width: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 26px 22px;
+        background: color-mix(in srgb, var(--panel) 92%, transparent);
+      }}
+      .sidebar {{ border-right: 1px solid var(--border); }}
+      .state-panel {{ border-left: 1px solid var(--border); }}
+      .panel-title {{ margin-bottom: 16px; color: var(--muted); font-size: 14px; font-weight: 760; }}
+      .session-list {{ display: grid; gap: 14px; }}
+      .session-card {{
+        display: grid;
+        grid-template-columns: 42px minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 16px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+        box-shadow: 0 10px 28px rgba(0,0,0,0.045);
+      }}
+      .session-icon, .state-icon, .control-logo {{
+        display: grid;
+        place-items: center;
+        border-radius: var(--radius-pill);
+        background: var(--soft);
+        border: 1px solid var(--border);
+        color: var(--muted);
+      }}
+      .session-icon svg, .state-icon svg, .control-logo svg {{
+        width: 19px;
+        height: 19px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.9;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }}
+      .brand-icon {{ width: 26px; height: 26px; display: block; }}
+      [data-theme="dark"] .brand-icon {{ filter: invert(1) brightness(1.2); }}
+      .session-icon {{ width: 38px; height: 38px; }}
+      .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
+      .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
+      .kebab {{ color: var(--faint); font-size: 24px; line-height: 1; }}
+      .request-card, .control-card {{
+        margin-top: 18px;
+        display: grid;
+        gap: 13px;
+        padding: 15px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: color-mix(in srgb, var(--panel-solid) 70%, transparent);
+      }}
+      .request-row {{ min-width: 0; display: grid; gap: 4px; }}
+      .label {{ color: var(--muted); font-size: 12px; font-weight: 760; }}
+      .value {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }}
+      .value.mono, code {{ font-family: "SF Mono", ui-monospace, Menlo, Monaco, Consolas, monospace; font-size: 12px; }}
+      code {{
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 6px 8px;
+        background: var(--soft);
+        color: var(--text);
+      }}
+      .browser-stage {{
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        gap: 18px;
+        padding: 26px 26px 22px;
+      }}
+      .stage-title {{ display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; font-weight: 760; }}
+      .browser-shell {{
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        display: grid;
+        grid-template-rows: 58px minmax(0, 1fr);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--panel-solid);
+        box-shadow: 0 14px 42px rgba(0,0,0,0.055);
+      }}
+      .browser-toolbar {{
+        min-width: 0;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 14px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+      }}
+      .toolbar-left {{ display: flex; gap: 8px; }}
+      .toolbar-left span {{ width: 14px; height: 14px; border-radius: var(--radius-pill); background: var(--soft); border: 1px solid var(--border); }}
+      .toolbar-url {{
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        padding: 0 14px;
+        color: var(--muted);
+        background: var(--soft);
+        font-size: 13px;
+        font-weight: 650;
+      }}
+      .lock {{ color: var(--green); font-size: 11px; text-transform: uppercase; }}
+      .browser-frame {{ min-height: 0; overflow: auto; background: #111; }}
+      #screen {{
+        display: block;
+        width: 100%;
+        height: auto;
+        min-height: 100%;
+        object-fit: contain;
+        background: white;
+        cursor: crosshair;
+      }}
+      .control-card {{
+        grid-template-columns: 54px minmax(0, 1fr);
+        align-items: start;
+        box-shadow: 0 10px 28px rgba(0,0,0,0.045);
+      }}
+      .control-logo {{ width: 50px; height: 50px; color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid)); }}
+      .control-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
+      .control-subtitle, #status {{ margin-top: 5px; color: var(--muted); font-size: 13px; font-weight: 560; line-height: 1.35; }}
+      .control-actions {{ grid-column: 1 / -1; display: grid; gap: 10px; margin-top: 2px; }}
+      .control-row {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(74px, auto); gap: 10px; }}
+      .control-row button {{ padding-inline: 12px; }}
+      .control-buttons {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
+      .control-buttons button {{ width: 100%; }}
+      .state-list {{ display: grid; gap: 22px; }}
+      .state-item {{ display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 13px; align-items: center; }}
+      .state-icon {{ width: 36px; height: 36px; }}
+      .state-title {{ font-size: 15px; font-weight: 760; }}
+      .state-subtitle {{ margin-top: 3px; color: var(--muted); font-size: 13px; font-weight: 560; }}
+      .state-dot {{ width: 7px; height: 7px; border-radius: var(--radius-pill); background: var(--green); }}
+      @media (max-width: 900px) {{
+        body {{ overflow: auto; padding: 12px; place-items: start center; }}
+        .app-window {{
+          width: 100%;
+          height: auto;
+          min-height: calc(100dvh - 24px);
+          grid-template-rows: auto auto;
+          border-radius: 16px;
+        }}
+        .window-bar {{ grid-template-columns: 1fr; justify-items: start; padding: 16px; }}
+        .brand-block {{ text-align: left; }}
+        .top-actions {{ width: 100%; justify-content: space-between; }}
+        .app-grid {{ grid-template-columns: 1fr; }}
+        .sidebar, .state-panel {{ border: 0; padding: 18px 16px; }}
+        .sidebar {{ border-bottom: 1px solid var(--border); }}
+        .state-panel {{ border-top: 1px solid var(--border); }}
+        .browser-stage {{ min-height: 72dvh; padding: 18px 16px; }}
+        .browser-shell {{ min-height: 58dvh; grid-template-rows: auto minmax(0, 1fr); }}
+        .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
+        .toolbar-left {{ display: none; }}
+        .control-card {{ grid-template-columns: 42px minmax(0, 1fr); }}
+      }}
     </style>
   </head>
   <body>
-    <header>
-      <div><b>OpenBrowser Manual Control</b><div class="muted">Manual browser control · Owner: {safe_owner}</div></div>
-      <div class="toolbar"><span>Lease: <code>{safe_lease_id}</code></span><button class="secondary" type="button" id="themeToggle">Night mode</button></div>
-    </header>
-    <main>
-      <div class="panel">
-        <div class="toolbar">
-          <button id="refresh" type="button">Refresh screenshot</button>
-          <form id="typeForm" class="toolbar">
-            <input id="text" autocomplete="off" placeholder="Text to type into focused field">
-            <button type="submit">Type</button>
-          </form>
-          <form id="pressForm" class="toolbar">
-            <input id="key" autocomplete="off" value="Enter" aria-label="Key">
-            <button type="submit">Press key</button>
-          </form>
-          <button id="done" type="button">End control link</button>
+    <div class="app-window">
+      <header class="window-bar">
+        <div class="traffic-lights" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="brand-block">
+          <div class="brand-title">{mark_svg}<span>OpenBrowser</span></div>
+          <div class="brand-subtitle">The browser API for AI agents</div>
         </div>
-        <p class="muted">Click the screenshot to control the held browser tab. Use this for login, passkey, or challenge prompts. This view does not expose session cookies, saved passwords, or proxy credentials.</p>
-        <div id="status" data-expires-at="{safe_expires_at}">Control link active.</div>
-      </div>
-      <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
-    </main>
+        <div class="top-actions">
+          <button class="button-soft button-small" type="button" id="themeToggle" aria-label="Toggle day and night mode">Theme</button>
+          <a class="api-link" href="/docs" target="_blank" rel="noopener noreferrer">API</a>
+        </div>
+      </header>
+      <main class="app-grid">
+        <aside class="sidebar">
+          <div class="panel-title">Browser Sessions</div>
+          <div class="session-list">
+            <div class="session-card is-active">
+              <div class="session-icon">{browser_svg}</div>
+              <div>
+                <div class="session-name">{safe_identity}</div>
+                <div class="session-status">Human control active</div>
+              </div>
+              <div class="kebab" aria-hidden="true">...</div>
+            </div>
+          </div>
+          <section class="request-card" aria-label="Handoff details">
+            <div class="request-row"><span class="label">Target</span><span class="value mono" title="{safe_url}">{safe_url}</span></div>
+            <div class="request-row"><span class="label">Agent</span><span class="value">{safe_owner}</span></div>
+            <div class="request-row"><span class="label">Reason</span><span class="value">{safe_reason}</span></div>
+            <div class="request-row"><span class="label">Lease</span><span class="value mono">{safe_lease_id}</span></div>
+            <div class="request-row"><span class="label">Slot</span><span class="value">{safe_slot}</span></div>
+            <div class="request-row"><span class="label">Expires</span><span class="value mono">{safe_expires_at}</span></div>
+          </section>
+          <section class="control-card" aria-label="Manual browser control">
+            <div class="control-logo">{mark_svg}</div>
+            <div>
+              <div class="control-title">Manual browser control</div>
+              <div class="control-subtitle">Click the screenshot to control the held browser tab. This view never exposes session cookies, saved passwords, or proxy credentials.</div>
+            </div>
+            <div class="control-actions">
+              <button class="button-outline" id="refresh" type="button">Refresh screenshot</button>
+              <form id="typeForm" class="control-row">
+                <input id="text" autocomplete="off" placeholder="Text to type into focused field">
+                <button type="submit">Type</button>
+              </form>
+              <form id="pressForm" class="control-row">
+                <input id="key" autocomplete="off" value="Enter" aria-label="Keyboard key">
+                <button type="submit">Press key</button>
+              </form>
+              <div class="control-buttons">
+                <button class="button-outline" id="done" type="button">End control link</button>
+                <button class="button-outline" id="openImage" type="button">Open screenshot</button>
+              </div>
+              <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Control link active.</div>
+            </div>
+          </section>
+        </aside>
+        <section class="browser-stage">
+          <div class="stage-title">
+            <span>Live Browser Session</span>
+            <button class="button-outline button-small" id="refreshTop" type="button">Refresh</button>
+          </div>
+          <div class="browser-shell">
+            <div class="browser-toolbar">
+              <div class="toolbar-left" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="toolbar-url"><span class="lock">live</span>{safe_url}</div>
+              <button class="button-outline button-small" id="controlsFocus" type="button">Controls</button>
+            </div>
+            <div class="browser-frame">
+              <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
+            </div>
+          </div>
+        </section>
+        <aside class="state-panel">
+          <div class="panel-title">Session State</div>
+          <div class="state-list">
+            <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Active lease</div><div class="state-subtitle">Same lease, same tab</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{pointer_svg}</div><div><div class="state-title">Click control</div><div class="state-subtitle">Screenshot coordinates mapped</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{keyboard_svg}</div><div><div class="state-title">Keyboard input</div><div class="state-subtitle">Type and key press enabled</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{lock_svg}</div><div><div class="state-title">Private session</div><div class="state-subtitle">No cookies or passwords exposed</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">CDP connected</div><div class="state-subtitle">Held browser slot</div></div><span class="state-dot"></span></div>
+          </div>
+        </aside>
+      </main>
+    </div>
     <script>
       const token = {json.dumps(token)};
       const screen = document.getElementById('screen');
@@ -2468,6 +2838,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         return response;
       }};
       document.getElementById('refresh').addEventListener('click', refresh);
+      document.getElementById('refreshTop').addEventListener('click', refresh);
+      document.getElementById('openImage').addEventListener('click', () => window.open(screen.src, '_blank', 'noopener,noreferrer'));
+      document.getElementById('controlsFocus').addEventListener('click', () => document.getElementById('text').focus());
       screen.addEventListener('click', async (event) => {{
         const rect = screen.getBoundingClientRect();
         const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
