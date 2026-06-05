@@ -951,7 +951,12 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
 
     assert portal.status_code == 200
     assert "&lt;human&gt;" in portal.text
-    assert "Manual browser control" in portal.text
+    assert "OpenBrowser</span>" in portal.text
+    assert "The browser infrastructure for AI agents." in portal.text
+    assert "Browser Sessions" in portal.text
+    assert "Live Browser Session" in portal.text
+    assert "Session State" in portal.text
+    assert "Manual control" in portal.text
     assert "session cookies" in portal.text
     assert "Unix time" not in portal.text
     assert "OpenBrowser Manual Control" in portal.text

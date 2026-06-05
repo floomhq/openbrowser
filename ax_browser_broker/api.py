@@ -2361,63 +2361,231 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     <style>
       :root {{
         color-scheme: light dark;
-        --page: #f4f1ea;
-        --panel: #ffffff;
-        --soft: #f6f4ef;
-        --text: #20201d;
-        --muted: #777269;
-        --border: rgba(42,35,27,0.14);
-        --strong: #24231f;
+        --page: #eef1ed;
+        --panel: rgba(255,255,255,0.88);
+        --panel-strong: #ffffff;
+        --soft: #f6f7f5;
+        --text: #101827;
+        --muted: #687083;
+        --faint: #9198a7;
+        --border: rgba(15,23,42,0.12);
+        --strong: #101827;
         --strong-text: #ffffff;
+        --accent: #2563eb;
+        --ok: #44b979;
+        --shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
       }}
       [data-theme="dark"] {{
-        --page: #101211;
-        --panel: #20201e;
-        --soft: #2a2926;
-        --text: #f4f1ea;
-        --muted: #aaa49a;
+        --page: #101412;
+        --panel: rgba(24,25,23,0.88);
+        --panel-strong: #1c1f1d;
+        --soft: #242824;
+        --text: #f6f3ec;
+        --muted: #afa89d;
+        --faint: #89857d;
         --border: rgba(255,255,255,0.12);
-        --strong: #f4f1ea;
-        --strong-text: #191918;
+        --strong: #f6f3ec;
+        --strong-text: #151714;
+        --accent: #8fb4ff;
+        --ok: #63d393;
+        --shadow: 0 30px 90px rgba(0,0,0,0.35);
       }}
       * {{ box-sizing: border-box; }}
-      body {{ font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: var(--page); color: var(--text); }}
-      header {{ padding: 18px 22px; background: var(--panel); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; align-items: center; }}
-      main {{ padding: 16px; max-width: 1280px; margin: 0 auto; }}
-      button {{ background: var(--strong); color: var(--strong-text); border: 1px solid var(--border); padding: 9px 12px; border-radius: 10px; cursor: pointer; font-weight: 700; }}
-      button.secondary {{ background: var(--panel); color: var(--text); }}
-      input {{ padding: 9px 10px; border: 1px solid var(--border); border-radius: 10px; min-width: min(520px, 70vw); background: var(--soft); color: var(--text); }}
+      body {{
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at 20% -10%, rgba(255,255,255,0.78), transparent 34rem),
+          linear-gradient(135deg, #e9eee8 0%, #f8f5ee 44%, #dde7eb 100%);
+      }}
+      [data-theme="dark"] body {{
+        background:
+          radial-gradient(circle at 20% -10%, rgba(88,104,92,0.24), transparent 34rem),
+          linear-gradient(135deg, #101412 0%, #171916 46%, #0f1518 100%);
+      }}
+      button {{
+        height: 42px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--strong);
+        color: var(--strong-text);
+        cursor: pointer;
+        font-weight: 750;
+        padding: 0 15px;
+      }}
+      button.secondary {{ background: var(--panel-strong); color: var(--text); }}
+      input {{
+        height: 42px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel-strong);
+        color: var(--text);
+        padding: 0 12px;
+        min-width: 0;
+        font: inherit;
+        font-weight: 650;
+      }}
+      code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
       .muted {{ color: var(--muted); }}
-      .panel {{ background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin: 14px 0; }}
-      .toolbar {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
-      #screen {{ display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 14px; background: white; cursor: crosshair; }}
-      #status {{ font-size: 14px; color: var(--muted); min-height: 20px; }}
+      .app {{ width: min(1780px, calc(100vw - 48px)); margin: 28px auto; }}
+      .brand-hero {{ text-align: center; padding: 22px 0 24px; }}
+      .brand-title {{ display: inline-flex; align-items: center; gap: 13px; font-size: clamp(30px, 4vw, 58px); font-weight: 850; letter-spacing: 0; }}
+      .brand-mark {{ width: 44px; height: 44px; border: 6px solid currentColor; border-radius: 14px; display: inline-grid; place-items: center; transform: rotate(30deg); }}
+      .brand-mark::after {{ content: ""; width: 13px; height: 13px; border: 5px solid currentColor; border-radius: 5px; }}
+      .subtitle {{ margin-top: 8px; font-size: 20px; font-weight: 700; color: var(--muted); }}
+      .shell {{
+        min-height: min(820px, calc(100vh - 150px));
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }}
+      .shell-top {{ height: 78px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--border); }}
+      .traffic {{ display: flex; gap: 10px; }}
+      .dot {{ width: 16px; height: 16px; border-radius: 50%; background: #eaa39b; border: 1px solid rgba(0,0,0,0.08); }}
+      .dot:nth-child(2) {{ background: #e7c38f; }}
+      .dot:nth-child(3) {{ background: #8dccad; }}
+      .top-title {{ text-align: center; font-weight: 850; font-size: 22px; }}
+      .top-actions {{ justify-self: end; display: flex; gap: 10px; align-items: center; }}
+      .layout {{ display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr) minmax(250px, 330px); min-height: calc(min(820px, calc(100vh - 150px)) - 78px); }}
+      .sidebar {{ padding: 26px 24px; border-right: 1px solid var(--border); }}
+      .statebar {{ padding: 26px 24px; border-left: 1px solid var(--border); }}
+      .panel-title {{ font-size: 13px; letter-spacing: .04em; text-transform: uppercase; font-weight: 850; color: var(--muted); margin-bottom: 18px; }}
+      .session-card, .meta-card, .state-card {{
+        background: var(--panel-strong);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 18px;
+        box-shadow: 0 12px 34px rgba(15,23,42,0.06);
+      }}
+      .session-card {{ display: grid; grid-template-columns: 46px minmax(0,1fr); gap: 14px; align-items: center; margin-bottom: 18px; }}
+      .icon-circle {{ width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); border: 1px solid var(--border); color: var(--accent); font-weight: 900; }}
+      .session-name {{ min-width: 0; font-size: 18px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .status-ok {{ display: inline-flex; align-items: center; gap: 8px; color: var(--ok); font-weight: 800; }}
+      .status-ok::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }}
+      .meta-card {{ display: grid; gap: 14px; }}
+      .meta-label {{ color: var(--muted); font-weight: 800; font-size: 13px; }}
+      .meta-value {{ margin-top: 3px; font-weight: 800; overflow-wrap: anywhere; }}
+      .center {{ padding: 26px; min-width: 0; }}
+      .stage-head {{ display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 14px; }}
+      .stage-title {{ display: flex; align-items: center; gap: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 850; }}
+      .viewport {{
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel-strong);
+      }}
+      .browser-bar {{ height: 58px; display: grid; grid-template-columns: auto 1fr auto; gap: 13px; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--border); }}
+      .browser-dots {{ display: flex; gap: 9px; }}
+      .browser-dots span {{ width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--border); }}
+      .address {{ height: 38px; border: 1px solid var(--border); border-radius: 999px; background: var(--soft); display: flex; align-items: center; gap: 10px; padding: 0 16px; min-width: 0; color: var(--muted); font-weight: 800; }}
+      .address span {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+      .live {{ color: var(--ok); font-size: 12px; letter-spacing: .04em; }}
+      .screen-wrap {{ background: #fff; min-height: 420px; max-height: calc(100vh - 360px); overflow: auto; }}
+      #screen {{ display: block; width: 100%; height: auto; min-height: 420px; object-fit: contain; background: #fff; cursor: crosshair; }}
+      .control-dock {{ margin-top: 14px; display: grid; grid-template-columns: minmax(220px, 1fr) auto minmax(130px, 180px) auto auto; gap: 10px; align-items: center; }}
+      #status {{ min-height: 22px; color: var(--muted); font-size: 13px; font-weight: 700; }}
+      .state-list {{ display: grid; gap: 16px; }}
+      .state-card {{ display: grid; grid-template-columns: 46px 1fr auto; gap: 14px; align-items: center; }}
+      .state-main {{ font-weight: 850; }}
+      .state-sub {{ color: var(--muted); font-weight: 700; font-size: 13px; margin-top: 2px; }}
+      .pulse {{ width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }}
+      @media (max-width: 1180px) {{
+        .layout {{ grid-template-columns: 1fr; }}
+        .sidebar, .statebar {{ border: 0; }}
+        .statebar {{ border-top: 1px solid var(--border); }}
+        .control-dock {{ grid-template-columns: 1fr auto; }}
+        .control-dock input, .control-dock button {{ width: 100%; }}
+      }}
+      @media (max-width: 760px) {{
+        .app {{ width: 100%; margin: 0; }}
+        .brand-hero {{ display: none; }}
+        .shell {{ border-radius: 0; min-height: 100vh; }}
+        .shell-top {{ grid-template-columns: 1fr auto; height: auto; padding: 16px; }}
+        .traffic {{ display: none; }}
+        .top-title {{ text-align: left; font-size: 18px; }}
+        .center, .sidebar, .statebar {{ padding: 18px; }}
+      }}
     </style>
   </head>
   <body>
-    <header>
-      <div><b>OpenBrowser Manual Control</b><div class="muted">Manual browser control · Owner: {safe_owner}</div></div>
-      <div class="toolbar"><span>Lease: <code>{safe_lease_id}</code></span><button class="secondary" type="button" id="themeToggle">Night mode</button></div>
-    </header>
-    <main>
-      <div class="panel">
-        <div class="toolbar">
-          <button id="refresh" type="button">Refresh screenshot</button>
-          <form id="typeForm" class="toolbar">
-            <input id="text" autocomplete="off" placeholder="Text to type into focused field">
-            <button type="submit">Type</button>
-          </form>
-          <form id="pressForm" class="toolbar">
-            <input id="key" autocomplete="off" value="Enter" aria-label="Key">
-            <button type="submit">Press key</button>
-          </form>
-          <button id="done" type="button">End control link</button>
+    <div class="app">
+      <section class="brand-hero" aria-label="OpenBrowser">
+        <div class="brand-title"><span class="brand-mark" aria-hidden="true"></span><span>OpenBrowser</span></div>
+        <div class="subtitle">The browser infrastructure for AI agents.</div>
+      </section>
+      <main class="shell">
+        <header class="shell-top">
+          <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="top-title">OpenBrowser</div>
+          <div class="top-actions"><button class="secondary" type="button" id="themeToggle">Night mode</button></div>
+        </header>
+        <div class="layout">
+          <aside class="sidebar">
+            <div class="panel-title">Browser Sessions</div>
+            <div class="session-card">
+              <div class="icon-circle">OB</div>
+              <div>
+                <div class="session-name">Manual control</div>
+                <div class="status-ok">Active</div>
+              </div>
+            </div>
+            <div class="meta-card">
+              <div>
+                <div class="meta-label">Agent</div>
+                <div class="meta-value">{safe_owner}</div>
+              </div>
+              <div>
+                <div class="meta-label">Lease</div>
+                <div class="meta-value"><code>{safe_lease_id}</code></div>
+              </div>
+              <div>
+                <div class="meta-label">Control</div>
+                <div class="meta-value">Click screenshot, type, or press keys into the held tab.</div>
+              </div>
+              <button id="refresh" type="button">Refresh screenshot</button>
+            </div>
+          </aside>
+          <section class="center">
+            <div class="stage-head">
+              <div class="stage-title"><span>Live Browser Session</span><span class="status-ok">connected</span></div>
+              <button class="secondary" type="button" id="done">End control link</button>
+            </div>
+            <div class="viewport">
+              <div class="browser-bar">
+                <div class="browser-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div class="address"><b class="live">LIVE</b><span>lease-control/{safe_token}</span></div>
+                <button class="secondary" type="button" onclick="window.open(location.href, '_blank', 'noopener')">Open</button>
+              </div>
+              <div class="screen-wrap">
+                <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
+              </div>
+            </div>
+            <div class="control-dock">
+              <input id="text" autocomplete="off" placeholder="Type into focused field">
+              <button id="typeButton" type="button">Type</button>
+              <input id="key" autocomplete="off" value="Enter" aria-label="Key">
+              <button id="pressButton" type="button">Press</button>
+              <div id="status" data-expires-at="{safe_expires_at}">Control link active.</div>
+            </div>
+          </section>
+          <aside class="statebar">
+            <div class="panel-title">Session State</div>
+            <div class="state-list">
+              <div class="state-card"><div class="icon-circle">LC</div><div><div class="state-main">Manual control</div><div class="state-sub">Human handoff active</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div class="icon-circle">ID</div><div><div class="state-main">Held browser</div><div class="state-sub">Same lease, same tab</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div class="icon-circle">KB</div><div><div class="state-main">Keyboard input</div><div class="state-sub">Type and key press enabled</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div class="icon-circle">SC</div><div><div class="state-main">Screenshot control</div><div class="state-sub">Coordinates mapped</div></div><span class="pulse"></span></div>
+              <div class="state-card"><div class="icon-circle">PR</div><div><div class="state-main">Private session</div><div class="state-sub">No session cookies or saved passwords exposed</div></div><span class="pulse"></span></div>
+            </div>
+          </aside>
         </div>
-        <p class="muted">Click the screenshot to control the held browser tab. Use this for login, passkey, or challenge prompts. This view does not expose session cookies, saved passwords, or proxy credentials.</p>
-        <div id="status" data-expires-at="{safe_expires_at}">Control link active.</div>
-      </div>
-      <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
-    </main>
+      </main>
+    </div>
     <script>
       const token = {json.dumps(token)};
       const screen = document.getElementById('screen');
@@ -2458,8 +2626,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setStatus(`Click failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
       }});
-      document.getElementById('typeForm').addEventListener('submit', async (event) => {{
-        event.preventDefault();
+      document.getElementById('typeButton').addEventListener('click', async () => {{
         const text = document.getElementById('text').value;
         setStatus('Typing...');
         try {{
@@ -2471,8 +2638,13 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setStatus(`Type failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
       }});
-      document.getElementById('pressForm').addEventListener('submit', async (event) => {{
-        event.preventDefault();
+      document.getElementById('text').addEventListener('keydown', (event) => {{
+        if (event.key === 'Enter') {{
+          event.preventDefault();
+          document.getElementById('typeButton').click();
+        }}
+      }});
+      document.getElementById('pressButton').addEventListener('click', async () => {{
         const key = document.getElementById('key').value || 'Enter';
         setStatus(`Pressing ${{key}}...`);
         try {{
@@ -2481,6 +2653,12 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setTimeout(refresh, 700);
         }} catch (error) {{
           setStatus(`Key failed: ${{String(error.message || error).slice(0, 180)}}`);
+        }}
+      }});
+      document.getElementById('key').addEventListener('keydown', (event) => {{
+        if (event.key === 'Enter') {{
+          event.preventDefault();
+          document.getElementById('pressButton').click();
         }}
       }});
       document.getElementById('done').addEventListener('click', async () => {{
