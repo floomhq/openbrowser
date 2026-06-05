@@ -54,7 +54,8 @@ The passwordless mode embeds the temporary VNC password into the noVNC URL fragm
 ## Proxy Check
 
 ```bash
-openbrowser-adapter --identity work-main status
+openbrowser status
+openbrowser auth https://example.com/login --identity work-main --owner smoke
 openbrowser-use --identity work-main --json open 'https://api.ipify.org?format=json'
 ```
 

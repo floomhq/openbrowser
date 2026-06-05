@@ -22,7 +22,7 @@ flowchart TD
 | --- | --- | --- |
 | Broker MCP | Normal browser agents, authenticated identities, concurrent sessions, feedback, telemetry, audits | `broker_docs`, `browser_lease`, `browser_release`, `broker_audit` |
 | Remote MCP | Agents running outside the browser host | `openbrowser-remote-mcp` with `OPENBROWSER_API_KEY` and `OPENBROWSER_BASE_URL` |
-| OpenBrowser wrapper | OpenBrowser diagnostics and OpenBrowser MCP surface | `openbrowser-adapter --identity <id> ...` |
+| OpenBrowser CLI | Broker status, docs, auth handoffs, active lease-control links, and smoke checks | `openbrowser <status|docs|auth|open|lease-control|audit> ...` |
 | browser-use wrapper | browser-use task execution against broker-leased browsers | `openbrowser-use --identity <id> ...` |
 | Fast disposable browser | Anonymous QA, local dev-server screenshots, public pages, no account state | gstack `/browse` or another disposable-browser command |
 
@@ -41,7 +41,8 @@ flowchart TD
 `config/identities.local.json` maps identity names to profile directories, proxy refs, locale, timezone, and parallel-session policy.
 
 ```bash
-openbrowser-adapter --identity work-main status
+openbrowser status
+openbrowser auth https://example.com/login --identity work-main --owner agent-name
 openbrowser-use --identity work-main --json open https://example.com
 ```
 

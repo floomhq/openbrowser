@@ -301,7 +301,8 @@ Then set `"proxy_ref": "residential:work-main"` on the identity. The broker star
 ```bash
 openbrowser-audit --json
 openbrowser-use --json open https://example.com
-openbrowser-adapter status --format json
+openbrowser status
+openbrowser docs quickstart
 ```
 
 Systemd examples live in `systemd/`. Detailed runbooks live in `docs/`.

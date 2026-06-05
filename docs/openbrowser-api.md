@@ -122,7 +122,7 @@ curl -fsS "$BASE/identities" \
   -H "user-agent: openbrowser-client/1.0"
 ```
 
-Start a human login handoff for a profile:
+Start a human login handoff for a persisted identity:
 
 ```bash
 curl -fsS "$BASE/auth/request" \
@@ -132,9 +132,9 @@ curl -fsS "$BASE/auth/request" \
   -d '{"owner":"profile-login","identity_id":"work-main","url":"https://example.com/login","reason":"profile_login"}'
 ```
 
-Open the returned `portal_url`, sign in inside the browser view, then mark it complete in the portal. Future leases for that `identity_id` reuse the persisted profile.
+Open the returned `portal_url`, sign in inside the browser view, then mark it complete in the portal. Future leases for that `identity_id` reuse the persisted browser state.
 
-Generate several profile login links at once:
+Generate several identity login links at once:
 
 ```bash
 curl -fsS "$BASE/auth/batch" \

@@ -14,11 +14,12 @@ Use `--identity <id>` when account state or proxy routing is required.
 ## OpenBrowser
 
 ```bash
-openbrowser-adapter status
-openbrowser-adapter --identity work-main status
+openbrowser status
+openbrowser docs quickstart
+openbrowser auth https://example.com/login --identity work-main --owner agent-name
 ```
 
-OpenBrowser is a broker-backed adapter, not a separate browser pool. Use the wrapper instead of connecting raw OpenBrowser processes to pool CDP ports.
+OpenBrowser is broker-backed, not a separate browser pool. Use the CLI for broker status, docs, auth handoffs, and lease-control links instead of connecting raw OpenBrowser processes to pool CDP ports.
 
 ## Manual Lease
 

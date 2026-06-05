@@ -39,7 +39,7 @@ TOPICS: dict[str, dict[str, Any]] = {
             {
                 "route": "openbrowser",
                 "use_for": "OpenBrowser diagnostics and OpenBrowser MCP surface.",
-                "start": "openbrowser-adapter --identity <id> ...",
+                "start": "openbrowser <status|docs|open|auth|lease-control|audit> ...",
                 "note": "OpenBrowser is an adapter on top of broker leases, not a separate browser pool.",
             },
             {
@@ -78,7 +78,8 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Lease selection runs under the broker lease-state lock and rechecks browser health before returning a lease.",
         ],
         "commands": [
-            "openbrowser-adapter --identity work-main status",
+            "openbrowser status",
+            "openbrowser auth https://example.com/login --identity work-main --owner agent-name",
             "openbrowser-use --identity work-main --json open https://example.com",
         ],
         "runbooks": [
@@ -99,15 +100,16 @@ TOPICS: dict[str, dict[str, Any]] = {
         ],
     },
     "openbrowser": {
-        "title": "OpenBrowser Wrapper",
+        "title": "OpenBrowser CLI",
         "commands": [
-            "openbrowser-adapter --identity work-main status",
-            "openbrowser-adapter status",
+            "openbrowser status",
+            "openbrowser docs quickstart",
+            "openbrowser auth https://example.com/login --identity work-main --owner agent-name",
         ],
         "notes": [
-            "The wrapper generates a temporary OpenBrowser config pointing at the leased CDP port and profile.",
-            "OpenBrowser is useful for session diagnostics and its built-in MCP surface.",
-            "Use the wrapper instead of shared ports when multiple agents are active.",
+            "The CLI talks to the local broker API and reads the local server-side API key file when needed.",
+            "Use it for status, docs, auth handoffs, active lease-control links, and quick smoke checks.",
+            "Use Broker MCP directly for normal click/type/screenshot workflows when tools are available.",
         ],
     },
     "auth": {
