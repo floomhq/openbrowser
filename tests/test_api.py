@@ -432,6 +432,7 @@ def test_openbrowser_identities_requires_key_and_returns_redacted_status(monkeyp
 
 def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "status", lambda: {"leases": {}})
     monkeypatch.setattr(
         api,
         "create_auth_request",
@@ -466,6 +467,7 @@ def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
 
 def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "status", lambda: {"leases": {}})
     created = []
 
     def fake_create_auth_request(owner, url, reason, identity_id):
@@ -493,6 +495,49 @@ def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> N
     assert response.status_code == 200
     assert response.json()["identity_id"] == "chrome-depontefede"
     assert created == [("pytest", "https://lovable.dev/", "login_required", "chrome-depontefede")]
+
+
+def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "status",
+        lambda: {
+            "leases": {
+                "lease-active": {
+                    "lease_id": "lease-active",
+                    "identity_id": "chrome-depontefede",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        api,
+        "create_control_session",
+        lambda owner, lease_id: {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+            "local_portal_url": "http://127.0.0.1:8767/auth/lease-control/control-token",
+        },
+    )
+    monkeypatch.setattr(api, "create_auth_request", lambda *_args: (_ for _ in ()).throw(AssertionError("must not create pending auth request")))
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "profile": "chrome-depontefede", "url": "https://lovable.dev/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "active_identity_leased"
+    assert response.json()["identity_id"] == "chrome-depontefede"
+    assert response.json()["active_lease_id"] == "lease-active"
+    assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
+    assert "Inspect tabs/snapshot/screenshot" in response.json()["warning"]
 
 
 def test_openbrowser_auth_request_rejects_conflicting_profile_alias(monkeypatch) -> None:

@@ -217,6 +217,37 @@ def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: 
     return RedirectResponse(str(control["portal_url"]), status_code=303)
 
 
+def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | None:
+    if not request.identity_id:
+        return None
+    lease_id = _active_identity_lease_id(request.identity_id)
+    if not lease_id:
+        return None
+    control = create_control_session(request.owner, lease_id)
+    _safe_record_event(
+        source=request.owner,
+        event_type="session",
+        message="Auth request returned active lease control",
+        lease_id=lease_id,
+        url=request.url,
+        tags=["auth", "lease-control", "active-identity"],
+        data={"identity_id": request.identity_id, "token": control.get("token")},
+    )
+    return {
+        "token": control["token"],
+        "owner": request.owner,
+        "url": request.url,
+        "reason": request.reason,
+        "status": "active_identity_leased",
+        "identity_id": request.identity_id,
+        "active_lease_id": lease_id,
+        "portal_url": control["portal_url"],
+        "local_portal_url": control["local_portal_url"],
+        "lease_control": control,
+        "warning": "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this control URL.",
+    }
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     ensure_dirs()
@@ -1846,6 +1877,9 @@ async def openbrowser_profiles_status(_auth: str = Depends(require_openbrowser_a
 
 @app.post("/openbrowser/v1/auth/request")
 async def openbrowser_auth_request(request: AuthRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
+    active_response = _active_identity_control_response(request)
+    if active_response:
+        return active_response
     return await auth_request(request)
 
 
