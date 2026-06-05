@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+cd "$ROOT_DIR"
+if [[ -f /etc/default/openbrowser ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/default/openbrowser
+  set +a
+fi
+export OPENBROWSER_BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-$ROOT_DIR}"
+exec python3 -m ax_browser_broker.mcp_server
