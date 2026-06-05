@@ -179,6 +179,11 @@ class OpenBrowserOpenRequest(BaseModel):
     identity_id: str | None = None
     ttl_seconds: int = Field(default=300, ge=60, le=14400)
     wait_until: str = "domcontentloaded"
+    verify: bool = True
+    screenshot: bool = False
+    control: bool = False
+    control_owner: str | None = None
+    control_ttl_seconds: int = Field(default=900, ge=60, le=3600)
 
 
 class OpenBrowserAuthBatchRequest(BaseModel):
@@ -1930,7 +1935,37 @@ async def openbrowser_open(request: OpenBrowserOpenRequest, _auth: str = Depends
         if isinstance(error, HTTPException):
             raise
         raise _http_error(error) from error
-    return {"lease": lease_obj, "navigation": navigation}
+    result: dict[str, Any] = {"lease": lease_obj, "navigation": navigation}
+    lease_id = str(lease_obj["lease_id"])
+    if request.verify:
+        try:
+            snapshot = await browser_snapshot(LeaseIdRequest(lease_id=lease_id))
+            result["snapshot"] = {
+                "title": snapshot.get("title"),
+                "url": snapshot.get("url"),
+                "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+                "element_count": len(snapshot.get("elements") or []),
+                "slot": snapshot.get("slot"),
+            }
+        except Exception as error:
+            result["verification_error"] = str(error)
+    if request.screenshot:
+        try:
+            shot = await browser_screenshot(ScreenshotRequest(lease_id=lease_id, full_page=False))
+            result["screenshot"] = {key: value for key, value in shot.items() if key != "base64"}
+        except Exception as error:
+            result["screenshot_error"] = str(error)
+    if request.control:
+        control = await lease_control_request(
+            LeaseControlRequest(
+                lease_id=lease_id,
+                owner=request.control_owner or request.owner,
+                ttl_seconds=request.control_ttl_seconds,
+            )
+        )
+        result["control"] = control
+        result["portal_url"] = control.get("portal_url")
+    return result
 
 
 @app.post("/openbrowser/v1/browser/navigate")

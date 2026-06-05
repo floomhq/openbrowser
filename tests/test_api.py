@@ -708,6 +708,70 @@ def test_openbrowser_open_releases_lease_on_navigation_failure(monkeypatch) -> N
     assert released == ["lease-open"]
 
 
+def test_openbrowser_open_can_return_verified_control_link(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+
+    async def fake_create_lease(_request):
+        return {"lease_id": "lease-open", "name": "pool-b", "identity_id": "chrome-work"}
+
+    async def fake_browser_navigate(_request):
+        return {"lease_id": "lease-open", "slot": "pool-b", "url": "https://lovable.dev/dashboard", "title": "Home | Lovable"}
+
+    async def fake_browser_snapshot(_request):
+        return {
+            "lease_id": "lease-open",
+            "slot": "pool-b",
+            "title": "Home | Lovable",
+            "url": "https://lovable.dev/dashboard",
+            "bodyText": "A" * 1400,
+            "elements": [{"selector": "button"}],
+        }
+
+    async def fake_browser_screenshot(_request):
+        return {
+            "lease_id": "lease-open",
+            "slot": "pool-b",
+            "path": "/tmp/shot.png",
+            "mime_type": "image/png",
+            "base64": "secret-image-data",
+        }
+
+    async def fake_lease_control(_request):
+        return {
+            "token": "control-token",
+            "lease_id": "lease-open",
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+        }
+
+    monkeypatch.setattr(api, "create_lease", fake_create_lease)
+    monkeypatch.setattr(api, "browser_navigate", fake_browser_navigate)
+    monkeypatch.setattr(api, "browser_snapshot", fake_browser_snapshot)
+    monkeypatch.setattr(api, "browser_screenshot", fake_browser_screenshot)
+    monkeypatch.setattr(api, "lease_control_request", fake_lease_control)
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/open",
+        json={
+            "owner": "pytest-open",
+            "url": "https://lovable.dev",
+            "identity_id": "chrome-work",
+            "control": True,
+            "screenshot": True,
+        },
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["portal_url"].endswith("/auth/lease-control/control-token")
+    assert data["snapshot"]["title"] == "Home | Lovable"
+    assert data["snapshot"]["bodyText"] == "A" * 1200
+    assert data["snapshot"]["element_count"] == 1
+    assert data["screenshot"]["path"] == "/tmp/shot.png"
+    assert "base64" not in data["screenshot"]
+
+
 def test_lease_failure_records_telemetry(monkeypatch) -> None:
     events = []
     monkeypatch.setattr(api, "lease", lambda *_args, **_kwargs: (_ for _ in ()).throw(api.LeaseError("No healthy free browser slots")))

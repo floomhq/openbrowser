@@ -111,6 +111,35 @@ def browser_open(owner: str, url: str, identity_id: str | None = None, ttl_secon
 
 
 @mcp.tool()
+def browser_open_control(
+    owner: str,
+    url: str,
+    identity_id: str | None = None,
+    ttl_seconds: int = 900,
+    control_ttl_seconds: int = 900,
+    screenshot: bool = False,
+) -> dict[str, Any]:
+    """Open a URL, verify the page, and return a human-control link in one call."""
+    result = browser_open(owner=owner, url=url, identity_id=identity_id, ttl_seconds=ttl_seconds)
+    lease_id = str((result.get("lease") or {}).get("lease_id") or result.get("lease_id") or "")
+    if lease_id:
+        snapshot = browser_snapshot(lease_id)
+        result["snapshot"] = {
+            "title": snapshot.get("title"),
+            "url": snapshot.get("url"),
+            "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+            "element_count": len(snapshot.get("elements") or []),
+            "slot": snapshot.get("slot"),
+        }
+        if screenshot:
+            result["screenshot"] = {key: value for key, value in browser_screenshot(lease_id).items() if key != "base64"}
+        control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+        result["control"] = control
+        result["portal_url"] = control.get("portal_url")
+    return result
+
+
+@mcp.tool()
 def browser_navigate(lease_id: str, url: str) -> dict[str, Any]:
     """Navigate a leased browser session to a URL."""
     return _request("POST", "/browser/navigate", {"lease_id": lease_id, "url": url})

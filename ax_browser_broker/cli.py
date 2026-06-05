@@ -65,6 +65,20 @@ def _print(data: dict[str, Any]) -> int:
     return 0
 
 
+def _compact_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "title": snapshot.get("title"),
+        "url": snapshot.get("url"),
+        "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+        "element_count": len(snapshot.get("elements") or []),
+        "slot": snapshot.get("slot"),
+    }
+
+
+def _compact_screenshot(screenshot: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in screenshot.items() if key != "base64"}
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
     return _print(_request("GET", "/status"))
 
@@ -75,19 +89,43 @@ def cmd_docs(args: argparse.Namespace) -> int:
 
 
 def cmd_open(args: argparse.Namespace) -> int:
-    return _print(
-        _request(
+    result = _request(
+        "POST",
+        "/openbrowser/v1/open",
+        {
+            "owner": args.owner,
+            "identity_id": args.identity,
+            "url": args.url,
+            "ttl_seconds": args.ttl,
+        },
+        auth=True,
+    )
+    lease_id = str((result.get("lease") or {}).get("lease_id") or "")
+    if lease_id and not args.no_verify:
+        snapshot = _request("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": lease_id}, auth=True)
+        result["snapshot"] = _compact_snapshot(snapshot)
+    if lease_id and args.screenshot:
+        screenshot = _request(
             "POST",
-            "/openbrowser/v1/open",
+            "/openbrowser/v1/browser/screenshot",
+            {"lease_id": lease_id, "full_page": False},
+            auth=True,
+        )
+        result["screenshot"] = _compact_screenshot(screenshot)
+    if lease_id and args.control:
+        control = _request(
+            "POST",
+            "/openbrowser/v1/lease-control/request",
             {
-                "owner": args.owner,
-                "identity_id": args.identity,
-                "url": args.url,
-                "ttl_seconds": args.ttl,
+                "owner": args.control_owner or args.owner,
+                "lease_id": lease_id,
+                "ttl_seconds": args.control_ttl,
             },
             auth=True,
         )
-    )
+        result["control"] = control
+        result["portal_url"] = control.get("portal_url")
+    return _print(result)
 
 
 def cmd_auth(args: argparse.Namespace) -> int:
@@ -141,6 +179,11 @@ def build_parser() -> argparse.ArgumentParser:
     open_cmd.add_argument("--identity", default=None)
     open_cmd.add_argument("--owner", default="openbrowser-cli")
     open_cmd.add_argument("--ttl", type=int, default=900)
+    open_cmd.add_argument("--control", action="store_true", help="Return a temporary human-control portal URL")
+    open_cmd.add_argument("--control-owner", default=None)
+    open_cmd.add_argument("--control-ttl", type=int, default=900)
+    open_cmd.add_argument("--screenshot", action="store_true", help="Capture a compact screenshot receipt without base64 output")
+    open_cmd.add_argument("--no-verify", action="store_true", help="Skip the post-navigation snapshot receipt")
     open_cmd.set_defaults(func=cmd_open)
 
     auth = sub.add_parser("auth", help="Create an auth handoff or active lease-control response")

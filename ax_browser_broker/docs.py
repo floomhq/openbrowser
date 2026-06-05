@@ -7,6 +7,7 @@ TOPICS: dict[str, dict[str, Any]] = {
     "quickstart": {
         "title": "OpenBrowser Broker Quickstart",
         "steps": [
+            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens the page, verifies state, and returns the control URL.",
             "Call browser_lease with owner and optional identity_id.",
             "Immediately call browser_snapshot or browser_screenshot to see the current page state before doing anything else.",
             "Do NOT call browser_navigate if the current page is already meaningful (e.g. after a human auth handoff the browser is on the target page). Only navigate when the current page is blank, a new tab, or unrelated to the task.",
@@ -16,6 +17,7 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Call broker_audit after browser-agent work.",
         ],
         "examples": [
+            {"tool": "browser_open_control", "args": {"owner": "agent-name", "identity_id": "work-main", "url": "https://example.com"}},
             {"tool": "browser_lease", "args": {"owner": "agent-name", "identity_id": "work-main"}},
             {"tool": "browser_snapshot", "args": {"lease_id": "<lease_id>"}},
             {"tool": "browser_navigate", "args": {"lease_id": "<lease_id>", "url": "https://example.com"}},
@@ -104,10 +106,12 @@ TOPICS: dict[str, dict[str, Any]] = {
         "commands": [
             "openbrowser status",
             "openbrowser docs quickstart",
+            "openbrowser open https://example.com --identity work-main --control",
             "openbrowser auth https://example.com/login --identity work-main --owner agent-name",
         ],
         "notes": [
             "The CLI talks to the local broker API and reads the local server-side API key file when needed.",
+            "Use open --control for simple 'open this for me' requests; it returns a verified control URL in one command.",
             "Use it for status, docs, auth handoffs, active lease-control links, and quick smoke checks.",
             "Use Broker MCP directly for normal click/type/screenshot workflows when tools are available.",
         ],

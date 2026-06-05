@@ -78,6 +78,51 @@ def test_remote_mcp_browser_lease_posts_to_public_api(monkeypatch) -> None:
     assert result["lease_id"] == "lease-123"
 
 
+def test_remote_mcp_browser_open_control_posts_one_step_payload(monkeypatch) -> None:
+    captured = []
+
+    def fake_urlopen(request, timeout):
+        body = json.loads(request.data.decode("utf-8")) if request.data else None
+        captured.append((request.full_url, body))
+        if request.full_url.endswith("/open"):
+            return FakeResponse({"lease": {"lease_id": "lease-remote"}, "navigation": {"url": "https://lovable.dev/dashboard"}})
+        if request.full_url.endswith("/browser/snapshot"):
+            return FakeResponse({"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "C" * 1400, "elements": [{}], "slot": "pool-b"})
+        if request.full_url.endswith("/browser/screenshot"):
+            return FakeResponse({"path": "/tmp/shot.png", "base64": "image-data"})
+        if request.full_url.endswith("/lease-control/request"):
+            return FakeResponse({"portal_url": "https://browser.example.com/auth/lease-control/tok"})
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
+    monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
+
+    result = remote_mcp_server.browser_open_control(
+        owner="pytest",
+        url="https://lovable.dev",
+        identity_id="chrome-work",
+        ttl_seconds=600,
+        control_ttl_seconds=300,
+        screenshot=True,
+    )
+
+    assert captured == [
+        (
+            "http://127.0.0.1:8767/openbrowser/v1/open",
+            {"owner": "pytest", "url": "https://lovable.dev", "identity_id": "chrome-work", "ttl_seconds": 600},
+        ),
+        ("http://127.0.0.1:8767/openbrowser/v1/browser/snapshot", {"lease_id": "lease-remote"}),
+        ("http://127.0.0.1:8767/openbrowser/v1/browser/screenshot", {"lease_id": "lease-remote", "full_page": False}),
+        (
+            "http://127.0.0.1:8767/openbrowser/v1/lease-control/request",
+            {"lease_id": "lease-remote", "owner": "pytest", "ttl_seconds": 300},
+        ),
+    ]
+    assert result["portal_url"].endswith("/tok")
+    assert result["snapshot"]["bodyText"] == "C" * 1200
+    assert "base64" not in result["screenshot"]
+
+
 def test_remote_mcp_http_errors_are_actionable(monkeypatch) -> None:
     def fake_urlopen(_request, timeout):
         assert timeout == 60

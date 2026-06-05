@@ -74,6 +74,39 @@ def browser_navigate(lease_id: str, url: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def browser_open_control(
+    owner: str,
+    url: str,
+    identity_id: str | None = None,
+    ttl_seconds: int = 900,
+    control_ttl_seconds: int = 900,
+) -> dict[str, Any]:
+    """Open a URL, verify the page, and return a human-control link in one call."""
+    lease_obj = browser_lease(owner=owner, ttl_seconds=ttl_seconds, identity_id=identity_id)
+    lease_id = str(lease_obj["lease_id"])
+    try:
+        navigation = browser_navigate(lease_id=lease_id, url=url)
+    except Exception:
+        browser_release(lease_id)
+        raise
+    snapshot = browser_snapshot(lease_id)
+    control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+    return {
+        "lease": lease_obj,
+        "navigation": navigation,
+        "snapshot": {
+            "title": snapshot.get("title"),
+            "url": snapshot.get("url"),
+            "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+            "element_count": len(snapshot.get("elements") or []),
+            "slot": snapshot.get("slot"),
+        },
+        "control": control,
+        "portal_url": control.get("portal_url"),
+    }
+
+
+@mcp.tool()
 def browser_snapshot(lease_id: str) -> dict[str, Any]:
     """Return text and interactive element snapshot for the active page."""
     return _request("POST", "/browser/snapshot", {"lease_id": lease_id})
