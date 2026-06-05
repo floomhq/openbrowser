@@ -2,6 +2,12 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
+if [[ -f /etc/default/openbrowser ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source /etc/default/openbrowser
+  set +a
+fi
 export OPENBROWSER_BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-$ROOT_DIR}"
 
 # Keep the broker API alive during host memory pressure. Browser children are
