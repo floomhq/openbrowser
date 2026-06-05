@@ -110,6 +110,68 @@ def test_cli_open_control_sends_one_step_handoff_payload(monkeypatch, capsys) ->
     assert "base64" not in output["screenshot"]
 
 
+def test_cli_open_control_reuses_matching_active_identity_lease(monkeypatch, capsys) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None, auth=False):
+        calls.append((method, path, body, auth))
+        if path == "/openbrowser/v1/open":
+            raise cli.CliError("HTTP 400: Identity already leased at max parallel sessions: chrome-work")
+        if path == "/status":
+            return {
+                "leases": {
+                    "lease-active": {"lease_id": "lease-active", "name": "pool-f", "identity_id": "chrome-work", "owner": "other-agent"}
+                }
+            }
+        if path == "/openbrowser/v1/browser/tabs":
+            return {"tabs": [{"index": 0, "active": True, "url": "https://lovable.dev/dashboard", "title": "Home | Lovable"}]}
+        if path == "/openbrowser/v1/browser/snapshot":
+            return {"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "ok", "elements": [], "slot": "pool-f"}
+        if path == "/openbrowser/v1/lease-control/request":
+            return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(cli, "_request", fake_request)
+
+    assert (
+        cli.main(
+            [
+                "open",
+                "https://lovable.dev",
+                "--identity",
+                "chrome-work",
+                "--owner",
+                "pytest-open",
+                "--control",
+            ]
+        )
+        == 0
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert output["reused_existing_lease"] is True
+    assert output["lease"]["lease_id"] == "lease-active"
+    assert output["navigation"]["status"] == "already_open"
+    assert output["portal_url"].endswith("/tok")
+    assert calls == [
+        (
+            "POST",
+            "/openbrowser/v1/open",
+            {"owner": "pytest-open", "identity_id": "chrome-work", "url": "https://lovable.dev", "ttl_seconds": 900},
+            True,
+        ),
+        ("GET", "/status", None, False),
+        ("POST", "/openbrowser/v1/browser/tabs", {"lease_id": "lease-active"}, True),
+        ("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": "lease-active"}, True),
+        (
+            "POST",
+            "/openbrowser/v1/lease-control/request",
+            {"owner": "pytest-open", "lease_id": "lease-active", "ttl_seconds": 900},
+            True,
+        ),
+    ]
+
+
 def test_cli_prints_compact_http_errors(monkeypatch, capsys) -> None:
     def fake_request(_request, timeout=None):
         raise urllib.error.HTTPError(

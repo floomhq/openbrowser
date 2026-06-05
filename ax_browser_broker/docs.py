@@ -7,7 +7,7 @@ TOPICS: dict[str, dict[str, Any]] = {
     "quickstart": {
         "title": "OpenBrowser Broker Quickstart",
         "steps": [
-            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens the page, verifies state, and returns the control URL.",
+            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens or reuses the page, verifies state with a compact snapshot, and returns the control URL. Do not call browser_screenshot for this path unless the user explicitly asks for visual proof.",
             "Call browser_lease with owner and optional identity_id.",
             "Immediately call browser_snapshot or browser_screenshot to see the current page state before doing anything else.",
             "Do NOT call browser_navigate if the current page is already meaningful (e.g. after a human auth handoff the browser is on the target page). Only navigate when the current page is blank, a new tab, or unrelated to the task.",

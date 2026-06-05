@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,27 @@ def _compact_screenshot(screenshot: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in screenshot.items() if key != "base64"}
 
 
+def _host_matches(requested_url: str, current_url: str) -> bool:
+    requested_host = (urllib.parse.urlparse(requested_url).hostname or "").removeprefix("www.")
+    current_host = (urllib.parse.urlparse(current_url).hostname or "").removeprefix("www.")
+    if not requested_host or not current_host:
+        return False
+    return current_host == requested_host or current_host.endswith("." + requested_host)
+
+
+def _matching_active_identity_lease(identity_id: str, url: str) -> tuple[str, dict[str, Any], dict[str, Any]] | None:
+    leases = (_request("GET", "/status").get("leases") or {})
+    for lease_id, lease_data in leases.items():
+        if lease_data.get("identity_id") != identity_id:
+            continue
+        tabs = _request("POST", "/openbrowser/v1/browser/tabs", {"lease_id": str(lease_id)}, auth=True).get("tabs") or []
+        active_tabs = [tab for tab in tabs if tab.get("active")] or tabs
+        if any(_host_matches(url, str(tab.get("url") or "")) for tab in active_tabs):
+            snapshot = _request("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": str(lease_id)}, auth=True)
+            return str(lease_id), dict(lease_data), snapshot
+    return None
+
+
 def cmd_status(_args: argparse.Namespace) -> int:
     return _print(_request("GET", "/status"))
 
@@ -88,21 +110,42 @@ def cmd_docs(args: argparse.Namespace) -> int:
 
 
 def cmd_open(args: argparse.Namespace) -> int:
-    result = _request(
-        "POST",
-        "/openbrowser/v1/open",
-        {
-            "owner": args.owner,
-            "identity_id": args.identity,
-            "url": args.url,
-            "ttl_seconds": args.ttl,
-        },
-        auth=True,
-    )
+    try:
+        result = _request(
+            "POST",
+            "/openbrowser/v1/open",
+            {
+                "owner": args.owner,
+                "identity_id": args.identity,
+                "url": args.url,
+                "ttl_seconds": args.ttl,
+            },
+            auth=True,
+        )
+    except CliError as error:
+        if not args.identity or "Identity already leased" not in str(error):
+            raise
+        match = _matching_active_identity_lease(args.identity, args.url)
+        if not match:
+            raise
+        lease_id, lease_data, snapshot = match
+        result = {
+            "lease": {"lease_id": lease_id, **lease_data},
+            "navigation": {
+                "lease_id": lease_id,
+                "slot": lease_data.get("name"),
+                "url": snapshot.get("url"),
+                "title": snapshot.get("title"),
+                "status": "already_open",
+            },
+            "snapshot": _compact_snapshot(snapshot),
+            "reused_existing_lease": True,
+        }
     lease_id = str((result.get("lease") or {}).get("lease_id") or "")
     if lease_id and not args.no_verify:
-        snapshot = _request("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": lease_id}, auth=True)
-        result["snapshot"] = _compact_snapshot(snapshot)
+        if "snapshot" not in result:
+            snapshot = _request("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": lease_id}, auth=True)
+            result["snapshot"] = _compact_snapshot(snapshot)
     if lease_id and args.screenshot:
         screenshot = _request(
             "POST",

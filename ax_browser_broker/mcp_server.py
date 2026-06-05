@@ -74,6 +74,46 @@ def browser_navigate(lease_id: str, url: str) -> dict[str, Any]:
     return _request("POST", "/browser/navigate", {"lease_id": lease_id, "url": url})
 
 
+def _compact_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "title": snapshot.get("title"),
+        "url": snapshot.get("url"),
+        "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+        "element_count": len(snapshot.get("elements") or []),
+        "slot": snapshot.get("slot"),
+    }
+
+
+def _host_matches(requested_url: str, current_url: str) -> bool:
+    requested_host = (urllib.parse.urlparse(requested_url).hostname or "").removeprefix("www.")
+    current_host = (urllib.parse.urlparse(current_url).hostname or "").removeprefix("www.")
+    if not requested_host or not current_host:
+        return False
+    return current_host == requested_host or current_host.endswith("." + requested_host)
+
+
+def _active_identity_leases(identity_id: str) -> list[tuple[str, dict[str, Any]]]:
+    leases = browser_status().get("leases") or {}
+    return [
+        (str(lease_id), dict(lease_data))
+        for lease_id, lease_data in leases.items()
+        if lease_data.get("identity_id") == identity_id
+    ]
+
+
+def _matching_active_identity_lease(identity_id: str, url: str) -> tuple[str, dict[str, Any], dict[str, Any]] | None:
+    for lease_id, lease_data in _active_identity_leases(identity_id):
+        try:
+            tabs = browser_tabs(lease_id).get("tabs") or []
+        except Exception:
+            continue
+        active_tabs = [tab for tab in tabs if tab.get("active")] or tabs
+        if any(_host_matches(url, str(tab.get("url") or "")) for tab in active_tabs):
+            snapshot = browser_snapshot(lease_id)
+            return lease_id, lease_data, snapshot
+    return None
+
+
 @mcp.tool()
 def browser_open_control(
     owner: str,
@@ -83,7 +123,29 @@ def browser_open_control(
     control_ttl_seconds: int = 900,
 ) -> dict[str, Any]:
     """Open a URL, verify the page, and return a human-control link in one call."""
-    lease_obj = browser_lease(owner=owner, ttl_seconds=ttl_seconds, identity_id=identity_id)
+    try:
+        lease_obj = browser_lease(owner=owner, ttl_seconds=ttl_seconds, identity_id=identity_id)
+    except Exception as error:
+        if identity_id and "Identity already leased" in str(error):
+            match = _matching_active_identity_lease(identity_id, url)
+            if match:
+                lease_id, lease_obj, snapshot = match
+                control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+                return {
+                    "lease": {"lease_id": lease_id, **lease_obj},
+                    "navigation": {
+                        "lease_id": lease_id,
+                        "slot": lease_obj.get("name"),
+                        "url": snapshot.get("url"),
+                        "title": snapshot.get("title"),
+                        "status": "already_open",
+                    },
+                    "snapshot": _compact_snapshot(snapshot),
+                    "control": control,
+                    "portal_url": control.get("portal_url"),
+                    "reused_existing_lease": True,
+                }
+        raise
     lease_id = str(lease_obj["lease_id"])
     try:
         navigation = browser_navigate(lease_id=lease_id, url=url)
@@ -95,15 +157,10 @@ def browser_open_control(
     return {
         "lease": lease_obj,
         "navigation": navigation,
-        "snapshot": {
-            "title": snapshot.get("title"),
-            "url": snapshot.get("url"),
-            "bodyText": str(snapshot.get("bodyText") or "")[:1200],
-            "element_count": len(snapshot.get("elements") or []),
-            "slot": snapshot.get("slot"),
-        },
+        "snapshot": _compact_snapshot(snapshot),
         "control": control,
         "portal_url": control.get("portal_url"),
+        "reused_existing_lease": False,
     }
 
 
