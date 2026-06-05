@@ -118,6 +118,7 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Send the returned portal_url to the human operator.",
             "The public hostname exposes only auth and temporary noVNC traffic when deployed behind a proxy.",
             "The portal starts noVNC for login and marks completion.",
+            "If the requested identity is already leased, the portal redirects to lease_control for that active browser instead of opening a competing Chrome profile.",
             "During identity auth, the broker pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile.",
             "If the identity has proxy_ref, the temporary auth Chrome also uses that proxy through ax-proxy-forwarder.",
             "After completion, lease the same identity_id; saved browser state is reused.",

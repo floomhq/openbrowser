@@ -106,6 +106,10 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert "enter it in the browser prompt" in response.text
     assert "manual-pass" in response.text
     assert "#password=manual-pass" not in response.text
+    assert 'id="authPasswordCard"' in response.text
+    assert 'id="showPasswordCard"' in response.text
+    assert "authPasswordCard?.classList.add('is-hidden')" in response.text
+    assert "showPasswordCard?.classList.add('is-visible')" in response.text
 
 
 def test_auth_portal_reuses_existing_vnc_without_restart(tmp_path, monkeypatch) -> None:
@@ -167,6 +171,53 @@ def test_auth_complete_returns_gone_for_expired_request(tmp_path, monkeypatch) -
     response = client.post("/auth/" + request["token"] + "/complete")
 
     assert response.status_code == 410
+
+
+def test_auth_portal_redirects_active_identity_to_lease_control(monkeypatch) -> None:
+    monkeypatch.setattr(
+        api,
+        "get_pending_auth_request",
+        lambda _token: {
+            "token": "tok",
+            "owner": "agent",
+            "url": "https://app.slack.com/",
+            "reason": "login_required",
+            "status": "pending",
+            "identity_id": "chrome-depontefede",
+        },
+    )
+    monkeypatch.setattr(api, "current_auth_vnc", lambda _token: None)
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
+    monkeypatch.setattr(api, "start_auth_vnc", lambda _token: (_ for _ in ()).throw(api.AuthError("Identity is actively leased: chrome-depontefede")))
+    monkeypatch.setattr(
+        api,
+        "status",
+        lambda: {
+            "leases": {
+                "lease-one": {
+                    "lease_id": "lease-one",
+                    "identity_id": "chrome-depontefede",
+                }
+            }
+        },
+    )
+    monkeypatch.setattr(
+        api,
+        "create_control_session",
+        lambda owner, lease_id: {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+        },
+    )
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.get("/auth/tok", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://browser.example.com/auth/lease-control/control-token"
 
 
 def test_lifespan_starts_and_stops_controller(monkeypatch) -> None:

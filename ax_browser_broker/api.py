@@ -12,7 +12,7 @@ from typing import Any
 
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel, Field
 
 from .audit import run_audit
@@ -176,6 +176,35 @@ class OpenBrowserAuthBatchRequest(BaseModel):
     identity_ids: list[str] = Field(min_length=1, max_length=20)
     url: str = "https://accounts.google.com/"
     reason: str = "profile_login"
+
+
+def _active_identity_lease_id(identity_id: str | None) -> str | None:
+    if not identity_id:
+        return None
+    for lease_id, lease_data in (status().get("leases") or {}).items():
+        if lease_data.get("identity_id") == identity_id:
+            return str(lease_id)
+    return None
+
+
+def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: AuthError) -> RedirectResponse | None:
+    identity_id = str(auth_request_data.get("identity_id") or "")
+    message = str(error)
+    if not identity_id or "actively leased" not in message:
+        return None
+    lease_id = _active_identity_lease_id(identity_id)
+    if not lease_id:
+        return None
+    control = create_control_session(str(auth_request_data.get("owner") or "auth-handoff"), lease_id)
+    _safe_record_event(
+        source=str(auth_request_data.get("owner") or "auth-handoff"),
+        event_type="session",
+        message="Auth handoff redirected to active lease control",
+        lease_id=lease_id,
+        tags=["auth", "lease-control", "active-identity"],
+        data={"identity_id": identity_id, "token": control.get("token")},
+    )
+    return RedirectResponse(str(control["portal_url"]), status_code=303)
 
 
 @asynccontextmanager
@@ -2696,7 +2725,7 @@ def _auth_portal_html(
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
             floating_auth = f"""
-          <aside class="auth-card is-warning" aria-label="Human auth request">
+          <aside class="auth-card is-warning" id="authPasswordCard" aria-label="Human auth request">
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Human auth request</div>
@@ -2704,6 +2733,7 @@ def _auth_portal_html(
               <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small" type="button" id="copyPassword">Copy</button></div>
             </div>
           </aside>
+          <button class="auth-reopen" type="button" id="showPasswordCard">Show VNC password</button>
 """
         frame = f"""
         <section class="browser-stage">
@@ -3033,8 +3063,24 @@ def _auth_portal_html(
         box-shadow: var(--shadow-float);
         backdrop-filter: blur(18px) saturate(1.12);
       }}
+      .auth-card.is-hidden {{ display: none; }}
       .auth-card form {{ grid-column: 2; }}
       .auth-card button[type="submit"] {{ width: 100%; }}
+      .auth-reopen {{
+        position: absolute;
+        right: 28px;
+        bottom: 28px;
+        display: none;
+        width: auto;
+        padding: 9px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+        color: var(--text);
+        box-shadow: var(--shadow-soft);
+        backdrop-filter: blur(14px);
+      }}
+      .auth-reopen.is-visible {{ display: inline-flex; }}
       .auth-logo {{
         width: 48px;
         height: 48px;
@@ -3100,6 +3146,7 @@ def _auth_portal_html(
         .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
         .toolbar-left {{ display: none; }}
         .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
+        .auth-reopen {{ position: static; justify-self: end; margin-top: 12px; }}
         .auth-logo {{ width: 44px; height: 44px; }}
         .auth-card form {{ grid-column: 1 / -1; }}
       }}
@@ -3171,14 +3218,24 @@ def _auth_portal_html(
         }});
       }}
       const copyButton = document.getElementById('copyPassword');
+      const authPasswordCard = document.getElementById('authPasswordCard');
+      const showPasswordCard = document.getElementById('showPasswordCard');
       if (copyButton) {{
         copyButton.addEventListener('click', async () => {{
           const value = document.getElementById('vncPassword').textContent;
           await navigator.clipboard.writeText(value);
           copyButton.textContent = 'Copied';
-          setTimeout(() => copyButton.textContent = 'Copy', 1200);
+          setTimeout(() => {{
+            authPasswordCard?.classList.add('is-hidden');
+            showPasswordCard?.classList.add('is-visible');
+            copyButton.textContent = 'Copy';
+          }}, 250);
         }});
       }}
+      showPasswordCard?.addEventListener('click', () => {{
+        authPasswordCard?.classList.remove('is-hidden');
+        showPasswordCard.classList.remove('is-visible');
+      }});
       const portalStatus = document.getElementById('portalStatus');
       document.querySelectorAll('form[data-async-action]').forEach((form) => {{
         form.addEventListener('submit', async (event) => {{
@@ -3215,8 +3272,8 @@ def _auth_portal_html(
 """
 
 
-@app.get("/auth/{token}", response_class=HTMLResponse)
-async def auth_portal(token: str, request: Request) -> str:
+@app.get("/auth/{token}", response_class=HTMLResponse, response_model=None)
+async def auth_portal(token: str, request: Request) -> Any:
     try:
         auth_request_data = get_pending_auth_request(token)
     except AuthError as error:
@@ -3227,6 +3284,9 @@ async def auth_portal(token: str, request: Request) -> str:
         try:
             vnc = start_auth_vnc(token)
         except AuthError as error:
+            redirect = _active_identity_control_redirect(auth_request_data, error)
+            if redirect:
+                return redirect
             start_error = str(error)
     return _auth_portal_html(
         token,
@@ -3238,12 +3298,19 @@ async def auth_portal(token: str, request: Request) -> str:
     )
 
 
-@app.post("/auth/{token}/start-vnc", response_class=HTMLResponse)
-async def auth_start_vnc(token: str, request: Request) -> str:
+@app.post("/auth/{token}/start-vnc", response_class=HTMLResponse, response_model=None)
+async def auth_start_vnc(token: str, request: Request) -> Any:
     try:
         vnc = start_auth_vnc(token)
         auth_request_data = get_pending_auth_request(token)
     except AuthError as error:
+        try:
+            auth_request_data = get_pending_auth_request(token)
+        except AuthError:
+            auth_request_data = {}
+        redirect = _active_identity_control_redirect(auth_request_data, error)
+        if redirect:
+            return redirect
         raise HTTPException(status_code=410 if "expired" in str(error) or "is expired" in str(error) else 400, detail=str(error)) from error
     return _auth_portal_html(
         token,
