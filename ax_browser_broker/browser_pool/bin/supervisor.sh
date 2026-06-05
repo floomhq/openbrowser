@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/root/browser-pool}"
+BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/var/lib/openbrowser/pool}"
 
 build_slots() {
   if [[ -n "${OPENBROWSER_SLOTS:-}" ]]; then

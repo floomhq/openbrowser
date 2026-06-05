@@ -20,8 +20,8 @@ class Slot:
         return BROWSER_POOL_DIR / "profiles" / self.name
 
 
-ROOT = Path(os.environ.get("OPENBROWSER_BROKER_ROOT", "/root/ax-browser-broker"))
-BROWSER_POOL_DIR = Path(os.environ.get("OPENBROWSER_BROWSER_POOL_DIR", "/root/browser-pool"))
+ROOT = Path(os.environ.get("OPENBROWSER_BROKER_ROOT", "/opt/openbrowser"))
+BROWSER_POOL_DIR = Path(os.environ.get("OPENBROWSER_BROWSER_POOL_DIR", "/var/lib/openbrowser/pool"))
 STATE_DIR = ROOT / "state"
 ARTIFACT_DIR = ROOT / "artifacts"
 SCREENSHOT_DIR = ARTIFACT_DIR / "screenshots"
@@ -30,7 +30,7 @@ PROFILE_DIR = ROOT / "profiles"
 CONFIG_DIR = ROOT / "config"
 SECRET_DIR = ROOT / "secrets"
 GOLDEN_PROFILE_DIR = PROFILE_DIR / "golden"
-AUTHENTICATED_PROFILE_DIR = Path(os.environ.get("OPENBROWSER_AUTHENTICATED_PROFILE_DIR", "/root/.config/authenticated-chrome"))
+AUTHENTICATED_PROFILE_DIR = Path(os.environ.get("OPENBROWSER_AUTHENTICATED_PROFILE_DIR", "/var/lib/openbrowser/authenticated-chrome"))
 POOL_STATE_FILE = BROWSER_POOL_DIR / "state" / "leases.json"
 BROWSER_POOL_MAINTENANCE_DIR = BROWSER_POOL_DIR / "state" / "maintenance"
 POOL_CONFIG_DIR = BROWSER_POOL_DIR / "config"

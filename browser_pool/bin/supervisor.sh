@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/root/browser-pool}"
-BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/root/ax-browser-broker}"
+BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/var/lib/openbrowser/pool}"
+BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/opt/openbrowser}"
 
 SLOTS=(
   "pool-a:9223"

@@ -289,7 +289,7 @@ def test_start_auth_vnc_removes_password_file_when_identity_start_fails(tmp_path
     )
 
     request = auth.create_auth_request("tester", "https://example.com", identity_id="chrome-openpaper")
-    password_file = auth.Path("/root/ax-browser-broker/state/vnc") / f"{request['token']}.passwd"
+    password_file = auth.ROOT / "state" / "vnc" / f"{request['token']}.passwd"
 
     try:
         auth.start_auth_vnc(request["token"])
@@ -380,6 +380,10 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     monkeypatch.setattr(auth, "require_identity", lambda _identity_id: Identity())
     monkeypatch.setattr(auth, "pool_status", lambda: {"leases": {}})
     monkeypatch.setattr(auth, "read_slot_config", lambda _slot_name: {})
+    broker_root = tmp_path / "broker"
+    (broker_root / "bin").mkdir(parents=True)
+    (broker_root / "bin" / "ax-proxy-forwarder").write_text("#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(auth, "ROOT", broker_root)
     monkeypatch.setattr(auth, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
     monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
@@ -399,6 +403,6 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
 
     assert result["proxy_pid"] == 222
     assert result["proxy_local_port"] == 18901
-    assert any("/root/ax-browser-broker/bin/ax-proxy-forwarder" in str(call[0]) for call in popen_calls)
+    assert any(str(call[0]).endswith("/bin/ax-proxy-forwarder") for call in popen_calls)
     chrome_call = next(call for call in popen_calls if call[0] == "/usr/bin/google-chrome-stable")
     assert "--proxy-server=http://127.0.0.1:18901" in chrome_call

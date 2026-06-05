@@ -3,8 +3,8 @@ set -euo pipefail
 
 NAME="${1:?name}"
 PORT="${2:?port}"
-BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/root/browser-pool}"
-BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/root/ax-browser-broker}"
+BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/var/lib/openbrowser/pool}"
+BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/opt/openbrowser}"
 CHROME_BIN="${OPENBROWSER_CHROME_BIN:-/usr/bin/google-chrome-stable}"
 CONFIG_FILE="${BROWSER_POOL_DIR}/config/${NAME}.env"
 PROFILE_DIR="${BROWSER_POOL_DIR}/profiles/${NAME}"

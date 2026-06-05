@@ -361,14 +361,14 @@ def test_openbrowser_health_redacts_profile_paths(monkeypatch) -> None:
             "slots": [
                 {
                     "name": "pool-a",
-                    "profile_dir": "/root/browser-pool/profiles/pool-a",
+                    "profile_dir": "/var/lib/openbrowser/pool/profiles/pool-a",
                     "healthy": True,
                 }
             ],
             "leases": {
                 "lease-one": {
                     "lease_id": "lease-one",
-                    "profile_dir": "/root/browser-pool/profiles/pool-a",
+                    "profile_dir": "/var/lib/openbrowser/pool/profiles/pool-a",
                     "owner": "pytest",
                 }
             },
@@ -384,7 +384,7 @@ def test_openbrowser_health_redacts_profile_paths(monkeypatch) -> None:
     assert body["pool"]["slots"][0]["name"] == "pool-a"
     assert "profile_dir" not in body["pool"]["slots"][0]
     assert "profile_dir" not in body["pool"]["leases"]["lease-one"]
-    assert "/root/browser-pool" not in response.text
+    assert "/var/lib/openbrowser/pool" not in response.text
 
 
 def test_openbrowser_docs_reflect_live_identity_metadata(monkeypatch) -> None:

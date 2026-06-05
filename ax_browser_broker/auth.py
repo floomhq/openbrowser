@@ -16,6 +16,8 @@ from typing import Any
 from .config import (
     AUTH_REQUEST_TTL_SECONDS,
     AUTH_STATE_FILE,
+    AUTHENTICATED_PROFILE_DIR,
+    BROWSER_POOL_DIR,
     BROWSER_POOL_MAINTENANCE_DIR,
     BROKER_PORT,
     PUBLIC_AUTH_BASE_URL,
@@ -210,7 +212,7 @@ def _authenticated_x_display() -> tuple[str, str | None]:
         (
             item
             for item in records
-            if "--user-data-dir=/root/.config/authenticated-chrome" in item["args"]
+            if f"--user-data-dir={AUTHENTICATED_PROFILE_DIR}" in item["args"]
             and "chrome" in item["args"]
         ),
         None,
@@ -364,7 +366,7 @@ def _kill_identity_pool_processes(_identity_id: str, profile_dir: Path, slot_nam
         rows = _process_rows()
         port_pids = [pid for pid, args in rows if port_arg in args and _is_chrome_process(args)]
         _terminate_pids(port_pids)
-        proxy_pid_file = Path("/root/browser-pool/state") / f"{slot_name}.proxy.pid"
+        proxy_pid_file = BROWSER_POOL_DIR / "state" / f"{slot_name}.proxy.pid"
         if proxy_pid_file.exists():
             try:
                 proxy_pid = int(proxy_pid_file.read_text(encoding="utf-8").strip())
