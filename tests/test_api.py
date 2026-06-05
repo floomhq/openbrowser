@@ -876,18 +876,14 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     events = []
     lease = make_lease()
 
-    def fake_create_control_session(owner, lease_id, ttl_seconds, *, slot=None, identity_id=None):
+    def fake_create_control_session(owner, lease_id, ttl_seconds):
         assert owner == "pytest-control"
         assert lease_id == "lease-api"
         assert ttl_seconds == 600
-        assert slot == "pool-b"
-        assert identity_id == lease.identity_id
         return {
             "token": "control-token",
             "owner": owner,
             "lease_id": lease_id,
-            "slot": slot,
-            "identity_id": identity_id,
             "ttl_seconds": ttl_seconds,
             "portal_url": "https://browser.example.com/auth/lease-control/control-token",
         }
@@ -937,8 +933,6 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
             "token": "tok",
             "owner": "<human>",
             "lease_id": "lease-api",
-            "slot": "pool-a",
-            "identity_id": "chrome-depontefede",
             "expires_at": 123,
         }
 
@@ -957,23 +951,18 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
 
     assert portal.status_code == 200
     assert "&lt;human&gt;" in portal.text
-    assert "OpenBrowser" in portal.text
-    assert "Browser Sessions" in portal.text
-    assert "Live Browser Session" in portal.text
-    assert "Manual control" in portal.text
-    assert "chrome-depontefede" in portal.text
-    assert "pool-a" in portal.text
-    assert "Browser image" in portal.text
-    assert "Text to type" in portal.text
-    assert "Keyboard key" in portal.text
-    assert "Click directly on the screenshot" in portal.text
-    assert "Cookies, passwords, saved browser sessions, and proxy credentials stay hidden from this page." in portal.text
-    assert 'data-key="PageDown"' in portal.text
-    assert 'id="refreshTop"' in portal.text
-    assert "Refreshing screenshot..." in portal.text
-    assert "Screenshot refreshed" in portal.text
-    assert "Unix time" not in portal.text
     assert "OpenBrowser Manual Control" in portal.text
+    assert "Manual browser control" in portal.text
+    assert "Refresh screenshot" in portal.text
+    assert "Text to type into focused field" in portal.text
+    assert "Press key" in portal.text
+    assert "End control link" in portal.text
+    assert "Click the screenshot to control the held browser tab." in portal.text
+    assert "This view does not expose session cookies, saved passwords, or proxy credentials." in portal.text
+    assert "Browser Sessions" not in portal.text
+    assert "Session State" not in portal.text
+    assert 'data-key="PageDown"' not in portal.text
+    assert "Unix time" not in portal.text
     assert "if (!response.ok) throw new Error" in portal.text
     assert shot.status_code == 200
     assert shot.headers["content-type"] == "image/png"
