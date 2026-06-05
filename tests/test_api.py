@@ -183,12 +183,12 @@ def test_auth_portal_redirects_active_identity_to_lease_control(monkeypatch) -> 
             "url": "https://app.slack.com/",
             "reason": "login_required",
             "status": "pending",
-            "identity_id": "chrome-depontefede",
+            "identity_id": "work-main",
         },
     )
     monkeypatch.setattr(api, "current_auth_vnc", lambda _token: None)
     monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", True)
-    monkeypatch.setattr(api, "start_auth_vnc", lambda _token: (_ for _ in ()).throw(api.AuthError("Identity is actively leased: chrome-depontefede")))
+    monkeypatch.setattr(api, "start_auth_vnc", lambda _token: (_ for _ in ()).throw(api.AuthError("Identity is actively leased: work-main")))
     monkeypatch.setattr(
         api,
         "status",
@@ -196,7 +196,7 @@ def test_auth_portal_redirects_active_identity_to_lease_control(monkeypatch) -> 
             "leases": {
                 "lease-one": {
                     "lease_id": "lease-one",
-                    "identity_id": "chrome-depontefede",
+                    "identity_id": "work-main",
                 }
             }
         },
@@ -488,13 +488,13 @@ def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> N
 
     response = client.post(
         "/openbrowser/v1/auth/request",
-        json={"owner": "pytest", "profile": "chrome-depontefede", "url": "https://lovable.dev/"},
+        json={"owner": "pytest", "profile": "work-main", "url": "https://lovable.dev/"},
         headers={"authorization": "Bearer test-openbrowser-key"},
     )
 
     assert response.status_code == 200
-    assert response.json()["identity_id"] == "chrome-depontefede"
-    assert created == [("pytest", "https://lovable.dev/", "login_required", "chrome-depontefede")]
+    assert response.json()["identity_id"] == "work-main"
+    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main")]
 
 
 def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monkeypatch) -> None:
@@ -506,7 +506,7 @@ def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monk
             "leases": {
                 "lease-active": {
                     "lease_id": "lease-active",
-                    "identity_id": "chrome-depontefede",
+                    "identity_id": "work-main",
                 }
             }
         },
@@ -528,13 +528,13 @@ def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monk
 
     response = client.post(
         "/openbrowser/v1/auth/request",
-        json={"owner": "pytest", "profile": "chrome-depontefede", "url": "https://lovable.dev/"},
+        json={"owner": "pytest", "profile": "work-main", "url": "https://lovable.dev/"},
         headers={"authorization": "Bearer test-openbrowser-key"},
     )
 
     assert response.status_code == 200
     assert response.json()["status"] == "active_identity_leased"
-    assert response.json()["identity_id"] == "chrome-depontefede"
+    assert response.json()["identity_id"] == "work-main"
     assert response.json()["active_lease_id"] == "lease-active"
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
     assert "Inspect tabs/snapshot/screenshot" in response.json()["warning"]

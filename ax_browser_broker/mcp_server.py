@@ -12,7 +12,7 @@ from .config import BROKER_PORT
 
 
 BROKER_URL = f"http://127.0.0.1:{BROKER_PORT}"
-mcp = FastMCP("ax41-browser-broker")
+mcp = FastMCP("openbrowser-broker")
 
 
 def _request(method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:

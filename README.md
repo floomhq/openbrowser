@@ -248,7 +248,7 @@ curl -fsS "$BASE/auth/request" \
 
 Open the returned `portal_url`, complete login in the browser view, then mark the request complete. Future leases for that identity reuse the saved profile state.
 
-For parallel work, set `policy.max_parallel_sessions` above `1`. OpenBrowser then seeds per-slot replicas instead of starting multiple Chrome processes against one profile directory. That matters: several windows in a desktop Chrome profile are one Chrome process, but several AX41 agents are independent Chrome processes. Directly sharing the same `profile_dir` across those processes risks Chrome singleton-lock failures and profile database corruption.
+For parallel work, set `policy.max_parallel_sessions` above `1`. OpenBrowser then seeds per-slot replicas instead of starting multiple Chrome processes against one profile directory. That matters: several windows in a desktop Chrome profile are one Chrome process, but several server-side agents are independent Chrome processes. Directly sharing the same `profile_dir` across those processes risks Chrome singleton-lock failures and profile database corruption.
 
 ```mermaid
 flowchart LR
