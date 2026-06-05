@@ -2312,7 +2312,13 @@ async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any
 async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
     try:
         lease_obj = require_lease(request.lease_id)
-        result = create_control_session(request.owner, lease_obj.lease_id, request.ttl_seconds)
+        result = create_control_session(
+            request.owner,
+            lease_obj.lease_id,
+            request.ttl_seconds,
+            slot=lease_obj.name,
+            identity_id=lease_obj.identity_id,
+        )
         _safe_record_event(
             source=request.owner,
             event_type="session",
@@ -2338,6 +2344,8 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
 def _control_html(token: str, session: dict[str, Any]) -> str:
     safe_owner = html.escape(str(session.get("owner", "unknown")))
     safe_lease_id = html.escape(str(session.get("lease_id", "")))
+    safe_slot = html.escape(str(session.get("slot") or "held browser"))
+    safe_identity = html.escape(str(session.get("identity_id") or "temporary profile"))
     safe_token = html.escape(token, quote=True)
     safe_expires_at = html.escape(str(session.get("expires_at", "")))
     return f"""
@@ -2362,7 +2370,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       :root {{
         color-scheme: light dark;
         --page: #eef1ed;
-        --panel: rgba(255,255,255,0.88);
+        --panel: rgba(255,255,255,0.90);
         --panel-strong: #ffffff;
         --soft: #f6f7f5;
         --text: #101827;
@@ -2393,7 +2401,8 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       * {{ box-sizing: border-box; }}
       body {{
         margin: 0;
-        min-height: 100vh;
+        height: 100vh;
+        overflow: hidden;
         color: var(--text);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background:
@@ -2425,38 +2434,34 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         color: var(--text);
         padding: 0 12px;
         min-width: 0;
+        width: 100%;
         font: inherit;
         font-weight: 650;
       }}
       code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }}
-      .muted {{ color: var(--muted); }}
-      .app {{ width: min(1780px, calc(100vw - 32px)); margin: 16px auto; }}
-      .brand-hero {{ display: none; }}
-      .brand-title {{ display: inline-flex; align-items: center; gap: 13px; font-size: clamp(30px, 4vw, 58px); font-weight: 850; letter-spacing: 0; }}
-      .brand-mark {{ width: 44px; height: 44px; border: 6px solid currentColor; border-radius: 14px; display: inline-grid; place-items: center; transform: rotate(30deg); }}
-      .brand-mark::after {{ content: ""; width: 13px; height: 13px; border: 5px solid currentColor; border-radius: 5px; }}
-      .subtitle {{ margin-top: 4px; font-size: 18px; font-weight: 700; color: var(--muted); }}
+      .app {{ height: 100vh; padding: 14px; }}
       .shell {{
-        min-height: calc(100vh - 32px);
+        height: 100%;
         overflow: hidden;
         border: 1px solid var(--border);
-        border-radius: 24px;
+        border-radius: 22px;
         background: var(--panel);
         box-shadow: var(--shadow);
         backdrop-filter: blur(18px);
+        display: grid;
+        grid-template-rows: 66px minmax(0, 1fr);
       }}
-      .shell-top {{ height: 78px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 0 28px; border-bottom: 1px solid var(--border); }}
+      .shell-top {{ display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 18px; padding: 0 22px; border-bottom: 1px solid var(--border); }}
       .traffic {{ display: flex; gap: 10px; }}
       .dot {{ width: 16px; height: 16px; border-radius: 50%; background: #eaa39b; border: 1px solid rgba(0,0,0,0.08); }}
       .dot:nth-child(2) {{ background: #e7c38f; }}
       .dot:nth-child(3) {{ background: #8dccad; }}
-      .top-title {{ text-align: center; font-weight: 850; font-size: 22px; }}
+      .top-title {{ font-weight: 850; font-size: 21px; text-align: center; }}
       .top-actions {{ justify-self: end; display: flex; gap: 10px; align-items: center; }}
-      .layout {{ display: grid; grid-template-columns: minmax(250px, 330px) minmax(0, 1fr) minmax(250px, 330px); min-height: calc(100vh - 110px); }}
-      .sidebar {{ padding: 26px 24px; border-right: 1px solid var(--border); }}
-      .statebar {{ padding: 26px 24px; border-left: 1px solid var(--border); }}
+      .layout {{ min-height: 0; display: grid; grid-template-columns: minmax(300px, 360px) minmax(0, 1fr); }}
+      .sidebar {{ min-height: 0; overflow-y: auto; padding: 22px; border-right: 1px solid var(--border); }}
       .panel-title {{ font-size: 13px; letter-spacing: .04em; text-transform: uppercase; font-weight: 850; color: var(--muted); margin-bottom: 18px; }}
-      .session-card, .meta-card, .state-card {{
+      .session-card, .card {{
         background: var(--panel-strong);
         border: 1px solid var(--border);
         border-radius: 14px;
@@ -2468,17 +2473,25 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .session-name {{ min-width: 0; font-size: 18px; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
       .status-ok {{ display: inline-flex; align-items: center; gap: 8px; color: var(--ok); font-weight: 800; }}
       .status-ok::before {{ content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }}
-      .meta-card {{ display: grid; gap: 14px; }}
+      .card {{ display: grid; gap: 14px; margin-bottom: 16px; }}
       .meta-label {{ color: var(--muted); font-weight: 800; font-size: 13px; }}
       .meta-value {{ margin-top: 3px; font-weight: 800; overflow-wrap: anywhere; }}
-      .center {{ padding: 26px; min-width: 0; }}
+      .control-grid {{ display: grid; gap: 10px; }}
+      .button-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+      .button-row.three {{ grid-template-columns: 1fr 1fr 1fr; }}
+      #status {{ min-height: 22px; color: var(--muted); font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }}
+      .note {{ color: var(--muted); font-size: 13px; font-weight: 700; line-height: 1.35; }}
+      .center {{ min-width: 0; min-height: 0; overflow-y: auto; padding: 22px; display: grid; grid-template-rows: auto auto; align-content: start; }}
       .stage-head {{ display: flex; justify-content: space-between; gap: 14px; align-items: center; margin-bottom: 14px; }}
       .stage-title {{ display: flex; align-items: center; gap: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 850; }}
       .viewport {{
+        min-height: 0;
         overflow: hidden;
         border: 1px solid var(--border);
         border-radius: 18px;
         background: var(--panel-strong);
+        display: grid;
+        grid-template-rows: 58px auto;
       }}
       .browser-bar {{ height: 58px; display: grid; grid-template-columns: auto 1fr auto; gap: 13px; align-items: center; padding: 0 16px; border-bottom: 1px solid var(--border); }}
       .browser-dots {{ display: flex; gap: 9px; }}
@@ -2486,40 +2499,29 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .address {{ height: 38px; border: 1px solid var(--border); border-radius: 999px; background: var(--soft); display: flex; align-items: center; gap: 10px; padding: 0 16px; min-width: 0; color: var(--muted); font-weight: 800; }}
       .address span {{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
       .live {{ color: var(--ok); font-size: 12px; letter-spacing: .04em; }}
-      .screen-wrap {{ background: #fff; min-height: 440px; height: calc(100vh - 450px); overflow: auto; }}
-      #screen {{ display: block; width: 100%; height: auto; min-height: 440px; object-fit: contain; background: #fff; cursor: crosshair; }}
-      .control-dock {{ display: grid; grid-template-columns: auto minmax(220px, 1fr) auto minmax(120px, 170px) auto auto auto auto; gap: 10px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--panel-strong); }}
-      #status {{ min-height: 22px; color: var(--muted); font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }}
-      .left-status {{ margin-top: 10px; }}
-      .state-list {{ display: grid; gap: 16px; }}
-      .state-card {{ display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; }}
-      .state-main {{ font-weight: 850; }}
-      .state-sub {{ color: var(--muted); font-weight: 700; font-size: 13px; margin-top: 2px; }}
-      .pulse {{ width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }}
+      .screen-wrap {{ min-height: 0; overflow: visible; background: #f4f4f2; }}
+      #screen {{ display: block; width: 100%; height: auto; background: #fff; cursor: crosshair; }}
       @media (max-width: 1180px) {{
+        body {{ overflow: auto; height: auto; }}
+        .app {{ height: auto; min-height: 100vh; }}
+        .shell {{ min-height: calc(100vh - 28px); height: auto; }}
         .layout {{ grid-template-columns: 1fr; }}
-        .sidebar, .statebar {{ border: 0; }}
-        .statebar {{ border-top: 1px solid var(--border); }}
-        .control-dock {{ grid-template-columns: 1fr auto; }}
-        .control-dock input, .control-dock button {{ width: 100%; }}
+        .sidebar {{ border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }}
+        .center {{ min-height: 720px; }}
       }}
       @media (max-width: 760px) {{
         .app {{ width: 100%; margin: 0; }}
-        .brand-hero {{ display: none; }}
         .shell {{ border-radius: 0; min-height: 100vh; }}
         .shell-top {{ grid-template-columns: 1fr auto; height: auto; padding: 16px; }}
         .traffic {{ display: none; }}
         .top-title {{ text-align: left; font-size: 18px; }}
-        .center, .sidebar, .statebar {{ padding: 18px; }}
+        .center, .sidebar {{ padding: 16px; }}
+        .button-row, .button-row.three {{ grid-template-columns: 1fr; }}
       }}
     </style>
   </head>
   <body>
     <div class="app">
-      <section class="brand-hero" aria-label="OpenBrowser">
-        <div class="brand-title"><span class="brand-mark" aria-hidden="true"></span><span>OpenBrowser</span></div>
-        <div class="subtitle">The browser infrastructure for AI agents.</div>
-      </section>
       <main class="shell">
         <header class="shell-top">
           <div class="traffic" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
@@ -2536,58 +2538,72 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
                 <div class="status-ok">Active</div>
               </div>
             </div>
-            <div class="meta-card">
+            <div class="card">
               <div>
                 <div class="meta-label">Agent</div>
                 <div class="meta-value">{safe_owner}</div>
               </div>
               <div>
+                <div class="meta-label">Profile</div>
+                <div class="meta-value">{safe_identity}</div>
+              </div>
+              <div>
+                <div class="meta-label">Slot</div>
+                <div class="meta-value">{safe_slot}</div>
+              </div>
+              <div>
                 <div class="meta-label">Lease</div>
                 <div class="meta-value"><code>{safe_lease_id}</code></div>
               </div>
+              <div id="status" data-expires-at="{safe_expires_at}">Control link active.</div>
+            </div>
+            <div class="card">
               <div>
-                <div class="meta-label">Control</div>
-                <div class="meta-value">Click the screenshot, type into the focused field, or use the scroll buttons.</div>
+                <div class="meta-label">Browser image</div>
+                <div class="note">Click directly on the screenshot to click the held browser tab.</div>
               </div>
-              <div id="status" class="left-status" data-expires-at="{safe_expires_at}">Control link active.</div>
+              <button id="refresh" type="button">Refresh screenshot</button>
+            </div>
+            <div class="card">
+              <div class="meta-label">Text to type</div>
+              <div class="control-grid">
+                <input id="text" autocomplete="off" placeholder="Type into focused field">
+                <button id="typeButton" type="button">Type</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="meta-label">Keyboard key</div>
+              <div class="control-grid">
+                <input id="key" autocomplete="off" value="Enter" aria-label="Key">
+                <button id="pressButton" type="button">Press key</button>
+                <div class="button-row three">
+                  <button class="secondary keyButton" type="button" data-key="PageUp">Page up</button>
+                  <button class="secondary keyButton" type="button" data-key="PageDown">Page down</button>
+                  <button class="secondary keyButton" type="button" data-key="Escape">Escape</button>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <button class="secondary" type="button" id="done">End control link</button>
+              <div class="note">Cookies, passwords, saved browser sessions, and proxy credentials stay hidden from this page.</div>
             </div>
           </aside>
           <section class="center">
             <div class="stage-head">
               <div class="stage-title"><span>Live Browser Session</span><span class="status-ok">connected</span></div>
-              <button class="secondary" type="button" id="done">End control link</button>
+              <button class="secondary" type="button" onclick="window.open(location.href, '_blank', 'noopener')">Open full screen</button>
             </div>
             <div class="viewport">
               <div class="browser-bar">
                 <div class="browser-dots" aria-hidden="true"><span></span><span></span><span></span></div>
                 <div class="address"><b class="live">LIVE</b><span>lease-control/{safe_token}</span></div>
-                <button class="secondary" type="button" onclick="window.open(location.href, '_blank', 'noopener')">Open</button>
-              </div>
-              <div class="control-dock">
-                <button id="refresh" type="button">Refresh screenshot</button>
-                <input id="text" autocomplete="off" placeholder="Type into focused field">
-                <button id="typeButton" type="button">Type</button>
-                <input id="key" autocomplete="off" value="Enter" aria-label="Key">
-                <button id="pressButton" type="button">Press</button>
-                <button class="secondary keyButton" type="button" data-key="PageUp">Page up</button>
-                <button class="secondary keyButton" type="button" data-key="PageDown">Page down</button>
-                <button class="secondary keyButton" type="button" data-key="Escape">Escape</button>
+                <button class="secondary" type="button" id="refreshTop">Refresh</button>
               </div>
               <div class="screen-wrap">
                 <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
               </div>
             </div>
           </section>
-          <aside class="statebar">
-            <div class="panel-title">Session State</div>
-            <div class="state-list">
-              <div class="state-card"><div><div class="state-main">Manual control active</div><div class="state-sub">You are controlling the held browser tab.</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div><div class="state-main">Same browser session</div><div class="state-sub">Actions stay on this lease and tab.</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div><div class="state-main">Typing enabled</div><div class="state-sub">Text and key presses go to the focused field.</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div><div class="state-main">Screenshot clicks enabled</div><div class="state-sub">Clicks are mapped to browser coordinates.</div></div><span class="pulse"></span></div>
-              <div class="state-card"><div><div class="state-main">Private by design</div><div class="state-sub">Cookies, passwords, and proxy credentials stay hidden.</div></div><span class="pulse"></span></div>
-            </div>
-          </aside>
         </div>
       </main>
     </div>
@@ -2608,11 +2624,13 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       const expiresAt = Number(statusBox.dataset.expiresAt || 0);
       if (expiresAt) setStatus(`Control link expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
       const refreshButton = document.getElementById('refresh');
+      const refreshTop = document.getElementById('refreshTop');
       let refreshing = false;
       const refresh = () => {{
         if (refreshing) return;
         refreshing = true;
         refreshButton.disabled = true;
+        refreshTop.disabled = true;
         setStatus('Refreshing screenshot...');
         screen.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`;
       }};
@@ -2620,11 +2638,13 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         if (!refreshing) return;
         refreshing = false;
         refreshButton.disabled = false;
+        refreshTop.disabled = false;
         setStatus('Screenshot refreshed');
       }});
       screen.addEventListener('error', () => {{
         refreshing = false;
         refreshButton.disabled = false;
+        refreshTop.disabled = false;
         setStatus('Screenshot refresh failed');
       }});
       const postJson = async (path, body) => {{
@@ -2637,6 +2657,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         return response;
       }};
       document.getElementById('refresh').addEventListener('click', refresh);
+      document.getElementById('refreshTop').addEventListener('click', refresh);
       screen.addEventListener('click', async (event) => {{
         const rect = screen.getBoundingClientRect();
         const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);

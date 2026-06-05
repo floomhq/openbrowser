@@ -56,7 +56,14 @@ def gc_control_sessions(state: dict[str, Any]) -> list[str]:
     return expired
 
 
-def create_control_session(owner: str, lease_id: str, ttl_seconds: int = LEASE_CONTROL_TTL_SECONDS) -> dict[str, Any]:
+def create_control_session(
+    owner: str,
+    lease_id: str,
+    ttl_seconds: int = LEASE_CONTROL_TTL_SECONDS,
+    *,
+    slot: str | None = None,
+    identity_id: str | None = None,
+) -> dict[str, Any]:
     now = int(time.time())
     ttl = max(60, min(int(ttl_seconds), 60 * 60))
     token = secrets.token_urlsafe(24)
@@ -70,6 +77,10 @@ def create_control_session(owner: str, lease_id: str, ttl_seconds: int = LEASE_C
         "portal_url": control_portal_url(token),
         "local_portal_url": _local_control_url(token),
     }
+    if slot:
+        session["slot"] = slot
+    if identity_id:
+        session["identity_id"] = identity_id
     with locked_control_state() as state:
         gc_control_sessions(state)
         state["sessions"][token] = session
