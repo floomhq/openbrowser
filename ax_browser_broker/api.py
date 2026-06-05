@@ -8,6 +8,7 @@ import os
 import base64
 import urllib.parse
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import uvicorn
@@ -45,6 +46,9 @@ from .lease_control import LeaseControlError, complete_control_session, create_c
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 from .telemetry import TelemetryError, list_events, record_event, summary
+
+
+BRAND_STATIC_DIR = Path(__file__).resolve().parent / "static" / "brand"
 
 
 class LeaseRequest(BaseModel):
@@ -1807,6 +1811,25 @@ async def openbrowser_reference() -> str:
     return _openbrowser_reference_html()
 
 
+@app.get("/openbrowser/assets/brand/{asset_path:path}")
+async def openbrowser_brand_asset(asset_path: str) -> Response:
+    requested = (BRAND_STATIC_DIR / asset_path).resolve()
+    try:
+        requested.relative_to(BRAND_STATIC_DIR.resolve())
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail="Brand asset not found") from error
+    if not requested.is_file():
+        raise HTTPException(status_code=404, detail="Brand asset not found")
+    media_types = {
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".webp": "image/webp",
+        ".ico": "image/x-icon",
+        ".json": "application/json",
+    }
+    return Response(content=requested.read_bytes(), media_type=media_types.get(requested.suffix.lower(), "application/octet-stream"))
+
+
 @app.get("/favicon.ico")
 async def openbrowser_favicon() -> Response:
     svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#111827"/><path d="M32 9 52 20.5v23L32 55 12 43.5v-23L32 9Z" fill="none" stroke="#fff" stroke-width="5" stroke-linejoin="round"/><path d="M32 22 41 27.2v9.6L32 42 23 36.8v-9.6L32 22Z" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/></svg>"""
@@ -2780,7 +2803,7 @@ def _auth_portal_html(
     safe_reason = html.escape(str(auth_request_data.get("reason") or "login_required"))
     safe_client_ip = html.escape(client_ip or "unknown")
     safe_start_error = html.escape(start_error or "")
-    mark_svg = """<svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6 20.4 7.3v9.4L12 21.4l-8.4-4.7V7.3L12 2.6Z"></path><path d="M12 7.2 16.2 9.6v4.8L12 16.8l-4.2-2.4V9.6L12 7.2Z"></path></svg>"""
+    mark_svg = """<img class="brand-icon" src="/openbrowser/assets/brand/logo/mark/openbrowser-mark.svg" alt="">"""
     browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
     status_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v4"></path><path d="M12 18v4"></path><path d="M4.93 4.93l2.83 2.83"></path><path d="M16.24 16.24l2.83 2.83"></path><path d="M2 12h4"></path><path d="M18 12h4"></path><path d="M4.93 19.07l2.83-2.83"></path><path d="M16.24 7.76l2.83-2.83"></path></svg>"""
     identity_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c1.7-4 14.3-4 16 0"></path></svg>"""
@@ -2789,33 +2812,47 @@ def _auth_portal_html(
     cdp_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"></path></svg>"""
     frame = ""
     floating_auth = ""
+    inline_password_controls = ""
     if vnc:
         embed_url = _novnc_embed_url(vnc, trusted_client)
         safe_embed_url = html.escape(embed_url, quote=True)
         safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
             floating_auth = f"""
-          <aside class="auth-card is-success" aria-label="Human auth request">
+          <aside class="auth-card is-success is-minimized" id="authCard" aria-label="Human auth request">
+            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize auth request">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Trusted connection</div>
               <div class="auth-subtitle">The browser opens without a temporary VNC password prompt.</div>
+              <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Done</button></form>
             </div>
-            <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Done</button></form>
+            <button class="auth-chip" type="button" id="restoreAuth">Auth request</button>
           </aside>
 """
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
+            inline_password_controls = f"""
+            <div class="request-row">
+              <span class="label">VNC password</span>
+              <span class="value"><span class="password-row password-row-inline"><code id="vncPasswordInline">{safe_password}</code><button class="button button-soft button-small copy-password" type="button">Copy</button></span></span>
+            </div>
+"""
             floating_auth = f"""
-          <aside class="auth-card is-warning" id="authPasswordCard" aria-label="Human auth request">
+          <aside class="auth-card is-warning is-minimized" id="authCard" aria-label="Human auth request">
+            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize auth request">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Human auth request</div>
-              <div class="auth-subtitle">Temporary VNC password: enter it in the browser prompt, finish login, then mark complete.</div>
-              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small" type="button" id="copyPassword">Copy</button></div>
+              <div class="auth-subtitle">Temporary VNC password: copy it here, enter it in the browser prompt, finish login, then mark complete.</div>
+              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small copy-password" type="button">Copy</button></div>
+              <div class="auth-actions">
+                <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Mark complete</button></form>
+                <button class="button button-soft" type="button" id="minimizeAuthSecondary">Keep browsing</button>
+              </div>
             </div>
+            <button class="auth-chip" type="button" id="restoreAuth">Auth request</button>
           </aside>
-          <button class="auth-reopen" type="button" id="showPasswordCard">Show VNC password</button>
 """
         frame = f"""
         <section class="browser-stage">
@@ -2873,47 +2910,47 @@ def _auth_portal_html(
     <style>
       :root {{
         color-scheme: light dark;
-        --page: #e7dfd0;
+        --page: #f1f5f9;
         --paper: rgba(255,255,255,0.88);
-        --panel: rgba(255,255,255,0.74);
+        --panel: rgba(255,255,255,0.72);
         --panel-solid: #ffffff;
-        --soft: #f5f2ec;
-        --text: #1e1d1a;
-        --muted: #807a70;
-        --faint: #a8a196;
-        --border: rgba(58,48,38,0.12);
-        --border-strong: rgba(58,48,38,0.18);
-        --primary: #24231f;
+        --soft: #f8fafc;
+        --text: #0B1220;
+        --muted: #475569;
+        --faint: #94a3b8;
+        --border: rgba(15,23,42,0.08);
+        --border-strong: rgba(15,23,42,0.16);
+        --primary: #0B1220;
         --primary-text: #ffffff;
-        --green: #47b274;
+        --green: #10B981;
         --amber: #ee9c44;
         --red: #ec6a5f;
-        --blue: #4f78d9;
-        --radius-lg: 20px;
-        --radius-md: 14px;
-        --radius-sm: 10px;
+        --blue: #2563EB;
+        --radius-lg: 28px;
+        --radius-md: 12px;
+        --radius-sm: 8px;
         --radius-pill: 9999px;
-        --shadow-window: 0 24px 80px rgba(33, 26, 17, 0.18), 0 1px 0 rgba(255,255,255,0.78) inset;
-        --shadow-float: 0 24px 64px rgba(33, 26, 17, 0.20), 0 0 0 1px var(--border);
+        --shadow-window: 0 24px 80px rgba(15, 23, 42, 0.16), 0 1px 0 rgba(255,255,255,0.78) inset;
+        --shadow-float: 0 24px 64px rgba(15, 23, 42, 0.18), 0 0 0 1px var(--border);
         --ease: cubic-bezier(0.22, 1, 0.36, 1);
       }}
       [data-theme="dark"] {{
-        --page: #0f1211;
-        --paper: rgba(25,25,24,0.92);
-        --panel: rgba(33,33,31,0.76);
-        --panel-solid: #21211f;
-        --soft: #2b2a27;
-        --text: #f4f1ea;
-        --muted: #aaa49a;
-        --faint: #746f68;
+        --page: #0B1220;
+        --paper: rgba(15,23,42,0.90);
+        --panel: rgba(15,23,42,0.74);
+        --panel-solid: #111827;
+        --soft: #1f2937;
+        --text: #f8fafc;
+        --muted: #cbd5e1;
+        --faint: #64748b;
         --border: rgba(255,255,255,0.10);
         --border-strong: rgba(255,255,255,0.18);
-        --primary: #f4f1ea;
-        --primary-text: #191918;
-        --green: #59c889;
+        --primary: #f8fafc;
+        --primary-text: #0B1220;
+        --green: #10B981;
         --amber: #f2b15d;
         --red: #f07b70;
-        --blue: #7fa0ff;
+        --blue: #60a5fa;
         --shadow-window: 0 28px 90px rgba(0,0,0,0.48), 0 1px 0 rgba(255,255,255,0.08) inset;
         --shadow-float: 0 28px 70px rgba(0,0,0,0.42), 0 0 0 1px var(--border);
       }}
@@ -3045,6 +3082,9 @@ def _auth_portal_html(
         stroke-linejoin: round;
       }}
       .empty-icon svg, .auth-logo svg {{ width: 25px; height: 25px; }}
+      .brand-icon {{ width: 26px; height: 26px; display: block; }}
+      .empty-icon .brand-icon, .auth-logo .brand-icon {{ width: 26px; height: 26px; }}
+      [data-theme="dark"] .brand-icon {{ filter: invert(1) brightness(1.2); }}
       .session-icon {{ width: 38px; height: 38px; }}
       .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
       .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
@@ -3145,24 +3185,19 @@ def _auth_portal_html(
         box-shadow: var(--shadow-float);
         backdrop-filter: blur(18px) saturate(1.12);
       }}
-      .auth-card.is-hidden {{ display: none; }}
-      .auth-card form {{ grid-column: 2; }}
-      .auth-card button[type="submit"] {{ width: 100%; }}
-      .auth-reopen {{
-        position: absolute;
-        right: 28px;
-        bottom: 28px;
-        display: none;
+      .auth-card.is-minimized {{
         width: auto;
-        padding: 9px 12px;
-        border: 1px solid var(--border);
-        border-radius: var(--radius-pill);
-        background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
-        color: var(--text);
-        box-shadow: var(--shadow-soft);
-        backdrop-filter: blur(14px);
+        min-width: 0;
+        grid-template-columns: auto;
+        gap: 0;
+        padding: 10px;
       }}
-      .auth-reopen.is-visible {{ display: inline-flex; }}
+      .auth-card.is-minimized .auth-logo,
+      .auth-card.is-minimized .auth-copy,
+      .auth-card.is-minimized .auth-dismiss {{
+        display: none;
+      }}
+      .auth-card.is-minimized .auth-chip {{ display: inline-flex; }}
       .auth-logo {{
         width: 48px;
         height: 48px;
@@ -3172,11 +3207,32 @@ def _auth_portal_html(
       .auth-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
       .auth-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
       .password-row {{ margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+      .password-row-inline {{ margin-top: 0; }}
+      .auth-actions {{ margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+      .auth-actions form, .auth-actions button, .auth-copy form, .auth-copy form button {{ width: 100%; }}
+      .auth-copy form {{ margin-top: 14px; }}
+      .auth-dismiss {{
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        min-height: 32px;
+        padding: 0 10px;
+        border-color: var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+        color: var(--muted);
+        font-size: 12px;
+      }}
+      .auth-chip {{
+        display: none;
+        min-height: 40px;
+        padding: 0 14px;
+      }}
       code {{
-        max-width: 180px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        user-select: all;
         border: 1px solid var(--border);
         border-radius: 9px;
         padding: 6px 8px;
@@ -3228,7 +3284,6 @@ def _auth_portal_html(
         .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
         .toolbar-left {{ display: none; }}
         .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
-        .auth-reopen {{ position: static; justify-self: end; margin-top: 12px; }}
         .auth-logo {{ width: 44px; height: 44px; }}
         .auth-card form {{ grid-column: 1 / -1; }}
       }}
@@ -3264,6 +3319,7 @@ def _auth_portal_html(
             <div class="request-row"><span class="label">Target</span><span class="value mono" title="{safe_url}">{safe_url}</span></div>
             <div class="request-row"><span class="label">Agent</span><span class="value">{safe_owner}</span></div>
             <div class="request-row"><span class="label">Reason</span><span class="value">{safe_reason}</span></div>
+            {inline_password_controls}
             <div class="actions">
               <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Mark complete</button></form>
               <form method="post" action="/auth/{safe_token}/stop-vnc" data-async-action="Browser login view stopped"><button class="button-outline" type="submit">Stop view</button></form>
@@ -3278,8 +3334,8 @@ def _auth_portal_html(
             <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Agent handoff active</div></div><span class="state-dot"></span></div>
             <div class="state-item"><div class="state-icon">{identity_svg}</div><div><div class="state-title">Profile: {safe_identity}</div><div class="state-subtitle">Persistent broker identity</div></div><span class="state-dot"></span></div>
             <div class="state-item"><div class="state-icon">{handoff_svg}</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{network_svg}</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Trusted IPs skip password prompts</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">noVNC scaling</div><div class="state-subtitle">resize=scale active</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{network_svg}</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Connection recognized</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">Browser view</div><div class="state-subtitle">Ready for login</div></div><span class="state-dot"></span></div>
           </div>
         </aside>
       </main>
@@ -3299,24 +3355,41 @@ def _auth_portal_html(
           setThemeButton();
         }});
       }}
-      const copyButton = document.getElementById('copyPassword');
-      const authPasswordCard = document.getElementById('authPasswordCard');
-      const showPasswordCard = document.getElementById('showPasswordCard');
-      if (copyButton) {{
+      const authCard = document.getElementById('authCard');
+      const minimizeAuthCard = () => {{
+        if (authCard) authCard.classList.add('is-minimized');
+        if (portalStatus) portalStatus.textContent = 'Auth request minimized. Use the Auth request button to reopen it.';
+      }};
+      const restoreAuthCard = () => {{
+        if (authCard) authCard.classList.remove('is-minimized');
+      }};
+      document.querySelectorAll('.copy-password').forEach((copyButton) => {{
         copyButton.addEventListener('click', async () => {{
-          const value = document.getElementById('vncPassword').textContent;
-          await navigator.clipboard.writeText(value);
+          const passwordNode = copyButton.closest('.password-row')?.querySelector('code') || document.getElementById('vncPasswordInline') || document.getElementById('vncPassword');
+          const value = passwordNode ? passwordNode.textContent : '';
+          try {{
+            await navigator.clipboard.writeText(value);
+          }} catch (error) {{
+            const fallback = document.createElement('textarea');
+            fallback.value = value;
+            fallback.setAttribute('readonly', '');
+            fallback.style.position = 'fixed';
+            fallback.style.opacity = '0';
+            document.body.appendChild(fallback);
+            fallback.select();
+            document.execCommand('copy');
+            fallback.remove();
+          }}
           copyButton.textContent = 'Copied';
-          setTimeout(() => {{
-            authPasswordCard?.classList.add('is-hidden');
-            showPasswordCard?.classList.add('is-visible');
-            copyButton.textContent = 'Copy';
-          }}, 250);
+          setTimeout(() => copyButton.textContent = 'Copy', 1200);
+          setTimeout(minimizeAuthCard, 450);
         }});
-      }}
-      showPasswordCard?.addEventListener('click', () => {{
-        authPasswordCard?.classList.remove('is-hidden');
-        showPasswordCard.classList.remove('is-visible');
+      }});
+      document.getElementById('minimizeAuth')?.addEventListener('click', minimizeAuthCard);
+      document.getElementById('minimizeAuthSecondary')?.addEventListener('click', minimizeAuthCard);
+      document.getElementById('restoreAuth')?.addEventListener('click', restoreAuthCard);
+      document.addEventListener('keydown', (event) => {{
+        if (event.key === 'Escape') minimizeAuthCard();
       }});
       const portalStatus = document.getElementById('portalStatus');
       document.querySelectorAll('form[data-async-action]').forEach((form) => {{
@@ -3335,6 +3408,7 @@ def _auth_portal_html(
             if (portalStatus) portalStatus.textContent = form.dataset.asyncAction || 'Done';
             if (form.action.endsWith('/complete')) {{
               document.querySelectorAll('form[data-async-action] button').forEach((item) => item.disabled = true);
+              if (authCard) authCard.hidden = true;
             }} else if (button) {{
               button.disabled = false;
               button.textContent = oldText;

@@ -1,0 +1,10 @@
+<svg width="920" height="220" viewBox="0 0 920 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">OpenBrowser logo</title>
+  <desc id="desc">OpenBrowser wordmark with nested hexagonal mark.</desc>
+  <rect width="920" height="220" fill="none"/>
+  <g transform="translate(16,10)"><g fill="none" stroke="#0B1220" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="100.00,28.00 162.35,64.00 162.35,136.00 100.00,172.00 37.65,136.00 37.65,64.00" stroke-width="12"/>
+    <polygon points="100.00,64.00 131.18,82.00 131.18,118.00 100.00,136.00 68.82,118.00 68.82,82.00" stroke-width="12"/>
+  </g></g>
+  <text x="225" y="130" fill="#0B1220" font-family="Inter Display, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="76" font-weight="800" letter-spacing="-3.2">OpenBrowser</text>
+</svg>
