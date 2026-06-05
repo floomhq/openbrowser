@@ -560,6 +560,20 @@ def test_openbrowser_auth_request_rejects_conflicting_profile_alias(monkeypatch)
     assert "profile and identity_id must match" in response.text
 
 
+def test_openbrowser_auth_request_rejects_unknown_identity(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "identity_id": "missing-identity", "url": "https://example.com/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 400
+    assert "Identity not found: missing-identity" in response.text
+
+
 def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     created = []

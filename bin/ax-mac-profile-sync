@@ -2,4 +2,5 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
+export OPENBROWSER_BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-$ROOT_DIR}"
 exec python3 -m ax_browser_broker.mac_tunnel "$@"

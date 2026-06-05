@@ -6,5 +6,7 @@ while [ -L "$SOURCE" ]; do
   SOURCE="$(readlink "$SOURCE")"
   [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
 done
-cd "$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+cd "$ROOT_DIR"
+export OPENBROWSER_BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-$ROOT_DIR}"
 exec python3 -m ax_browser_broker.cli "$@"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 
 from ax_browser_broker import cli
 
@@ -46,3 +48,23 @@ def test_cli_auth_uses_identity_id_not_profile(monkeypatch, capsys) -> None:
         )
     ]
     assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+def test_cli_prints_compact_http_errors(monkeypatch, capsys) -> None:
+    def fake_request(_request, timeout=None):
+        raise urllib.error.HTTPError(
+            "http://127.0.0.1:8767/openbrowser/v1/auth/request",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b'{"detail":"Identity not found: work-main"}'),
+        )
+
+    monkeypatch.setattr(cli.urllib.request, "urlopen", fake_request)
+    monkeypatch.setattr(cli, "_load_api_key", lambda: "test-key")
+
+    assert cli.main(["auth", "https://example.com", "--identity", "work-main"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.strip() == "HTTP 400: Identity not found: work-main"

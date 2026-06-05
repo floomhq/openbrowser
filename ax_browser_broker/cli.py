@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -13,6 +14,10 @@ from .config import BROKER_PORT, OPENBROWSER_API_KEYS_FILE
 
 
 BASE_URL = f"http://127.0.0.1:{BROKER_PORT}"
+
+
+class CliError(RuntimeError):
+    pass
 
 
 def _load_api_key() -> str:
@@ -39,8 +44,20 @@ def _request(method: str, path: str, body: dict[str, Any] | None = None, auth: b
     if auth:
         headers["authorization"] = f"Bearer {_load_api_key()}"
     request = urllib.request.Request(BASE_URL + path, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        body = error.read().decode("utf-8", errors="replace").strip()
+        detail = body
+        try:
+            parsed = json.loads(body)
+            detail = str(parsed.get("detail") or parsed)
+        except Exception:
+            pass
+        raise CliError(f"HTTP {error.code}: {detail}") from None
+    except urllib.error.URLError as error:
+        raise CliError(f"Connection failed: {error.reason}") from None
 
 
 def _print(data: dict[str, Any]) -> int:
@@ -149,7 +166,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
-    return int(args.func(args))
+    try:
+        return int(args.func(args))
+    except CliError as error:
+        print(str(error), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

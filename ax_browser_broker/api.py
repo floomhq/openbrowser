@@ -40,7 +40,7 @@ from .config import (
 )
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
-from .identities import redacted_status
+from .identities import IdentityError, redacted_status
 from .lease_control import LeaseControlError, complete_control_session, create_control_session, get_control_session
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
@@ -1877,10 +1877,13 @@ async def openbrowser_profiles_status(_auth: str = Depends(require_openbrowser_a
 
 @app.post("/openbrowser/v1/auth/request")
 async def openbrowser_auth_request(request: AuthRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
-    active_response = _active_identity_control_response(request)
-    if active_response:
-        return active_response
-    return await auth_request(request)
+    try:
+        active_response = _active_identity_control_response(request)
+        if active_response:
+            return active_response
+        return await auth_request(request)
+    except IdentityError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.post("/openbrowser/v1/auth/batch")
