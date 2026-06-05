@@ -40,6 +40,7 @@ Issues = "https://github.com/floomhq/openbrowser/issues"
 
 [project.scripts]
 openbrowser-broker = "ax_browser_broker.api:main"
+openbrowser = "ax_browser_broker.cli:main"
 openbrowser-mcp = "ax_browser_broker.mcp_server:main"
 openbrowser-remote-mcp = "ax_browser_broker.remote_mcp_server:main"
 openbrowser-audit = "ax_browser_broker.audit:main"

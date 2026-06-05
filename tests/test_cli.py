@@ -1,0 +1,48 @@
+from __future__ import annotations
+
+import json
+
+from ax_browser_broker import cli
+
+
+def test_cli_loads_api_key_from_env(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEY", "env-key")
+
+    assert cli._load_api_key() == "env-key"
+
+
+def test_cli_loads_api_key_from_tokens_file(tmp_path, monkeypatch) -> None:
+    key_file = tmp_path / "openbrowser_api_keys.json"
+    key_file.write_text(json.dumps({"tokens": {"default": "file-key"}}), encoding="utf-8")
+    monkeypatch.delenv("OPENBROWSER_API_KEY", raising=False)
+    monkeypatch.delenv("AX_OPENBROWSER_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "OPENBROWSER_API_KEYS_FILE", key_file)
+
+    assert cli._load_api_key() == "file-key"
+
+
+def test_cli_auth_uses_identity_id_not_profile(monkeypatch, capsys) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None, auth=False):
+        calls.append((method, path, body, auth))
+        return {"ok": True}
+
+    monkeypatch.setattr(cli, "_request", fake_request)
+
+    assert cli.main(["auth", "https://lovable.dev", "--identity", "work-main", "--owner", "pytest"]) == 0
+
+    assert calls == [
+        (
+            "POST",
+            "/openbrowser/v1/auth/request",
+            {
+                "owner": "pytest",
+                "identity_id": "work-main",
+                "url": "https://lovable.dev",
+                "reason": "login_required",
+            },
+            True,
+        )
+    ]
+    assert json.loads(capsys.readouterr().out) == {"ok": True}
