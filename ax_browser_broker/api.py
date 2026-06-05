@@ -13,7 +13,7 @@ from typing import Any
 import uvicorn
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .audit import run_audit
 from .auth import (
@@ -129,6 +129,16 @@ class AuthRequest(BaseModel):
     url: str
     reason: str = "login_required"
     identity_id: str | None = None
+    profile: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_legacy_profile(self) -> "AuthRequest":
+        if not self.profile:
+            return self
+        if self.identity_id and self.identity_id != self.profile:
+            raise ValueError("profile and identity_id must match when both are provided")
+        self.identity_id = self.profile
+        return self
 
 
 class SeedSlotRequest(BaseModel):

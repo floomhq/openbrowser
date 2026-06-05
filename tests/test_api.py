@@ -464,6 +464,57 @@ def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
     assert ok.json()["identity_id"] == "chrome-one"
 
 
+def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    created = []
+
+    def fake_create_auth_request(owner, url, reason, identity_id):
+        created.append((owner, url, reason, identity_id))
+        return {
+            "token": "tok",
+            "owner": owner,
+            "url": url,
+            "reason": reason,
+            "identity_id": identity_id,
+            "portal_url": "https://browser.example.com/auth/tok",
+            "status": "pending",
+        }
+
+    monkeypatch.setattr(api, "create_auth_request", fake_create_auth_request)
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "profile": "chrome-depontefede", "url": "https://lovable.dev/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["identity_id"] == "chrome-depontefede"
+    assert created == [("pytest", "https://lovable.dev/", "login_required", "chrome-depontefede")]
+
+
+def test_openbrowser_auth_request_rejects_conflicting_profile_alias(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "create_auth_request", lambda *_args: (_ for _ in ()).throw(AssertionError("must not create auth request")))
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={
+            "owner": "pytest",
+            "identity_id": "chrome-one",
+            "profile": "chrome-two",
+            "url": "https://lovable.dev/",
+        },
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 422
+    assert "profile and identity_id must match" in response.text
+
+
 def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     created = []

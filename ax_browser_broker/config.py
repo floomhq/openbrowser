@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,16 +61,29 @@ LEASE_TTL_SECONDS = 60 * 60 * 4
 AUTH_REQUEST_TTL_SECONDS = 15 * 60
 LEASE_CONTROL_TTL_SECONDS = 15 * 60
 MAX_SNAPSHOT_CHARS = 18000
-SLOTS = (
-    Slot("pool-a", 9223),
-    Slot("pool-b", 9224),
-    Slot("pool-c", 9225),
-    Slot("pool-d", 9226),
-    Slot("pool-e", 9227),
-    Slot("pool-f", 9228),
-    Slot("pool-g", 9229),
-    Slot("pool-h", 9230),
-)
+def _slot_suffix(index: int) -> str:
+    if index < 26:
+        return chr(ord("a") + index)
+    return str(index + 1)
+
+
+def _parse_slots() -> tuple[Slot, ...]:
+    explicit = os.environ.get("OPENBROWSER_SLOTS", "").strip()
+    if explicit:
+        slots = []
+        for item in explicit.split(","):
+            name, _, port = item.strip().partition(":")
+            if not name or not port:
+                raise ValueError(f"Invalid OPENBROWSER_SLOTS item: {item!r}")
+            slots.append(Slot(name, int(port)))
+        return tuple(slots)
+
+    count = max(1, int(os.environ.get("OPENBROWSER_SLOT_COUNT", "8")))
+    port_start = int(os.environ.get("OPENBROWSER_SLOT_PORT_START", "9223"))
+    return tuple(Slot(f"pool-{_slot_suffix(index)}", port_start + index) for index in range(count))
+
+
+SLOTS = _parse_slots()
 
 
 def ensure_dirs() -> None:
@@ -85,3 +99,18 @@ def ensure_dirs() -> None:
         POOL_CONFIG_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
+    _install_browser_pool_scripts()
+
+
+def _install_browser_pool_scripts() -> None:
+    source_dir = Path(__file__).parent / "browser_pool" / "bin"
+    target_dir = BROWSER_POOL_DIR / "bin"
+    if not source_dir.exists():
+        return
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for source in source_dir.iterdir():
+        if not source.is_file():
+            continue
+        target = target_dir / source.name
+        shutil.copy2(source, target)
+        target.chmod(target.stat().st_mode | 0o755)
