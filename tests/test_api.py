@@ -968,12 +968,16 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "Session State" in portal.text
     assert "chrome-test" in portal.text
     assert "https://example.com/dashboard" in portal.text
-    assert "Manual browser control" in portal.text
-    assert "Refresh screenshot" in portal.text
+    assert "Human control request" in portal.text
+    assert "Control request" in portal.text
+    assert "Advanced controls" in portal.text
+    assert "Refresh screenshot" not in portal.text
+    assert ">Refresh<" in portal.text
+    assert "Mark complete" in portal.text
     assert "Text to type into focused field" in portal.text
     assert "Press key" in portal.text
-    assert "End control link" in portal.text
-    assert "Click the screenshot to control the held browser tab." in portal.text
+    assert "End control link" not in portal.text
+    assert "This is the browser tab the agent is holding." in portal.text
     assert "This view never exposes session cookies, saved passwords, or proxy credentials." in portal.text
     assert "No cookies or passwords exposed" in portal.text
     assert 'data-key="PageDown"' not in portal.text

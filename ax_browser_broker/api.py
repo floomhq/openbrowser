@@ -2384,7 +2384,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     safe_identity = html.escape(str(session.get("identity_id") or "held-browser"))
     safe_slot = html.escape(str(session.get("slot") or "active slot"))
     safe_url = html.escape(str(session.get("url") or "Current browser tab"))
-    safe_reason = html.escape(str(session.get("reason") or "Manual browser control"))
+    safe_reason = html.escape(str(session.get("reason") or "browser_control"))
     mark_svg = """<img class="brand-icon" src="/openbrowser/assets/brand/logo/mark/openbrowser-mark.svg" alt="">"""
     browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
     pointer_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6.8 1.4L9 20z"></path></svg>"""
@@ -2598,7 +2598,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .session-name {{ min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 760; }}
       .session-status {{ margin-top: 4px; color: var(--green); font-size: 13px; font-weight: 650; }}
       .kebab {{ color: var(--faint); font-size: 24px; line-height: 1; }}
-      .request-card, .control-card {{
+      .request-card {{
         margin-top: 18px;
         display: grid;
         gap: 13px;
@@ -2682,19 +2682,92 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         background: white;
         cursor: crosshair;
       }}
-      .control-card {{
-        grid-template-columns: 54px minmax(0, 1fr);
+      .auth-card {{
+        position: absolute;
+        right: 28px;
+        bottom: 32px;
+        width: min(460px, calc(100% - 56px));
+        display: grid;
+        grid-template-columns: 50px minmax(0, 1fr);
+        gap: 16px;
         align-items: start;
-        box-shadow: 0 10px 28px rgba(0,0,0,0.045);
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: color-mix(in srgb, var(--panel-solid) 94%, transparent);
+        box-shadow: var(--shadow-float);
+        backdrop-filter: blur(18px) saturate(1.12);
       }}
-      .control-logo {{ width: 50px; height: 50px; color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid)); }}
-      .control-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
-      .control-subtitle, #status {{ margin-top: 5px; color: var(--muted); font-size: 13px; font-weight: 560; line-height: 1.35; }}
-      .control-actions {{ grid-column: 1 / -1; display: grid; gap: 10px; margin-top: 2px; }}
+      .auth-card.is-minimized {{
+        width: auto;
+        min-width: 0;
+        grid-template-columns: auto;
+        gap: 0;
+        padding: 10px;
+      }}
+      .auth-card.is-minimized .auth-logo,
+      .auth-card.is-minimized .auth-copy,
+      .auth-card.is-minimized .auth-dismiss {{
+        display: none;
+      }}
+      .auth-card.is-minimized .auth-chip {{ display: inline-flex; }}
+      .auth-logo {{
+        display: grid;
+        place-items: center;
+        width: 48px;
+        height: 48px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        color: var(--blue);
+        background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid));
+      }}
+      .auth-logo .brand-icon {{ width: 26px; height: 26px; }}
+      .auth-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
+      .auth-subtitle, #status {{ margin-top: 5px; color: var(--muted); font-size: 13px; font-weight: 560; line-height: 1.35; }}
+      .auth-actions {{ margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
+      .auth-actions button {{ width: 100%; }}
+      .auth-dismiss {{
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        min-height: 32px;
+        padding: 0 10px;
+        border-color: var(--border);
+        background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+        color: var(--muted);
+        font-size: 12px;
+      }}
+      .auth-chip {{
+        display: none;
+        min-height: 40px;
+        padding: 0 14px;
+      }}
+      .advanced-controls {{
+        grid-column: 1 / -1;
+        margin-top: 12px;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+      }}
+      .advanced-controls summary {{
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }}
+      .advanced-controls[open] summary {{ margin-bottom: 10px; }}
+      .control-actions {{ display: grid; gap: 10px; }}
       .control-row {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(74px, auto); gap: 10px; }}
       .control-row button {{ padding-inline: 12px; }}
       .control-buttons {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
       .control-buttons button {{ width: 100%; }}
+      .control-note {{
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }}
+      .control-logo {{ width: 50px; height: 50px; color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid)); }}
+      .control-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
       .state-list {{ display: grid; gap: 22px; }}
       .state-item {{ display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 13px; align-items: center; }}
       .state-icon {{ width: 36px; height: 36px; }}
@@ -2721,7 +2794,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         .browser-shell {{ min-height: 58dvh; grid-template-rows: auto minmax(0, 1fr); }}
         .browser-toolbar {{ grid-template-columns: minmax(0, 1fr) auto; }}
         .toolbar-left {{ display: none; }}
-        .control-card {{ grid-template-columns: 42px minmax(0, 1fr); }}
+        .auth-card {{ position: static; width: 100%; margin-top: 14px; grid-template-columns: 42px minmax(0, 1fr); padding: 18px; }}
       }}
     </style>
   </head>
@@ -2759,29 +2832,6 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
             <div class="request-row"><span class="label">Slot</span><span class="value">{safe_slot}</span></div>
             <div class="request-row"><span class="label">Expires</span><span class="value mono">{safe_expires_at}</span></div>
           </section>
-          <section class="control-card" aria-label="Manual browser control">
-            <div class="control-logo">{mark_svg}</div>
-            <div>
-              <div class="control-title">Manual browser control</div>
-              <div class="control-subtitle">Click the screenshot to control the held browser tab. This view never exposes session cookies, saved passwords, or proxy credentials.</div>
-            </div>
-            <div class="control-actions">
-              <button class="button-outline" id="refresh" type="button">Refresh screenshot</button>
-              <form id="typeForm" class="control-row">
-                <input id="text" autocomplete="off" placeholder="Text to type into focused field">
-                <button type="submit">Type</button>
-              </form>
-              <form id="pressForm" class="control-row">
-                <input id="key" autocomplete="off" value="Enter" aria-label="Keyboard key">
-                <button type="submit">Press key</button>
-              </form>
-              <div class="control-buttons">
-                <button class="button-outline" id="done" type="button">End control link</button>
-                <button class="button-outline" id="openImage" type="button">Open screenshot</button>
-              </div>
-              <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Control link active.</div>
-            </div>
-          </section>
         </aside>
         <section class="browser-stage">
           <div class="stage-title">
@@ -2798,6 +2848,37 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
               <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
             </div>
           </div>
+          <aside class="auth-card is-success" id="controlCard" aria-label="Human control request">
+            <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize control request">Hide</button>
+            <div class="auth-logo">{mark_svg}</div>
+            <div class="auth-copy">
+              <div class="auth-title">Human control request</div>
+              <div class="auth-subtitle">This is the browser tab the agent is holding. Click the browser view to continue, then mark complete.</div>
+              <div class="auth-actions">
+                <button class="button button-soft" id="refresh" type="button">Refresh</button>
+                <button id="done" type="button">Mark complete</button>
+              </div>
+            </div>
+            <details class="advanced-controls">
+              <summary>Advanced controls</summary>
+              <div class="control-actions">
+                <form id="typeForm" class="control-row">
+                  <input id="text" autocomplete="off" placeholder="Text to type into focused field">
+                  <button type="submit">Type</button>
+                </form>
+                <form id="pressForm" class="control-row">
+                  <input id="key" autocomplete="off" value="Enter" aria-label="Keyboard key">
+                  <button type="submit">Press key</button>
+                </form>
+                <div class="control-buttons">
+                  <button class="button-outline" id="openImage" type="button">Open screenshot</button>
+                </div>
+                <div class="control-note">This view never exposes session cookies, saved passwords, or proxy credentials.</div>
+                <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Control link active.</div>
+              </div>
+            </details>
+            <button class="auth-chip" type="button" id="restoreControl">Control request</button>
+          </aside>
         </section>
         <aside class="state-panel">
           <div class="panel-title">Session State</div>
@@ -2840,7 +2921,23 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       document.getElementById('refresh').addEventListener('click', refresh);
       document.getElementById('refreshTop').addEventListener('click', refresh);
       document.getElementById('openImage').addEventListener('click', () => window.open(screen.src, '_blank', 'noopener,noreferrer'));
-      document.getElementById('controlsFocus').addEventListener('click', () => document.getElementById('text').focus());
+      document.getElementById('controlsFocus').addEventListener('click', () => {{
+        document.querySelector('.advanced-controls')?.setAttribute('open', '');
+        restoreControlCard();
+        document.getElementById('text').focus();
+      }});
+      const controlCard = document.getElementById('controlCard');
+      const minimizeControlCard = () => {{
+        if (controlCard) controlCard.classList.add('is-minimized');
+      }};
+      const restoreControlCard = () => {{
+        if (controlCard) controlCard.classList.remove('is-minimized');
+      }};
+      document.getElementById('minimizeControl')?.addEventListener('click', minimizeControlCard);
+      document.getElementById('restoreControl')?.addEventListener('click', restoreControlCard);
+      document.addEventListener('keydown', (event) => {{
+        if (event.key === 'Escape') minimizeControlCard();
+      }});
       screen.addEventListener('click', async (event) => {{
         const rect = screen.getBoundingClientRect();
         const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
