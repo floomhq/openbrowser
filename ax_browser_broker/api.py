@@ -41,7 +41,7 @@ from .config import (
 )
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
-from .identities import IdentityError, redacted_status
+from .identities import IdentityError, invalidate_identity_replicas, redacted_status
 from .lease_control import LeaseControlError, complete_control_session, create_control_session, get_control_session
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
@@ -292,6 +292,60 @@ def _safe_record_event(**kwargs: Any) -> None:
         record_event(**kwargs)
     except Exception:
         return
+
+
+def _verify_auth_cookie_landed(identity_id: str, host: str | None) -> dict[str, Any]:
+    """Confirm the auth login wrote a cookie for the target origin into the base profile.
+
+    The next lease re-syncs each replica from this base profile, so if the cookie did not
+    land here it will not be visible to the agent. Returns a structured result for the
+    caller to log/inspect; never raises.
+    """
+    import sqlite3
+
+    from .identities import require_identity
+
+    result: dict[str, Any] = {"ok": False, "host": host, "checked": False}
+    try:
+        identity = require_identity(identity_id)
+    except Exception as error:  # pragma: no cover - defensive
+        result["error"] = str(error)
+        return result
+    base_dir = Path(identity.profile_dir)
+    result["base_profile_dir"] = str(base_dir)
+    total = 0
+    host_matches = 0
+    for relative in ("Default/Cookies", "Default/Network/Cookies"):
+        db_path = base_dir / relative
+        if not db_path.exists():
+            continue
+        try:
+            connection = sqlite3.connect(f"file:{db_path}?mode=ro&immutable=1", uri=True, timeout=1)
+            try:
+                result["checked"] = True
+                total += int(connection.execute("select count(*) from cookies").fetchone()[0] or 0)
+                if host:
+                    # Match on the registrable parent domain (last two labels) because
+                    # session cookies are commonly set on the parent (e.g. a login at
+                    # app.slack.com sets cookies on .slack.com).
+                    labels = host.split(".")
+                    needle = ".".join(labels[-2:]) if len(labels) >= 2 else host
+                    row = connection.execute(
+                        "select count(*) from cookies where host_key like ?",
+                        (f"%{needle}%",),
+                    ).fetchone()
+                    host_matches += int(row[0] or 0)
+            finally:
+                connection.close()
+        except sqlite3.Error as error:
+            result["error"] = str(error)
+            continue
+    result["total_cookies"] = total
+    result["host_cookie_matches"] = host_matches
+    # ok when we found at least one cookie for the target host, or (no host given) the
+    # profile has cookies at all after the login.
+    result["ok"] = bool(host_matches > 0) if host else bool(total > 0)
+    return result
 
 
 def _record_browser_failure(request: LeaseIdRequest, action: str, error: Exception, data: dict[str, Any] | None = None) -> None:
@@ -3951,7 +4005,34 @@ async def auth_start_vnc(token: str, request: Request) -> Any:
 async def auth_complete(token: str) -> dict[str, Any]:
     try:
         request = complete_auth_request(token)
+        # Stop the portal browser FIRST so Chrome flushes the freshly-authenticated
+        # cookies to the identity's base profile on disk before we touch replicas.
         request["vnc_stop"] = stop_auth_vnc(token, missing_ok=True)
+        identity_id = request.get("identity_id")
+        if identity_id:
+            # The human logged in against the identity's BASE profile. Parallel-session
+            # leases are served from per-slot replicas, so invalidate stale replicas to
+            # force a fresh base->replica re-sync on the next lease. Without this the
+            # agent lease would reuse a warm replica that predates the login and see a
+            # logged-out session (the core auth-handoff bug).
+            try:
+                request["replica_invalidation"] = invalidate_identity_replicas(str(identity_id))
+            except IdentityError as replica_error:
+                request["replica_invalidation"] = {"error": str(replica_error)}
+            target_url = str(request.get("url") or "")
+            host = urllib.parse.urlsplit(target_url).hostname if target_url else None
+            verification = _verify_auth_cookie_landed(str(identity_id), host)
+            request["cookie_verification"] = verification
+            if not verification.get("ok"):
+                _safe_record_event(
+                    source=str(request.get("owner", "unknown")),
+                    event_type="auth",
+                    message="Auth completed but target-origin cookie not found in base profile",
+                    severity="warning",
+                    url=target_url,
+                    tags=["auth", "complete", "cookie-missing"],
+                    data={"token": token, "identity_id": identity_id, "verification": verification},
+                )
         _safe_record_event(
             source=str(request.get("owner", "unknown")),
             event_type="auth",

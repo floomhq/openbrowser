@@ -274,6 +274,39 @@ def _is_replica_profile(profile_dir: str | None) -> bool:
     return True
 
 
+def _cookie_db_mtime(profile_dir: Path) -> float:
+    """Newest mtime across a profile's cookie databases (0.0 if none exist)."""
+    newest = 0.0
+    for relative in ("Default/Cookies", "Default/Network/Cookies"):
+        db_path = profile_dir / relative
+        try:
+            mtime = db_path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > newest:
+            newest = mtime
+    return newest
+
+
+def _replica_is_stale_against_base(base_profile_dir: Path, replica_profile_dir: Path) -> bool:
+    """True when the base profile has cookies newer than the warm replica copy.
+
+    The auth portal logs the human in against the identity's BASE profile dir, but
+    parallel-session leases are served from per-slot replicas under .replicas/.
+    A replica synced before the human's login never picks up the new cookies, so the
+    agent lease would see a logged-out session. When the base cookie DB is newer than
+    the replica's, the replica must be re-synced from base before it is leased.
+    """
+    if base_profile_dir.resolve() == replica_profile_dir.resolve():
+        return False
+    base_mtime = _cookie_db_mtime(base_profile_dir)
+    if base_mtime <= 0.0:
+        return False
+    replica_mtime = _cookie_db_mtime(replica_profile_dir)
+    # Newer base cookies (with a small tolerance to avoid churning on equal stamps).
+    return base_mtime > replica_mtime + 1.0
+
+
 def _has_duplicate_profile_slot(identity_id: str, selected_slot: str, selected_profile_dir: str | None) -> bool:
     if not selected_profile_dir:
         return False
@@ -331,10 +364,43 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 and identity_lease_count == 0
                 and _has_duplicate_profile_slot(identity_id, slot.name, identity_profile_dir)
             )
+            # If this lease would be served from a warm replica whose cookies predate
+            # the identity's base profile (e.g. a human just completed a login in the
+            # auth portal, which writes to the base profile), force a re-activation so
+            # the replica is re-synced from base and the agent sees the fresh session.
+            replica_needs_refresh = bool(
+                identity_id
+                and identity
+                and active_identity == identity_id
+                and _is_replica_profile(identity_profile_dir)
+                and _replica_is_stale_against_base(
+                    identity.profile_dir, Path(identity_profile_dir)
+                )
+            )
+            if replica_needs_refresh:
+                try:
+                    from .telemetry import record_event
+
+                    record_event(
+                        source=owner,
+                        event_type="lease",
+                        message="Refreshing stale identity replica from base before lease",
+                        severity="info",
+                        tags=["lease", "replica", "auth-sync"],
+                        data={
+                            "slot": slot.name,
+                            "identity_id": identity_id,
+                            "replica_profile_dir": identity_profile_dir,
+                            "base_profile_dir": str(identity.profile_dir),
+                        },
+                    )
+                except Exception:
+                    pass
             if identity_id and (
                 active_identity != identity_id
                 or not _slot_ready(slot)
                 or reconcile_stale_identity_slots
+                or replica_needs_refresh
             ):
                 try:
                     activate_identity(

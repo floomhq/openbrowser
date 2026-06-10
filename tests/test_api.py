@@ -1075,3 +1075,73 @@ def test_telemetry_api_redacts_sensitive_data(tmp_path, monkeypatch) -> None:
     assert listed.json()["count"] == 1
     summary = client.get("/telemetry/summary")
     assert summary.json()["by_event_type"]["smoke"] == 1
+
+
+def test_auth_complete_invalidates_replicas_and_verifies_cookie(tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: {"stopped": []})
+
+    invalidations = []
+    monkeypatch.setattr(
+        api,
+        "invalidate_identity_replicas",
+        lambda identity_id: invalidations.append(identity_id) or {"identity_id": identity_id, "removed_replicas": []},
+    )
+
+    # Base profile with a slack cookie (simulating a completed login).
+    base_profile = tmp_path / "chrome-depontefede"
+    cookie_dir = base_profile / "Default"
+    cookie_dir.mkdir(parents=True)
+    connection = sqlite3.connect(cookie_dir / "Cookies")
+    connection.execute("create table cookies (host_key text, name text)")
+    connection.execute("insert into cookies values ('api.slack.com', 'd')")
+    connection.commit()
+    connection.close()
+
+    class Identity:
+        identity_id = "chrome-depontefede"
+        profile_dir = base_profile
+
+    monkeypatch.setattr("ax_browser_broker.identities.require_identity", lambda _id: Identity())
+    monkeypatch.setattr(auth, "require_identity", lambda _id: Identity())
+
+    request = auth.create_auth_request(
+        "tester", "https://app.slack.com/client", identity_id="chrome-depontefede"
+    )
+
+    client = TestClient(api.app)
+    response = client.post("/auth/" + request["token"] + "/complete")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert invalidations == ["chrome-depontefede"]
+    assert body["replica_invalidation"]["identity_id"] == "chrome-depontefede"
+    assert body["cookie_verification"]["ok"] is True
+    assert body["cookie_verification"]["host_cookie_matches"] >= 1
+
+
+def test_auth_complete_flags_missing_target_cookie(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: {"stopped": []})
+    monkeypatch.setattr(api, "invalidate_identity_replicas", lambda identity_id: {"identity_id": identity_id})
+
+    base_profile = tmp_path / "empty-identity"
+    base_profile.mkdir()
+
+    class Identity:
+        identity_id = "empty-identity"
+        profile_dir = base_profile
+
+    monkeypatch.setattr("ax_browser_broker.identities.require_identity", lambda _id: Identity())
+    monkeypatch.setattr(auth, "require_identity", lambda _id: Identity())
+
+    request = auth.create_auth_request(
+        "tester", "https://app.slack.com/client", identity_id="empty-identity"
+    )
+    client = TestClient(api.app)
+    response = client.post("/auth/" + request["token"] + "/complete")
+
+    assert response.status_code == 200
+    assert response.json()["cookie_verification"]["ok"] is False

@@ -4,6 +4,7 @@ import argparse
 import ast
 import json
 import os
+import shutil
 import socket
 import stat
 import subprocess
@@ -238,6 +239,57 @@ def identity_replica_profile_dir(identity: BrowserIdentity, slot_name: str) -> P
     if slot_name not in _slot_names():
         raise IdentityError(f"Unknown slot: {slot_name}")
     return BROWSER_POOL_DIR / "profiles" / ".replicas" / identity.identity_id / slot_name
+
+
+def invalidate_identity_replicas(identity_id: str) -> dict[str, Any]:
+    """Drop stale per-slot replicas for an identity so the next lease re-syncs from base.
+
+    The auth portal writes login cookies into the identity's BASE profile dir. For
+    identities with max_parallel_sessions > 1, agent leases are served from per-slot
+    replica copies under .replicas/<identity>/<slot>. A replica synced before the
+    human's login is stale and would present a logged-out session to the agent. After
+    an auth handoff completes we clear the slot config + remove the replica dir for
+    every slot of this identity that is NOT currently leased, forcing a fresh
+    base->replica rsync on the next lease. Slots with an active foreign lease are left
+    untouched (the pool freshness guard re-syncs them on their next lease) so we never
+    corrupt a live session.
+    """
+    identity = require_identity(identity_id)
+    replica_root = (BROWSER_POOL_DIR / "profiles" / ".replicas").resolve()
+    cleared_configs: list[str] = []
+    removed_replicas: list[str] = []
+    skipped_leased: list[str] = []
+    for slot in SLOTS:
+        if active_identity_id(slot.name) != identity_id:
+            continue
+        configured = read_slot_config(slot.name).get("PROFILE_DIR")
+        if not configured:
+            continue
+        configured_path = Path(configured)
+        try:
+            configured_path.resolve().relative_to(replica_root)
+        except ValueError:
+            # Base profile (not a replica) — auth portal already wrote it; leave it.
+            continue
+        if _slot_has_active_lease(slot.name):
+            skipped_leased.append(slot.name)
+            continue
+        config_path = POOL_CONFIG_DIR / f"{slot.name}.env"
+        if config_path.exists():
+            config_path.unlink()
+            cleared_configs.append(slot.name)
+        try:
+            if configured_path.resolve().relative_to(replica_root) and configured_path.exists():
+                shutil.rmtree(configured_path, ignore_errors=True)
+                removed_replicas.append(str(configured_path))
+        except (ValueError, OSError):
+            pass
+    return {
+        "identity_id": identity_id,
+        "cleared_slot_configs": cleared_configs,
+        "removed_replicas": removed_replicas,
+        "skipped_leased_slots": skipped_leased,
+    }
 
 
 def _sync_replica_profile(source: Path, target: Path) -> None:
