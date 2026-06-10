@@ -48,6 +48,8 @@ openbrowser-use --identity work-main --json open https://example.com
 
 When `policy.max_parallel_sessions` is greater than one, parallel leases use per-slot replicas under `profiles/.replicas/<identity>/<slot>`.
 
+A human auth handoff (`/auth/*`) logs in against the identity's **base** profile dir, not a replica. So that the agent's next lease sees the freshly-authenticated session, completing an auth request now invalidates that identity's stale replicas, and a lease that would be served from a replica whose cookies predate the base profile re-syncs the replica from base before handing it out. The auth-complete response also includes a `cookie_verification` block confirming the target-origin cookie actually landed in the base profile.
+
 Do not launch several independent Chrome processes against the same `profile_dir`. Chrome profile locks, SQLite databases, and local state files are single-writer resources. On a laptop, several Chrome windows for the same profile still belong to one Chrome process; on the broker, separate agents normally receive separate Chrome processes.
 
 Use these identity concurrency modes:
@@ -55,7 +57,7 @@ Use these identity concurrency modes:
 | Mode | Use For | Tradeoff |
 | --- | --- | --- |
 | Single canonical lease | Login, settings changes, sensitive account actions | Strongest persistence; one lease owner at a time; that owner can open multiple tabs |
-| Profile replicas | Parallel read/QA/background flows with the same seeded identity | Independent slots; sessions can diverge until replicas are refreshed |
+| Profile replicas | Parallel read/QA/background flows with the same seeded identity | Independent slots; replicas re-sync from base after an auth handoff or when their cookies predate the base profile |
 | Shared live browser coordinator | Future mode for several agents attached to one running Chrome process | Not the default lease contract; needs focus/navigation arbitration |
 
 The default contract is a single canonical lease unless the identity explicitly opts into replicas with `policy.max_parallel_sessions`.

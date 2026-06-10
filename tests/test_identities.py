@@ -342,3 +342,99 @@ def test_activate_identity_refuses_active_slot(tmp_path, monkeypatch) -> None:
 
     with pytest.raises(identities.IdentityError):
         identities.activate_identity("chrome-openpaper", "pool-a")
+
+
+def test_invalidate_identity_replicas_clears_unleased_skips_leased(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    identity_file = tmp_path / "identities.json"
+    pool_config_dir = tmp_path / "pool-config"
+    pool_config_dir.mkdir()
+    browser_pool = tmp_path / "browser-pool"
+    base_profile = browser_pool / "profiles" / "chrome-one"
+    base_profile.mkdir(parents=True)
+    replica_root = browser_pool / "profiles" / ".replicas" / "chrome-one"
+    replica_a = replica_root / "pool-a"
+    replica_b = replica_root / "pool-b"
+    replica_a.mkdir(parents=True)
+    replica_b.mkdir(parents=True)
+    (replica_a / "marker").write_text("a", encoding="utf-8")
+    (replica_b / "marker").write_text("b", encoding="utf-8")
+
+    identity_file.write_text(
+        json.dumps(
+            {
+                "identities": {
+                    "chrome-one": {
+                        "slot": "auto",
+                        "profile_dir": str(base_profile),
+                        "policy": {"max_parallel_sessions": 2},
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", browser_pool)
+
+    # pool-a: replica config, leased -> must be skipped (left intact).
+    # pool-b: replica config, NOT leased -> config cleared + replica removed.
+    slot_configs = {
+        "pool-a": {"IDENTITY_ID": "chrome-one", "PROFILE_DIR": str(replica_a)},
+        "pool-b": {"IDENTITY_ID": "chrome-one", "PROFILE_DIR": str(replica_b)},
+    }
+    for slot_name in ("pool-a", "pool-b"):
+        (pool_config_dir / f"{slot_name}.env").write_text("x=1\n", encoding="utf-8")
+
+    monkeypatch.setattr(identities, "active_identity_id", lambda slot_name: slot_configs.get(slot_name, {}).get("IDENTITY_ID"))
+    monkeypatch.setattr(identities, "read_slot_config", lambda slot_name: slot_configs.get(slot_name, {}))
+    monkeypatch.setattr(identities, "_slot_has_active_lease", lambda slot_name: slot_name == "pool-a")
+
+    result = identities.invalidate_identity_replicas("chrome-one")
+
+    assert result["skipped_leased_slots"] == ["pool-a"]
+    assert result["cleared_slot_configs"] == ["pool-b"]
+    assert str(replica_b) in result["removed_replicas"]
+    # Leased slot left untouched.
+    assert (pool_config_dir / "pool-a.env").exists()
+    assert replica_a.exists()
+    # Unleased slot wiped so next lease re-syncs from base.
+    assert not (pool_config_dir / "pool-b.env").exists()
+    assert not replica_b.exists()
+
+
+def test_invalidate_identity_replicas_leaves_base_profile_alone(tmp_path, monkeypatch):
+    identity_file = tmp_path / "identities.json"
+    pool_config_dir = tmp_path / "pool-config"
+    pool_config_dir.mkdir()
+    browser_pool = tmp_path / "browser-pool"
+    base_profile = browser_pool / "profiles" / "chrome-one"
+    base_profile.mkdir(parents=True)
+
+    identity_file.write_text(
+        json.dumps(
+            {
+                "identities": {
+                    "chrome-one": {"slot": "auto", "profile_dir": str(base_profile)}
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", browser_pool)
+    # Slot points at the BASE profile (not a replica) -> must not be cleared/removed.
+    (pool_config_dir / "pool-a.env").write_text("x=1\n", encoding="utf-8")
+    monkeypatch.setattr(identities, "active_identity_id", lambda slot_name: "chrome-one" if slot_name == "pool-a" else None)
+    monkeypatch.setattr(identities, "read_slot_config", lambda slot_name: {"IDENTITY_ID": "chrome-one", "PROFILE_DIR": str(base_profile)} if slot_name == "pool-a" else {})
+    monkeypatch.setattr(identities, "_slot_has_active_lease", lambda slot_name: False)
+
+    result = identities.invalidate_identity_replicas("chrome-one")
+    assert result["cleared_slot_configs"] == []
+    assert result["removed_replicas"] == []
+    assert (pool_config_dir / "pool-a.env").exists()
+    assert base_profile.exists()

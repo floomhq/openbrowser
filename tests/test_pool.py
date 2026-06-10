@@ -781,3 +781,89 @@ def test_auto_identity_respects_dynamic_in_use_and_reserved_slots(tmp_path, monk
     finally:
         pool.release(busy.lease_id)
         pool.release(free.lease_id)
+
+
+def _write_cookie_db(profile_dir, host="api.slack.com", count=1):
+    """Create a minimal Chrome-shaped Cookies sqlite db under Default/Cookies."""
+    import sqlite3
+
+    db_dir = profile_dir / "Default"
+    db_dir.mkdir(parents=True, exist_ok=True)
+    db_path = db_dir / "Cookies"
+    connection = sqlite3.connect(db_path)
+    try:
+        connection.execute("create table if not exists cookies (host_key text, name text)")
+        connection.execute("delete from cookies")
+        for index in range(count):
+            connection.execute("insert into cookies (host_key, name) values (?, ?)", (host, f"c{index}"))
+        connection.commit()
+    finally:
+        connection.close()
+    return db_path
+
+
+def test_replica_is_stale_against_base_detects_newer_base(tmp_path):
+    import os
+
+    base = tmp_path / "base"
+    replica = tmp_path / "replicas" / "pool-b"
+    base_db = _write_cookie_db(base)
+    replica_db = _write_cookie_db(replica)
+    # Replica synced before the human login: older than base.
+    os.utime(replica_db, (1000, 1000))
+    os.utime(base_db, (2000, 2000))
+    assert pool._replica_is_stale_against_base(base, replica) is True
+    # When replica is at least as fresh as base, no refresh needed.
+    os.utime(replica_db, (2000, 2000))
+    assert pool._replica_is_stale_against_base(base, replica) is False
+    # Same dir is never stale.
+    assert pool._replica_is_stale_against_base(base, base) is False
+
+
+def test_warm_replica_resynced_when_base_has_fresher_cookies(tmp_path, monkeypatch):
+    """Regression: a warm replica that predates the auth login must be re-synced."""
+    import os
+
+    base = tmp_path / "chrome-one"
+    replica = tmp_path / "profiles" / ".replicas" / "chrome-one" / "pool-a"
+    base_db = _write_cookie_db(base, count=5)
+    replica_db = _write_cookie_db(replica, count=0)
+    os.utime(replica_db, (1000, 1000))  # stale replica
+    os.utime(base_db, (5000, 5000))  # fresh base (human just logged in)
+
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": None}
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = base
+        proxy_ref = None
+        max_parallel_sessions = 2
+
+    identity = Identity()
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(
+        pool,
+        "read_slot_config",
+        lambda slot_name: {"PROFILE_DIR": str(replica)} if slot_name == "pool-a" else {},
+    )
+    monkeypatch.setattr(pool, "_is_replica_profile", lambda profile_dir: "/.replicas/" in str(profile_dir or ""))
+    monkeypatch.setattr(pool, "identity_replica_profile_dir", lambda _identity, slot_name: replica)
+    monkeypatch.setattr(pool, "activate_identity", lambda *args, **kwargs: activations.append((args, kwargs)))
+
+    leased = pool.lease("agent-1", identity_id="chrome-one")
+    try:
+        # The stale warm replica forced a re-activation (which re-syncs base->replica),
+        # instead of the no-resync warm reuse path.
+        assert leased.name == "pool-a"
+        assert leased.profile_dir == str(replica)
+        assert len(activations) == 1, "expected re-activation to re-sync stale replica"
+        assert activations[0][0][1] == "pool-a"
+    finally:
+        pool.release(leased.lease_id)
