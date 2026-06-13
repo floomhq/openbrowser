@@ -226,3 +226,48 @@ def test_page_prefers_last_meaningful_existing_tab() -> None:
 
     selected = asyncio.run(controller.page(lease))
     assert selected.url == "https://lovable.dev/projects/abc"
+
+
+def test_transport_recovery_resets_cached_browser_once() -> None:
+    class FakeBrowser:
+        async def close(self) -> None:
+            raise AssertionError("CDP recovery must not close the remote Chrome process")
+
+    controller = BrowserController()
+    lease = make_lease()
+    browser = FakeBrowser()
+    calls = []
+    controller._active_pages[lease.lease_id] = object()
+    controller._browsers[lease.port] = browser
+
+    async def action():
+        calls.append("call")
+        if len(calls) == 1:
+            raise RuntimeError("unable to perform operation on <WriteUnixTransport closed=True>; the handler is closed")
+        return {"ok": True}
+
+    result = asyncio.run(controller._with_transport_recovery(lease, action))
+
+    assert result == {"ok": True}
+    assert calls == ["call", "call"]
+    assert lease.lease_id not in controller._active_pages
+    assert lease.port not in controller._browsers
+
+
+def test_transport_recovery_does_not_retry_unrelated_errors() -> None:
+    controller = BrowserController()
+    lease = make_lease()
+    calls = []
+
+    async def action():
+        calls.append("call")
+        raise RuntimeError("selector not found")
+
+    try:
+        asyncio.run(controller._with_transport_recovery(lease, action))
+    except RuntimeError as error:
+        assert "selector not found" in str(error)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+    assert calls == ["call"]

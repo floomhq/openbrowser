@@ -87,6 +87,37 @@ def test_browser_use_adapter_releases_on_process_failure(monkeypatch) -> None:
     assert issues[0]["lease_id"] == "lease-1"
 
 
+def test_browser_use_beta_check_does_not_lease(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(adapters.importlib.util, "find_spec", lambda name: None)
+
+    assert adapters.run_browser_use(["--beta-check"]) == 0
+    output = capsys.readouterr().out
+
+    assert '"available": false' in output
+    assert '"module": "browser_use.beta"' in output
+
+
+def test_browser_use_beta_missing_fails_before_lease(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(adapters.importlib.util, "find_spec", lambda name: None)
+    monkeypatch.setattr(adapters, "_lease", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("no lease")))
+
+    assert adapters.run_browser_use(["--beta", "--json", "state"]) == 2
+    err = capsys.readouterr().err
+
+    assert "browser_use.beta is not installed" in err
+
+
+def test_browser_use_daemon_pid_parser_matches_only_current_lease() -> None:
+    ps_output = """
+      111 python -m browser_use.skill_cli.daemon --session broker-lease-1 --cdp-url http://127.0.0.1:9223
+      222 browser-use --session broker-other --cdp-url http://127.0.0.1:9224
+      333 python worker.py --session broker-lease-1
+      444 browser-use --cdp-url http://127.0.0.1:9223
+    """
+
+    assert adapters._browser_use_daemon_pids(ps_output, "lease-1", "http://127.0.0.1:9223") == [111, 444]
+
+
 def test_openbrowser_status_uses_broker_profile_and_releases(tmp_path, monkeypatch, capsys) -> None:
     profile = tmp_path / "profile"
     cookie_dir = profile / "Default"

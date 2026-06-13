@@ -7,9 +7,16 @@ OpenBrowser Broker includes wrappers for tools that normally expect a direct CDP
 ```bash
 openbrowser-use --json open https://example.com
 openbrowser-use --identity work-main --json state
+openbrowser-use --beta-check
 ```
 
 Use `--identity <id>` when account state or proxy routing is required.
+
+Browser Use 0.13's Rust-backed beta driver is an optional engine, not a replacement for OpenBrowser. Keep it behind the wrapper so every run still goes through broker leases, persisted identities, proxy routing, auth handoff, telemetry, and audit.
+
+`openbrowser-use --beta-check` reports whether `browser_use.beta` exists in the current Python environment. `openbrowser-use --beta ...` exits before leasing when the beta module is unavailable, so agents cannot silently run the wrong Browser Use path.
+
+When the wrapped Browser Use process exits, the adapter also cleans up broker-scoped Browser Use daemon processes for the same lease/session. This prevents orphaned daemons from holding a CDP target after the broker lease is released.
 
 ## OpenBrowser
 

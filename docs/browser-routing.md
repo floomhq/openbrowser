@@ -70,6 +70,19 @@ Use gstack `/browse` for public pages, local dev-server checks, screenshots, and
 
 Use OpenBrowser Broker for persisted profiles, cookies, proxy-backed identities, login handoffs, rich-text keyboard events, telemetry, feedback issues, and auditable multi-agent browser work. The two routes are complementary: fast disposable browser for anonymous QA, OpenBrowser for anything authenticated or identity-sensitive.
 
+## Browser Use Engine
+
+Browser Use can be used as an OpenBrowser engine through `openbrowser-use`. The wrapper owns the lease, injects the leased CDP URL, records telemetry, and releases the slot. Agents do not call Browser Use directly against raw pool ports.
+
+```bash
+openbrowser-use --identity work-main --json state
+openbrowser-use --beta-check
+```
+
+The Rust-backed Browser Use beta path is gated by runtime detection. If `browser_use.beta` is absent, beta mode exits before a lease is created. This keeps beta experiments explicit and prevents fallback to the wrong action model.
+
+The broker also retries once after closed Playwright/CDP transport errors by clearing the cached page/browser handle and reconnecting to the same slot. Ordinary selector failures and app-level errors are not retried as infrastructure faults.
+
 ## Profile Import
 
 Chrome profile metadata can be mirrored from a workstation into broker identities. Raw cookies, passwords, tokens, and keychain-backed browser databases are excluded. Website login state is established through human auth handoff or Chrome Sync.

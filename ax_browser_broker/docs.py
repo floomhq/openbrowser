@@ -94,11 +94,15 @@ TOPICS: dict[str, dict[str, Any]] = {
         "commands": [
             "openbrowser-use --json open https://example.com",
             "openbrowser-use --identity work-main --json state",
+            "openbrowser-use --beta-check",
         ],
         "notes": [
             "The wrapper leases a broker slot, injects the CDP URL, runs browser-use, and releases the lease.",
             "Use an identity_id when account state or proxy routing is required.",
             "Use the generic pool for unrelated public browsing.",
+            "The Browser Use 0.13 Rust-backed beta driver is treated as an optional engine inside OpenBrowser. It is never allowed to bypass broker leases, identity profiles, proxies, auth handoff, telemetry, or audits.",
+            "Use --beta-check before beta experiments. If browser_use.beta is unavailable, --beta exits before leasing instead of silently falling back.",
+            "Broker browser actions recover once from closed Playwright/CDP transports by clearing cached page/browser handles and reconnecting to the same leased slot.",
         ],
     },
     "openbrowser": {

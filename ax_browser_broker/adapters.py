@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
+import signal
 import shlex
 import sqlite3
 import subprocess
@@ -143,6 +145,55 @@ def _is_help(args: list[str]) -> bool:
     return any(item in {"-h", "--help"} for item in args)
 
 
+def _browser_use_beta_status() -> dict[str, Any]:
+    available = importlib.util.find_spec("browser_use.beta") is not None
+    return {
+        "available": available,
+        "module": "browser_use.beta",
+        "driver": "browser-use-beta-rust",
+        "mode": "broker-gated",
+    }
+
+
+def _browser_use_daemon_pids(ps_output: str, lease_id: str, cdp_url: str) -> list[int]:
+    session = f"broker-{lease_id}"
+    pids: list[int] = []
+    for raw_line in ps_output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2 or not parts[0].isdigit():
+            continue
+        pid = int(parts[0])
+        command = parts[1]
+        if "browser_use.skill_cli.daemon" not in command and "browser-use" not in command:
+            continue
+        if session in command or cdp_url in command:
+            pids.append(pid)
+    return pids
+
+
+def _cleanup_browser_use_daemons(lease_id: str, cdp_url: str) -> list[int]:
+    try:
+        ps = subprocess.run(["ps", "-eo", "pid=,args="], check=False, text=True, capture_output=True)
+    except Exception:
+        return []
+    killed: list[int] = []
+    current_pid = os.getpid()
+    for pid in _browser_use_daemon_pids(ps.stdout, lease_id, cdp_url):
+        if pid == current_pid:
+            continue
+        try:
+            os.kill(pid, signal.SIGTERM)
+            killed.append(pid)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            continue
+    return killed
+
+
 def _openbrowser_command(args: list[str]) -> list[str]:
     configured = os.environ.get("OPENBROWSER_CLI", "openbrowser")
     return [*shlex.split(configured), *args]
@@ -151,9 +202,28 @@ def _openbrowser_command(args: list[str]) -> list[str]:
 def run_browser_use(args: list[str]) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--identity")
+    parser.add_argument("--beta", action="store_true")
+    parser.add_argument("--beta-check", action="store_true")
     parsed, passthrough = parser.parse_known_args(args)
+    if parsed.beta_check:
+        print(json.dumps(_browser_use_beta_status(), indent=2, sort_keys=True))
+        return 0
     if _is_help(passthrough):
         return subprocess.call(["browser-use", *passthrough])
+    if parsed.beta and not _browser_use_beta_status()["available"]:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": "browser_use.beta is not installed in this Python environment",
+                    "next": "Install a Browser Use release that exposes browser_use.beta, then rerun through openbrowser-use so leases, profiles, proxies, and telemetry remain broker-managed.",
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        return 2
     lease = _lease("browser-use", parsed.identity)
     print(f"leased {lease['name']} at {lease['cdp']} for browser-use", file=sys.stderr)
     env = os.environ.copy()
@@ -176,7 +246,7 @@ def run_browser_use(args: list[str]) -> int:
         message="browser-use adapter started",
         lease_id=lease["lease_id"],
         tags=["adapter", "browser-use", "start"],
-        data=_adapter_data(lease, parsed.identity, command),
+        data={**_adapter_data(lease, parsed.identity, command), "beta_requested": bool(parsed.beta)},
     )
     try:
         exit_code = subprocess.call(command, env=env)
@@ -228,6 +298,16 @@ def run_browser_use(args: list[str]) -> int:
         )
         raise
     finally:
+        killed = _cleanup_browser_use_daemons(lease["lease_id"], lease["cdp"])
+        if killed:
+            _safe_record_event(
+                source="browser-use",
+                event_type="session",
+                message="browser-use adapter cleaned up daemon processes",
+                lease_id=lease["lease_id"],
+                tags=["adapter", "browser-use", "cleanup"],
+                data={"pids": killed, "count": len(killed)},
+            )
         _release(lease["lease_id"])
 
 
