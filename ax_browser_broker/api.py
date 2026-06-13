@@ -2907,14 +2907,14 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
               <div class="auth-title">Human control request</div>
-              <div class="auth-subtitle">This is the browser tab the agent is holding. Click the browser view to continue, then mark complete.</div>
+              <div class="auth-subtitle">Live view of the agent's browser tab. To log in: click a field in the view to focus it, type below and press Type, click Press key for Enter/Tab. The view refreshes automatically. Mark complete when done.</div>
               <div class="auth-actions">
                 <button class="button button-soft" id="refresh" type="button">Refresh</button>
                 <button id="done" type="button">Mark complete</button>
               </div>
             </div>
-            <details class="advanced-controls">
-              <summary>Advanced controls</summary>
+            <details class="advanced-controls" open>
+              <summary>Keyboard (type password / press Enter)</summary>
               <div class="control-actions">
                 <form id="typeForm" class="control-row">
                   <input id="text" autocomplete="off" placeholder="Text to type into focused field">
@@ -2962,7 +2962,17 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }});
       const expiresAt = Number(statusBox.dataset.expiresAt || 0);
       if (expiresAt) setStatus(`Control link expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
-      const refresh = () => {{ screen.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`; }};
+      let shotPending = false;
+      const refresh = () => {{
+        if (shotPending) return;
+        shotPending = true;
+        const next = new Image();
+        next.onload = () => {{ screen.src = next.src; shotPending = false; }};
+        next.onerror = () => {{ shotPending = false; }};
+        next.src = `/auth/lease-control/${{token}}/screenshot?ts=${{Date.now()}}`;
+      }};
+      setInterval(refresh, 1200);
+      refresh();
       const postJson = async (path, body) => {{
         const response = await fetch(path, {{
           method: 'POST',
