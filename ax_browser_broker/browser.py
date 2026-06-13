@@ -233,6 +233,16 @@ class BrowserController:
 
         return await self._with_transport_recovery(lease, action)
 
+    async def scroll(self, lease: Lease, delta_y: int, delta_x: int = 0, x: int | None = None, y: int | None = None) -> dict[str, Any]:
+        async def action() -> dict[str, Any]:
+            page = await self.page(lease)
+            if x is not None and y is not None:
+                await page.mouse.move(max(0, int(x)), max(0, int(y)))
+            await page.mouse.wheel(int(delta_x), int(delta_y))
+            return {"lease_id": lease.lease_id, "slot": lease.name, "scrolled": {"x": int(delta_x), "y": int(delta_y)}, "url": page.url}
+
+        return await self._with_transport_recovery(lease, action)
+
     async def _uses_rich_text_keyboard_path(self, page: Page, selector: str) -> bool:
         return bool(
             await page.locator(selector).evaluate(

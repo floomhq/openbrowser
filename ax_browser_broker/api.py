@@ -110,6 +110,13 @@ class LeaseControlPressRequest(BaseModel):
     key: str = Field(min_length=1, max_length=80)
 
 
+class LeaseControlScrollRequest(BaseModel):
+    delta_y: int = Field(ge=-6000, le=6000)
+    delta_x: int = Field(default=0, ge=-6000, le=6000)
+    x: int | None = Field(default=None, ge=0)
+    y: int | None = Field(default=None, ge=0)
+
+
 class WaitRequest(LeaseIdRequest):
     selector: str | None = None
     timeout_ms: int = Field(default=1000, ge=1, le=30000)
@@ -3015,6 +3022,26 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setStatus(`Click failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
       }});
+      let scrollPending = false;
+      screen.addEventListener('wheel', async (event) => {{
+        event.preventDefault();
+        if (scrollPending) return;
+        scrollPending = true;
+        const rect = screen.getBoundingClientRect();
+        const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
+        const y = Math.round((event.clientY - rect.top) * screen.naturalHeight / rect.height);
+        const dy = Math.max(-1200, Math.min(1200, Math.round(event.deltaY)));
+        const dx = Math.max(-1200, Math.min(1200, Math.round(event.deltaX)));
+        try {{
+          await postJson(`/auth/lease-control/${{token}}/scroll`, {{delta_y: dy, delta_x: dx, x, y}});
+          setStatus(`Scrolled ${{dy}}`);
+          refresh();
+        }} catch (error) {{
+          setStatus(`Scroll failed: ${{String(error.message || error).slice(0, 180)}}`);
+        }} finally {{
+          setTimeout(() => {{ scrollPending = false; }}, 120);
+        }}
+      }}, {{passive: false}});
       document.getElementById('typeForm').addEventListener('submit', async (event) => {{
         event.preventDefault();
         const text = document.getElementById('text').value;
@@ -3095,6 +3122,28 @@ async def lease_control_click(token: str, request: MouseClickRequest) -> dict[st
             url=result.get("url"),
             tags=["lease-control", "click"],
             data={"slot": lease_obj.name, "x": request.x, "y": request.y},
+        )
+        return result
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/scroll")
+async def lease_control_scroll(token: str, request: LeaseControlScrollRequest) -> dict[str, Any]:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.scroll(lease_obj, request.delta_y, request.delta_x, request.x, request.y)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="browser_action",
+            message="Lease control scroll",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["lease-control", "scroll"],
+            data={"slot": lease_obj.name, "delta_y": request.delta_y, "delta_x": request.delta_x},
         )
         return result
     except LeaseControlError as error:
