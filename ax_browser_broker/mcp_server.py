@@ -257,12 +257,26 @@ def auth_request(
     reason: str = "login_required",
     identity_id: str | None = None,
     mode: str = "lease_control",
+    ttl_seconds: int = 900,
+    control_ttl_seconds: int = 900,
+    wait_until: str = "domcontentloaded",
+    verify: bool = True,
 ) -> dict[str, Any]:
     """Create a human auth handoff. Defaults to lease-control; pass mode='vnc' only for the legacy login-view fallback."""
     return _request(
         "POST",
         "/auth/request",
-        {"owner": owner, "url": url, "reason": reason, "identity_id": identity_id, "mode": mode},
+        {
+            "owner": owner,
+            "url": url,
+            "reason": reason,
+            "identity_id": identity_id,
+            "mode": mode,
+            "ttl_seconds": ttl_seconds,
+            "control_ttl_seconds": control_ttl_seconds,
+            "wait_until": wait_until,
+            "verify": verify,
+        },
     )
 
 

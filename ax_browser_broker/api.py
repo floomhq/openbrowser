@@ -142,7 +142,7 @@ class AuthRequest(BaseModel):
     identity_id: str | None = None
     profile: str | None = None
     mode: str = "lease_control"
-    ttl_seconds: int = Field(default=14400, ge=60, le=14400)
+    ttl_seconds: int = Field(default=900, ge=60, le=14400)
     control_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     wait_until: str = "domcontentloaded"
     verify: bool = True
@@ -279,6 +279,7 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
     lease_obj = require_lease(lease_id)
     current_url = ""
     current_title = ""
+    tab_query_failed = False
     try:
         tabs = await controller.tabs(lease_obj)
         active_tab = next((tab for tab in tabs.get("tabs", []) if tab.get("active")), None)
@@ -288,6 +289,7 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
             current_url = str(active_tab.get("url") or "")
             current_title = str(active_tab.get("title") or "")
     except Exception:
+        tab_query_failed = True
         current_url = ""
     control = create_control_session(
         request.owner,
@@ -302,7 +304,13 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
     current_host = _url_host(current_url)
     host_matches = bool(requested_host and current_host and requested_host == current_host)
     warning = "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this control URL."
-    if current_host and requested_host and current_host != requested_host:
+    takeover_required = bool(tab_query_failed or (current_host and requested_host and current_host != requested_host))
+    if tab_query_failed:
+        warning = (
+            "Identity is already leased but current tab inspection failed. Lease-control was returned without navigating "
+            "the active browser; explicit inspection is required before changing that lease."
+        )
+    elif current_host and requested_host and current_host != requested_host:
         warning = (
             "Identity is already leased on a different host. Lease-control was returned without navigating the active "
             "browser; explicit takeover is required before changing that lease."
@@ -320,6 +328,7 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
             "requested_host": requested_host,
             "current_host": current_host,
             "host_matches": host_matches,
+            "tab_query_failed": tab_query_failed,
         },
     )
     return {
@@ -336,7 +345,8 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
         "requested_host": requested_host,
         "current_host": current_host,
         "host_matches": host_matches,
-        "takeover_required": bool(current_host and requested_host and current_host != requested_host),
+        "tab_query_failed": tab_query_failed,
+        "takeover_required": takeover_required,
         "portal_url": control["portal_url"],
         "local_portal_url": control["local_portal_url"],
         "lease_control": control,
@@ -345,11 +355,11 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
 
 
 async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
-    if request.mode == "vnc":
-        return await _legacy_vnc_auth_request(request)
     active_response = await _active_identity_control_response(request)
     if active_response:
         return active_response
+    if request.mode == "vnc":
+        return await _legacy_vnc_auth_request(request)
     lease_obj = await create_lease(
         LeaseRequest(owner=request.owner, ttl_seconds=request.ttl_seconds, identity_id=request.identity_id)
     )
@@ -365,7 +375,7 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
                 snapshot_receipt = {
                     "title": snapshot.get("title"),
                     "url": snapshot.get("url"),
-                    "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+                    "body_text_length": len(str(snapshot.get("bodyText") or "")),
                     "element_count": len(snapshot.get("elements") or []),
                     "slot": snapshot.get("slot"),
                 }
@@ -419,7 +429,18 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
             result["warning"] = warning
         return result
     except Exception:
-        await release_lease(lease_id)
+        try:
+            await release_lease(lease_id)
+        except Exception as release_error:
+            _safe_record_event(
+                source=request.owner,
+                event_type="error",
+                message="Auth lease cleanup failed",
+                severity="error",
+                lease_id=lease_id,
+                tags=["auth", "lease-control", "cleanup-failure"],
+                data={"error": str(release_error)},
+            )
         raise
 
 

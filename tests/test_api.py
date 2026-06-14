@@ -562,6 +562,47 @@ def test_openbrowser_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> No
     assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main")]
 
 
+def test_openbrowser_auth_request_vnc_mode_still_returns_active_lease_control(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "status",
+        lambda: {"leases": {"lease-active": {"lease_id": "lease-active", "identity_id": "work-main"}}},
+    )
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: make_lease())
+
+    async def fake_tabs(_lease):
+        return {"tabs": [{"index": 0, "url": "https://lovable.dev/", "title": "Lovable", "active": True}]}
+
+    monkeypatch.setattr(api.controller, "tabs", fake_tabs)
+    monkeypatch.setattr(
+        api,
+        "create_control_session",
+        lambda owner, lease_id, ttl_seconds=900, **_kwargs: {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "ttl_seconds": ttl_seconds,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+            "local_portal_url": "http://127.0.0.1:8767/auth/lease-control/control-token",
+        },
+    )
+    monkeypatch.setattr(api, "create_auth_request", lambda *_args: (_ for _ in ()).throw(AssertionError("must not create pending VNC auth request")))
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "identity_id": "work-main", "url": "https://lovable.dev/", "mode": "vnc"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "lease_control"
+    assert response.json()["status"] == "active_identity_leased"
+    assert response.json()["active_lease_id"] == "lease-active"
+
+
 def test_openbrowser_auth_request_returns_lease_control_for_active_identity(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
     monkeypatch.setattr(
@@ -653,6 +694,46 @@ def test_openbrowser_auth_request_warns_for_active_identity_host_mismatch(monkey
     assert "different host" in response.json()["warning"]
 
 
+def test_openbrowser_auth_request_marks_takeover_when_active_tab_query_fails(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(
+        api,
+        "status",
+        lambda: {"leases": {"lease-active": {"lease_id": "lease-active", "identity_id": "work-main"}}},
+    )
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: make_lease())
+
+    async def fake_tabs(_lease):
+        raise RuntimeError("transport closed")
+
+    monkeypatch.setattr(api.controller, "tabs", fake_tabs)
+    monkeypatch.setattr(
+        api,
+        "create_control_session",
+        lambda owner, lease_id, ttl_seconds=900, **_kwargs: {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+            "local_portal_url": "http://127.0.0.1:8767/auth/lease-control/control-token",
+        },
+    )
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "identity_id": "work-main", "url": "https://lovable.dev/"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "active_identity_leased"
+    assert response.json()["tab_query_failed"] is True
+    assert response.json()["takeover_required"] is True
+    assert "inspection failed" in response.json()["warning"]
+
+
 def test_local_auth_request_defaults_to_lease_control(monkeypatch) -> None:
     created = stub_auth_lease_control(monkeypatch, identity_id="work-main")
     client = TestClient(api.app)
@@ -668,6 +749,8 @@ def test_local_auth_request_defaults_to_lease_control(monkeypatch) -> None:
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
     assert response.json()["identity_id"] == "work-main"
     assert created == ["work-main"]
+    assert "bodyText" not in response.json()["snapshot"]
+    assert response.json()["snapshot"]["body_text_length"] == len("Sign in")
 
 
 def test_local_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> None:
