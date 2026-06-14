@@ -180,6 +180,9 @@ def cmd_auth(args: argparse.Namespace) -> int:
                 "identity_id": args.identity,
                 "url": args.url,
                 "reason": args.reason,
+                "mode": args.mode,
+                "ttl_seconds": args.ttl,
+                "control_ttl_seconds": args.control_ttl,
             },
             auth=True,
         )
@@ -230,9 +233,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     auth = sub.add_parser("auth", help="Create an auth handoff or active lease-control response")
     auth.add_argument("url")
-    auth.add_argument("--identity", required=True)
+    auth.add_argument("--identity", default=None)
     auth.add_argument("--owner", default="openbrowser-cli")
     auth.add_argument("--reason", default="login_required")
+    auth.add_argument("--ttl", type=int, default=900)
+    auth.add_argument("--control-ttl", type=int, default=900)
+    auth.add_argument(
+        "--mode",
+        choices=["lease_control", "vnc"],
+        default="lease_control",
+        help="lease_control is the default; vnc is the legacy full-login-view fallback",
+    )
     auth.set_defaults(func=cmd_auth)
 
     control = sub.add_parser("lease-control", help="Create a human control URL for an active lease")

@@ -38,11 +38,44 @@ def test_cli_auth_uses_identity_id_not_profile(monkeypatch, capsys) -> None:
         (
             "POST",
             "/openbrowser/v1/auth/request",
+                {
+                    "owner": "pytest",
+                    "identity_id": "work-main",
+                    "url": "https://lovable.dev",
+                    "reason": "login_required",
+                    "mode": "lease_control",
+                    "ttl_seconds": 900,
+                    "control_ttl_seconds": 900,
+                },
+                True,
+            )
+        ]
+    assert json.loads(capsys.readouterr().out) == {"ok": True}
+
+
+def test_cli_auth_allows_neutral_profile(monkeypatch, capsys) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None, auth=False):
+        calls.append((method, path, body, auth))
+        return {"ok": True}
+
+    monkeypatch.setattr(cli, "_request", fake_request)
+
+    assert cli.main(["auth", "https://example.com", "--owner", "pytest"]) == 0
+
+    assert calls == [
+        (
+            "POST",
+            "/openbrowser/v1/auth/request",
             {
                 "owner": "pytest",
-                "identity_id": "work-main",
-                "url": "https://lovable.dev",
+                "identity_id": None,
+                "url": "https://example.com",
                 "reason": "login_required",
+                "mode": "lease_control",
+                "ttl_seconds": 900,
+                "control_ttl_seconds": 900,
             },
             True,
         )

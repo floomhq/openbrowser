@@ -141,14 +141,22 @@ class AuthRequest(BaseModel):
     reason: str = "login_required"
     identity_id: str | None = None
     profile: str | None = None
+    mode: str = "lease_control"
+    ttl_seconds: int = Field(default=14400, ge=60, le=14400)
+    control_ttl_seconds: int = Field(default=900, ge=60, le=3600)
+    wait_until: str = "domcontentloaded"
+    verify: bool = True
 
     @model_validator(mode="after")
     def normalize_legacy_profile(self) -> "AuthRequest":
-        if not self.profile:
-            return self
-        if self.identity_id and self.identity_id != self.profile:
-            raise ValueError("profile and identity_id must match when both are provided")
-        self.identity_id = self.profile
+        if self.profile:
+            if self.identity_id and self.identity_id != self.profile:
+                raise ValueError("profile and identity_id must match when both are provided")
+            self.identity_id = self.profile
+        normalized_mode = self.mode.strip().lower().replace("-", "_")
+        if normalized_mode not in {"lease_control", "vnc"}:
+            raise ValueError("mode must be lease_control or vnc")
+        self.mode = normalized_mode
         return self
 
 
@@ -239,19 +247,66 @@ def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: 
     return RedirectResponse(str(control["portal_url"]), status_code=303)
 
 
-def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | None:
+def _url_host(url: str | None) -> str:
+    if not url:
+        return ""
+    try:
+        return urllib.parse.urlsplit(url).hostname or ""
+    except ValueError:
+        return ""
+
+
+async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
+    result = create_auth_request(request.owner, request.url, request.reason, request.identity_id)
+    _safe_record_event(
+        source=request.owner,
+        event_type="auth",
+        message="Legacy VNC auth request created",
+        url=request.url,
+        tags=["auth", "vnc", request.reason],
+        data={"token": result.get("token"), "status": result.get("status"), "identity_id": request.identity_id},
+    )
+    result["mode"] = "vnc"
+    return result
+
+
+async def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | None:
     if not request.identity_id:
         return None
     lease_id = _active_identity_lease_id(request.identity_id)
     if not lease_id:
         return None
+    lease_obj = require_lease(lease_id)
+    current_url = ""
+    current_title = ""
+    try:
+        tabs = await controller.tabs(lease_obj)
+        active_tab = next((tab for tab in tabs.get("tabs", []) if tab.get("active")), None)
+        if not active_tab and tabs.get("tabs"):
+            active_tab = tabs["tabs"][0]
+        if active_tab:
+            current_url = str(active_tab.get("url") or "")
+            current_title = str(active_tab.get("title") or "")
+    except Exception:
+        current_url = ""
     control = create_control_session(
         request.owner,
         lease_id,
+        request.control_ttl_seconds,
         identity_id=request.identity_id,
         url=request.url,
         reason=request.reason,
+        slot=lease_obj.name,
     )
+    requested_host = _url_host(request.url)
+    current_host = _url_host(current_url)
+    host_matches = bool(requested_host and current_host and requested_host == current_host)
+    warning = "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this control URL."
+    if current_host and requested_host and current_host != requested_host:
+        warning = (
+            "Identity is already leased on a different host. Lease-control was returned without navigating the active "
+            "browser; explicit takeover is required before changing that lease."
+        )
     _safe_record_event(
         source=request.owner,
         event_type="session",
@@ -259,21 +314,113 @@ def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | 
         lease_id=lease_id,
         url=request.url,
         tags=["auth", "lease-control", "active-identity"],
-        data={"identity_id": request.identity_id, "token": control.get("token")},
+        data={
+            "identity_id": request.identity_id,
+            "token": control.get("token"),
+            "requested_host": requested_host,
+            "current_host": current_host,
+            "host_matches": host_matches,
+        },
     )
     return {
         "token": control["token"],
         "owner": request.owner,
         "url": request.url,
         "reason": request.reason,
+        "mode": "lease_control",
         "status": "active_identity_leased",
         "identity_id": request.identity_id,
         "active_lease_id": lease_id,
+        "current_url": current_url,
+        "current_title": current_title,
+        "requested_host": requested_host,
+        "current_host": current_host,
+        "host_matches": host_matches,
+        "takeover_required": bool(current_host and requested_host and current_host != requested_host),
         "portal_url": control["portal_url"],
         "local_portal_url": control["local_portal_url"],
         "lease_control": control,
-        "warning": "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this control URL.",
+        "warning": warning,
     }
+
+
+async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
+    if request.mode == "vnc":
+        return await _legacy_vnc_auth_request(request)
+    active_response = await _active_identity_control_response(request)
+    if active_response:
+        return active_response
+    lease_obj = await create_lease(
+        LeaseRequest(owner=request.owner, ttl_seconds=request.ttl_seconds, identity_id=request.identity_id)
+    )
+    lease_id = str(lease_obj["lease_id"])
+    try:
+        navigation = await browser_navigate(
+            NavigateRequest(lease_id=lease_id, url=request.url, wait_until=request.wait_until)
+        )
+        snapshot_receipt: dict[str, Any] | None = None
+        if request.verify:
+            try:
+                snapshot = await browser_snapshot(LeaseIdRequest(lease_id=lease_id))
+                snapshot_receipt = {
+                    "title": snapshot.get("title"),
+                    "url": snapshot.get("url"),
+                    "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+                    "element_count": len(snapshot.get("elements") or []),
+                    "slot": snapshot.get("slot"),
+                }
+            except Exception as error:
+                snapshot_receipt = {"error": str(error)}
+        control = create_control_session(
+            request.owner,
+            lease_id,
+            request.control_ttl_seconds,
+            identity_id=request.identity_id,
+            url=request.url,
+            reason=request.reason,
+            slot=str(lease_obj.get("name") or ""),
+        )
+        _safe_record_event(
+            source=request.owner,
+            event_type="session",
+            message="Auth request opened lease control",
+            lease_id=lease_id,
+            url=navigation.get("url") or request.url,
+            tags=["auth", "lease-control", "default"],
+            data={
+                "slot": lease_obj.get("name"),
+                "identity_id": request.identity_id,
+                "token": control.get("token"),
+                "requested_host": _url_host(request.url),
+                "current_host": _url_host(str(navigation.get("url") or "")),
+                "neutral_profile": request.identity_id is None,
+            },
+        )
+        warning = None
+        if request.identity_id is None:
+            warning = "No identity_id supplied; opened a neutral broker browser instead of any personal authenticated profile."
+        result: dict[str, Any] = {
+            "token": control["token"],
+            "owner": request.owner,
+            "url": request.url,
+            "reason": request.reason,
+            "mode": "lease_control",
+            "status": "lease_control",
+            "identity_id": request.identity_id,
+            "lease": lease_obj,
+            "active_lease_id": lease_id,
+            "navigation": navigation,
+            "snapshot": snapshot_receipt,
+            "portal_url": control["portal_url"],
+            "local_portal_url": control["local_portal_url"],
+            "lease_control": control,
+        }
+        if warning:
+            result["warning"] = warning
+        return result
+    except Exception:
+        await release_lease(lease_id)
+        raise
 
 
 @asynccontextmanager
@@ -1979,10 +2126,7 @@ async def openbrowser_profiles_status(_auth: str = Depends(require_openbrowser_a
 @app.post("/openbrowser/v1/auth/request")
 async def openbrowser_auth_request(request: AuthRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
     try:
-        active_response = _active_identity_control_response(request)
-        if active_response:
-            return active_response
-        return await auth_request(request)
+        return await _open_auth_lease_control(request)
     except IdentityError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -1992,7 +2136,7 @@ async def openbrowser_auth_batch(request: OpenBrowserAuthBatchRequest, _auth: st
     requests = []
     for identity_id in request.identity_ids:
         requests.append(
-            await auth_request(
+            await _open_auth_lease_control(
                 AuthRequest(
                     owner=request.owner,
                     identity_id=identity_id,
@@ -2915,13 +3059,14 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
             <div class="auth-copy">
               <div class="auth-title">Human control request</div>
               <div class="auth-subtitle">Live view of the agent's browser tab. To log in: click a field in the view to focus it, type below and press Type, click Press key for Enter/Tab. The view refreshes automatically. Mark complete when done.</div>
+              <div class="control-note">This is the browser tab the agent is holding.</div>
               <div class="auth-actions">
                 <button class="button button-soft" id="refresh" type="button">Refresh</button>
                 <button id="done" type="button">Mark complete</button>
               </div>
             </div>
             <details class="advanced-controls" open>
-              <summary>Keyboard (type password / press Enter)</summary>
+              <summary>Advanced controls: keyboard, screenshot, completion</summary>
               <div class="control-actions">
                 <form id="typeForm" class="control-row">
                   <input id="text" autocomplete="off" placeholder="Text to type into focused field">
@@ -3317,16 +3462,10 @@ async def auth_status() -> dict[str, Any]:
 
 @app.post("/auth/request")
 async def auth_request(request: AuthRequest) -> dict[str, Any]:
-    result = create_auth_request(request.owner, request.url, request.reason, request.identity_id)
-    _safe_record_event(
-        source=request.owner,
-        event_type="auth",
-        message="Auth request created",
-        url=request.url,
-        tags=["auth", request.reason],
-        data={"token": result.get("token"), "status": result.get("status"), "identity_id": request.identity_id},
-    )
-    return result
+    try:
+        return await _open_auth_lease_control(request)
+    except IdentityError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 def _auth_client_ip(request: Request) -> str:

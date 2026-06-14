@@ -222,9 +222,19 @@ def auth_status() -> dict[str, Any]:
 
 
 @mcp.tool()
-def auth_request(owner: str, url: str, reason: str = "login_required", identity_id: str | None = None) -> dict[str, Any]:
-    """Create a one-time human auth request. Pass identity_id to log into a persisted profile."""
-    return _request("POST", "/auth/request", {"owner": owner, "url": url, "reason": reason, "identity_id": identity_id})
+def auth_request(
+    owner: str,
+    url: str,
+    reason: str = "login_required",
+    identity_id: str | None = None,
+    mode: str = "lease_control",
+) -> dict[str, Any]:
+    """Create a human auth handoff. Defaults to lease-control; pass mode='vnc' only for the legacy login-view fallback."""
+    return _request(
+        "POST",
+        "/auth/request",
+        {"owner": owner, "url": url, "reason": reason, "identity_id": identity_id, "mode": mode},
+    )
 
 
 @mcp.tool()
