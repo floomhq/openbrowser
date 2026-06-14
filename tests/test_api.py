@@ -534,14 +534,15 @@ def test_openbrowser_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> No
     monkeypatch.setattr(api, "status", lambda: {"leases": {}})
     created = []
 
-    def fake_create_auth_request(owner, url, reason, identity_id):
-        created.append((owner, url, reason, identity_id))
+    def fake_create_auth_request(owner, url, reason, identity_id, mode="vnc"):
+        created.append((owner, url, reason, identity_id, mode))
         return {
             "token": "tok",
             "owner": owner,
             "url": url,
             "reason": reason,
             "identity_id": identity_id,
+            "mode": mode,
             "portal_url": "https://browser.example.com/auth/tok",
             "status": "pending",
         }
@@ -558,8 +559,9 @@ def test_openbrowser_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> No
 
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
+    assert response.json()["mode"] == "vnc"
     assert response.json()["portal_url"].endswith("/auth/tok")
-    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main")]
+    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main", "vnc")]
 
 
 def test_openbrowser_auth_request_vnc_mode_still_returns_active_lease_control(monkeypatch) -> None:
@@ -757,14 +759,15 @@ def test_local_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> None:
     monkeypatch.setattr(api, "status", lambda: {"leases": {}})
     created = []
 
-    def fake_create_auth_request(owner, url, reason, identity_id):
-        created.append((owner, url, reason, identity_id))
+    def fake_create_auth_request(owner, url, reason, identity_id, mode="vnc"):
+        created.append((owner, url, reason, identity_id, mode))
         return {
             "token": "tok",
             "owner": owner,
             "url": url,
             "reason": reason,
             "identity_id": identity_id,
+            "mode": mode,
             "portal_url": "https://browser.example.com/auth/tok",
             "status": "pending",
         }
@@ -782,7 +785,7 @@ def test_local_auth_request_legacy_vnc_mode_is_explicit(monkeypatch) -> None:
     assert response.json()["mode"] == "vnc"
     assert response.json()["status"] == "pending"
     assert response.json()["portal_url"].endswith("/auth/tok")
-    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main")]
+    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main", "vnc")]
 
 
 def test_openbrowser_auth_request_rejects_conflicting_profile_alias(monkeypatch) -> None:
@@ -1103,6 +1106,7 @@ def test_browser_keyboard_press_endpoint_records_key(monkeypatch) -> None:
 def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     events = []
     lease = make_lease()
+    created_kwargs = {}
 
     def fake_create_control_session(owner, lease_id, ttl_seconds, **kwargs):
         assert owner == "pytest-control"
@@ -1110,6 +1114,7 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
         assert ttl_seconds == 600
         assert kwargs["identity_id"] == lease.identity_id
         assert kwargs["slot"] == lease.name
+        created_kwargs.update(kwargs)
         return {
             "token": "control-token",
             "owner": owner,
@@ -1118,8 +1123,18 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
             "portal_url": "https://browser.example.com/auth/lease-control/control-token",
         }
 
+    async def fake_tabs(lease_obj):
+        assert lease_obj == lease
+        return {
+            "tabs": [
+                {"index": 0, "url": "https://old.example.com", "title": "Old", "active": False},
+                {"index": 1, "url": "https://example.com/current", "title": "Current", "active": True},
+            ]
+        }
+
     monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
     monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(api.controller, "tabs", fake_tabs)
     monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
     client = TestClient(api.app)
 
@@ -1130,6 +1145,7 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
+    assert created_kwargs["url"] == "https://example.com/current"
     assert events[0]["message"] == "Lease control session created"
     assert events[0]["data"]["slot"] == "pool-b"
 
@@ -1192,18 +1208,28 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "Session State" in portal.text
     assert "chrome-test" in portal.text
     assert "https://example.com/dashboard" in portal.text
-    assert "Human control request" in portal.text
+    assert "Browser control" in portal.text
     assert "Control request" in portal.text
-    assert "Advanced controls" in portal.text
+    assert "Advanced fallback controls" in portal.text
     assert "Refresh screenshot" not in portal.text
     assert ">Refresh<" in portal.text
     assert "Mark complete" in portal.text
+    assert 'id="urlForm"' in portal.text
+    assert 'id="urlInput"' in portal.text
+    assert 'id="browserFrame"' in portal.text
+    assert 'id="keyCapture"' in portal.text
+    assert ".auth-card.is-minimized .advanced-controls" in portal.text
+    assert "Click inside the browser image, then type normally" in portal.text
+    assert "keyboard-type" in portal.text
+    assert "keyboard-press" in portal.text
+    assert "/navigate" in portal.text
     assert "Text to type into focused field" in portal.text
     assert "Press key" in portal.text
     assert "End control link" not in portal.text
-    assert "This is the browser tab the agent is holding." in portal.text
+    assert "This controls the same browser tab the agent is holding." in portal.text
     assert "This view never exposes session cookies, saved passwords, or proxy credentials." in portal.text
     assert "No cookies or passwords exposed" in portal.text
+    assert "cursor: crosshair" not in portal.text
     assert 'data-key="PageDown"' not in portal.text
     assert "Unix time" not in portal.text
     assert "if (!response.ok) throw new Error" in portal.text
@@ -1237,6 +1263,38 @@ def test_lease_control_click_records_coordinates(monkeypatch) -> None:
     assert response.json()["clicked"] == {"x": 10, "y": 20}
     assert events[0]["message"] == "Lease control click"
     assert events[0]["data"]["x"] == 10
+    assert events[0]["data"]["y"] == 20
+
+
+def test_lease_control_navigate_records_target(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    monkeypatch.setattr(
+        api,
+        "get_control_session",
+        lambda _token: {"token": "tok", "owner": "pytest-control", "lease_id": "lease-api"},
+    )
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+
+    async def fake_navigate(lease_obj, url, wait_until):
+        assert lease_obj == lease
+        assert url == "https://example.com/next"
+        assert wait_until == "domcontentloaded"
+        return {"lease_id": lease_obj.lease_id, "slot": lease_obj.name, "url": url, "title": "Next"}
+
+    monkeypatch.setattr(api.controller, "navigate", fake_navigate)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post("/auth/lease-control/tok/navigate", json={"url": "https://example.com/next"})
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Next"
+    assert events[0]["message"] == "Lease control navigate"
+    assert events[0]["url"] == "https://example.com/next"
+    assert events[0]["tags"] == ["lease-control", "navigate"]
+    assert events[0]["data"]["wait_until"] == "domcontentloaded"
 
 
 def test_lease_control_state_lifecycle(tmp_path, monkeypatch) -> None:

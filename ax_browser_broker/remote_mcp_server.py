@@ -5,7 +5,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -228,7 +228,7 @@ def auth_request(
     url: str,
     reason: str = "login_required",
     identity_id: str | None = None,
-    mode: str = "lease_control",
+    mode: Literal["lease_control", "vnc"] = "lease_control",
     ttl_seconds: int = 900,
     control_ttl_seconds: int = 900,
     wait_until: str = "domcontentloaded",

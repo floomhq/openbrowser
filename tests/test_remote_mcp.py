@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import urllib.error
+from typing import get_args, get_type_hints
 
 import pytest
 
@@ -160,6 +161,10 @@ def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> 
             "verify": False,
         },
     }
+
+
+def test_remote_mcp_auth_request_mode_annotation_exposes_enum() -> None:
+    assert get_args(get_type_hints(remote_mcp_server.auth_request)["mode"]) == ("lease_control", "vnc")
 
 
 def test_remote_mcp_http_errors_are_actionable(monkeypatch) -> None:

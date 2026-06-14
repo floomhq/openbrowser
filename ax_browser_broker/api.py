@@ -123,6 +123,11 @@ class LeaseControlScrollRequest(BaseModel):
     y: int | None = Field(default=None, ge=0)
 
 
+class LeaseControlNavigateRequest(BaseModel):
+    url: str
+    wait_until: str = "domcontentloaded"
+
+
 class WaitRequest(LeaseIdRequest):
     selector: str | None = None
     timeout_ms: int = Field(default=1000, ge=1, le=30000)
@@ -263,7 +268,7 @@ def _url_host(url: str | None) -> str:
 
 
 async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
-    result = create_auth_request(request.owner, request.url, request.reason, request.identity_id)
+    result = create_auth_request(request.owner, request.url, request.reason, request.identity_id, mode=request.mode)
     _safe_record_event(
         source=request.owner,
         event_type="auth",
@@ -272,7 +277,6 @@ async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
         tags=["auth", "vnc", request.reason],
         data={"token": result.get("token"), "status": result.get("status"), "identity_id": request.identity_id},
     )
-    result["mode"] = "vnc"
     return result
 
 
@@ -2581,11 +2585,21 @@ async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any
 async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
     try:
         lease_obj = require_lease(request.lease_id)
+        current_url = None
+        try:
+            tabs = await controller.tabs(lease_obj)
+            active_tab = next((tab for tab in tabs.get("tabs", []) if tab.get("active")), None)
+            selected_tab = active_tab or next(iter(tabs.get("tabs", []) or []), None)
+            if selected_tab and selected_tab.get("url"):
+                current_url = str(selected_tab["url"])
+        except Exception:
+            current_url = None
         result = create_control_session(
             request.owner,
             lease_obj.lease_id,
             request.ttl_seconds,
             identity_id=lease_obj.identity_id,
+            url=current_url,
             slot=lease_obj.name,
         )
         _safe_record_event(
@@ -2618,6 +2632,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     safe_identity = html.escape(str(session.get("identity_id") or "held-browser"))
     safe_slot = html.escape(str(session.get("slot") or "active slot"))
     safe_url = html.escape(str(session.get("url") or "Current browser tab"))
+    safe_url_value = html.escape(str(session.get("url") or ""), quote=True)
     safe_reason = html.escape(str(session.get("reason") or "browser_control"))
     mark_svg = """<img class="brand-icon" src="/openbrowser/assets/brand/logo/mark/openbrowser-mark.svg" alt="">"""
     browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
@@ -2890,11 +2905,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       .toolbar-left span {{ width: 14px; height: 14px; border-radius: var(--radius-pill); background: var(--soft); border: 1px solid var(--border); }}
       .toolbar-url {{
         min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
         height: 34px;
-        display: flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
         gap: 8px;
         border: 1px solid var(--border);
@@ -2905,8 +2918,31 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         font-size: 13px;
         font-weight: 650;
       }}
+      .url-input {{
+        min-height: 0;
+        height: 26px;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        background: transparent;
+        box-shadow: none;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 650;
+      }}
+      .url-input:focus {{ outline: 0; color: var(--text); }}
+      .url-go {{
+        min-height: 26px;
+        padding: 0 10px;
+        border-radius: var(--radius-pill);
+        font-size: 11px;
+      }}
       .lock {{ color: var(--green); font-size: 11px; text-transform: uppercase; }}
       .browser-frame {{ min-height: 0; overflow: auto; background: #111; }}
+      .browser-frame.is-control-focused {{
+        outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
+        outline-offset: -2px;
+      }}
       #screen {{
         display: block;
         width: 100%;
@@ -2914,7 +2950,15 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         min-height: 100%;
         object-fit: contain;
         background: white;
-        cursor: crosshair;
+        cursor: default;
+      }}
+      #keyCapture {{
+        position: fixed;
+        left: -1000px;
+        top: -1000px;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
       }}
       .auth-card {{
         position: absolute;
@@ -2941,6 +2985,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }}
       .auth-card.is-minimized .auth-logo,
       .auth-card.is-minimized .auth-copy,
+      .auth-card.is-minimized .advanced-controls,
       .auth-card.is-minimized .auth-dismiss {{
         display: none;
       }}
@@ -3075,27 +3120,32 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           <div class="browser-shell">
             <div class="browser-toolbar">
               <div class="toolbar-left" aria-hidden="true"><span></span><span></span><span></span></div>
-              <div class="toolbar-url"><span class="lock">live</span>{safe_url}</div>
+              <form class="toolbar-url" id="urlForm" aria-label="Navigate browser">
+                <span class="lock">live</span>
+                <input class="url-input" id="urlInput" value="{safe_url_value}" placeholder="Enter URL">
+                <button class="button-outline url-go" type="submit">Go</button>
+              </form>
               <button class="button-outline button-small" id="controlsFocus" type="button">Controls</button>
             </div>
-            <div class="browser-frame">
+            <div class="browser-frame" id="browserFrame" tabindex="0" aria-label="Browser control surface">
               <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
+              <textarea id="keyCapture" autocapitalize="off" autocomplete="off" spellcheck="false" aria-hidden="true"></textarea>
             </div>
           </div>
-          <aside class="auth-card is-success" id="controlCard" aria-label="Human control request">
+          <aside class="auth-card is-success is-minimized" id="controlCard" aria-label="Human control request">
             <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize control request">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
-              <div class="auth-title">Human control request</div>
-              <div class="auth-subtitle">Live view of the agent's browser tab. To log in: click a field in the view to focus it, type below and press Type, click Press key for Enter/Tab. The view refreshes automatically. Mark complete when done.</div>
-              <div class="control-note">This is the browser tab the agent is holding.</div>
+              <div class="auth-title">Browser control</div>
+              <div class="auth-subtitle">Click inside the browser image, then type normally. Use the URL bar above to navigate. Advanced controls are only a fallback.</div>
+              <div class="control-note">This controls the same browser tab the agent is holding.</div>
               <div class="auth-actions">
                 <button class="button button-soft" id="refresh" type="button">Refresh</button>
                 <button id="done" type="button">Mark complete</button>
               </div>
             </div>
-            <details class="advanced-controls" open>
-              <summary>Advanced controls: keyboard, screenshot, completion</summary>
+            <details class="advanced-controls">
+              <summary>Advanced fallback controls</summary>
               <div class="control-actions">
                 <form id="typeForm" class="control-row">
                   <input id="text" autocomplete="off" placeholder="Text to type into focused field">
@@ -3130,8 +3180,16 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     <script>
       const token = {json.dumps(token)};
       const screen = document.getElementById('screen');
+      const browserFrame = document.getElementById('browserFrame');
+      const keyCapture = document.getElementById('keyCapture');
+      const urlInput = document.getElementById('urlInput');
       const statusBox = document.getElementById('status');
       const setStatus = (text) => {{ statusBox.textContent = text; }};
+      const isEditableTarget = (target) => {{
+        if (!target) return false;
+        const tag = String(target.tagName || '').toLowerCase();
+        return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+      }};
       const themeButton = document.getElementById('themeToggle');
       const setThemeLabel = () => {{ themeButton.textContent = document.documentElement.dataset.theme === 'dark' ? 'Day mode' : 'Night mode'; }};
       setThemeLabel();
@@ -3166,10 +3224,25 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       document.getElementById('refresh').addEventListener('click', refresh);
       document.getElementById('refreshTop').addEventListener('click', refresh);
       document.getElementById('openImage').addEventListener('click', () => window.open(screen.src, '_blank', 'noopener,noreferrer'));
+      document.getElementById('urlForm').addEventListener('submit', async (event) => {{
+        event.preventDefault();
+        const url = urlInput.value.trim();
+        if (!url) return;
+        setStatus(`Navigating to ${{url}}...`);
+        try {{
+          const response = await postJson(`/auth/lease-control/${{token}}/navigate`, {{url}});
+          const data = await response.json();
+          if (data.url) urlInput.value = data.url;
+          setStatus(`Loaded ${{data.title || data.url || url}}`);
+          setTimeout(refresh, 400);
+        }} catch (error) {{
+          setStatus(`Navigate failed: ${{String(error.message || error).slice(0, 180)}}`);
+        }}
+      }});
       document.getElementById('controlsFocus').addEventListener('click', () => {{
         document.querySelector('.advanced-controls')?.setAttribute('open', '');
         restoreControlCard();
-        document.getElementById('text').focus();
+        focusBrowserControl();
       }});
       const controlCard = document.getElementById('controlCard');
       const minimizeControlCard = () => {{
@@ -3183,7 +3256,47 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       document.addEventListener('keydown', (event) => {{
         if (event.key === 'Escape') minimizeControlCard();
       }});
+      const focusBrowserControl = () => {{
+        browserFrame?.classList.add('is-control-focused');
+        keyCapture?.focus({{preventScroll: true}});
+      }};
+      const blurBrowserControl = () => browserFrame?.classList.remove('is-control-focused');
+      keyCapture?.addEventListener('blur', blurBrowserControl);
+      keyCapture?.addEventListener('input', async () => {{
+        const text = keyCapture.value;
+        keyCapture.value = '';
+        if (!text) return;
+        setStatus('Typing...');
+        try {{
+          await postJson(`/auth/lease-control/${{token}}/keyboard-type`, {{text}});
+          setStatus('Typed');
+          setTimeout(refresh, 350);
+        }} catch (error) {{
+          setStatus(`Type failed: ${{String(error.message || error).slice(0, 180)}}`);
+        }} finally {{
+          focusBrowserControl();
+        }}
+      }});
+      const specialKeys = new Set(['Enter', 'Tab', 'Backspace', 'Delete', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+      document.addEventListener('keydown', async (event) => {{
+        if (isEditableTarget(event.target) && event.target !== keyCapture) return;
+        if (event.target !== keyCapture) return;
+        if (!specialKeys.has(event.key)) return;
+        event.preventDefault();
+        const key = event.key;
+        setStatus(`Pressing ${{key}}...`);
+        try {{
+          await postJson(`/auth/lease-control/${{token}}/keyboard-press`, {{key}});
+          setStatus(`Pressed ${{key}}`);
+          setTimeout(refresh, 350);
+        }} catch (error) {{
+          setStatus(`Key failed: ${{String(error.message || error).slice(0, 180)}}`);
+        }} finally {{
+          focusBrowserControl();
+        }}
+      }});
       screen.addEventListener('click', async (event) => {{
+        focusBrowserControl();
         const rect = screen.getBoundingClientRect();
         const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
         const y = Math.round((event.clientY - rect.top) * screen.naturalHeight / rect.height);
@@ -3191,6 +3304,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         try {{
           await postJson(`/auth/lease-control/${{token}}/click`, {{x, y}});
           setStatus(`Clicked ${{x}}, ${{y}}`);
+          focusBrowserControl();
           setTimeout(refresh, 700);
         }} catch (error) {{
           setStatus(`Click failed: ${{String(error.message || error).slice(0, 180)}}`);
@@ -3318,6 +3432,28 @@ async def lease_control_scroll(token: str, request: LeaseControlScrollRequest) -
             url=result.get("url"),
             tags=["lease-control", "scroll"],
             data={"slot": lease_obj.name, "delta_y": request.delta_y, "delta_x": request.delta_x},
+        )
+        return result
+    except LeaseControlError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except Exception as error:
+        raise _http_error(error) from error
+
+
+@app.post("/auth/lease-control/{token}/navigate")
+async def lease_control_navigate(token: str, request: LeaseControlNavigateRequest) -> dict[str, Any]:
+    try:
+        session = get_control_session(token)
+        lease_obj = require_lease(str(session["lease_id"]))
+        result = await controller.navigate(lease_obj, request.url, request.wait_until)
+        _safe_record_event(
+            source=str(session.get("owner", "lease-control")),
+            event_type="browser_action",
+            message="Lease control navigate",
+            lease_id=lease_obj.lease_id,
+            url=result.get("url"),
+            tags=["lease-control", "navigate"],
+            data={"slot": lease_obj.name, "title": result.get("title"), "wait_until": request.wait_until},
         )
         return result
     except LeaseControlError as error:

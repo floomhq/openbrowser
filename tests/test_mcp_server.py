@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import get_args, get_type_hints
+
 from ax_browser_broker import mcp_server
 
 
@@ -84,6 +86,10 @@ def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
             },
         )
     ]
+
+
+def test_auth_request_mode_annotation_exposes_enum() -> None:
+    assert get_args(get_type_hints(mcp_server.auth_request)["mode"]) == ("lease_control", "vnc")
 
 
 def test_browser_open_control_releases_on_navigation_failure(monkeypatch) -> None:

@@ -138,27 +138,71 @@ def _slot_has_active_lease(slot_name: str) -> bool:
     return any(str(item.get("name")) == slot_name for item in state.get("leases", {}).values())
 
 
+def _identity_file_candidates(path: Path | None = None) -> list[Path]:
+    primary = path or IDENTITIES_FILE
+    if path is not None or primary.exists():
+        return [primary]
+    repo_local = Path(__file__).resolve().parents[1] / "config" / "identities.local.json"
+    candidates = [primary]
+    if repo_local != primary:
+        candidates.append(repo_local)
+    return candidates
+
+
+def _identity_from_slot_config(identity_id: str, slot_name: str, config: dict[str, str]) -> BrowserIdentity | None:
+    profile_dir = Path(str(config.get("PROFILE_DIR") or BROWSER_POOL_DIR / "profiles" / identity_id))
+    if profile_dir.name == slot_name and not (BROWSER_POOL_DIR / "profiles" / identity_id).exists():
+        return None
+    return BrowserIdentity(
+        identity_id=identity_id,
+        label=identity_id,
+        slot="auto",
+        profile_dir=profile_dir,
+        proxy_ref=str(config["PROXY_REF"]).strip() if config.get("PROXY_REF") else None,
+        timezone=str(config["TZ"]).strip() if config.get("TZ") else None,
+        lang=str(config.get("CHROME_LANG") or "en-US"),
+        max_parallel_sessions=1,
+    )
+
+
+def _load_pool_slot_identities(existing: dict[str, BrowserIdentity]) -> dict[str, BrowserIdentity]:
+    discovered: dict[str, BrowserIdentity] = {}
+    for slot in SLOTS:
+        try:
+            config = read_slot_config(slot.name)
+        except Exception:
+            continue
+        identity_id = str(config.get("IDENTITY_ID") or "").strip()
+        if not identity_id or identity_id in existing or identity_id in discovered:
+            continue
+        identity = _identity_from_slot_config(identity_id, slot.name, config)
+        if identity is not None:
+            discovered[identity_id] = identity
+    return discovered
+
+
 def load_identities(path: Path | None = None) -> dict[str, BrowserIdentity]:
-    path = path or IDENTITIES_FILE
-    raw = _read_json(path, {"identities": {}})
     identities: dict[str, BrowserIdentity] = {}
-    for identity_id, item in raw.get("identities", {}).items():
-        slot = str(item.get("slot", "")).strip()
-        if slot != "auto" and slot not in _slot_names():
-            raise IdentityError(f"Identity {identity_id} references unknown slot {slot!r}")
-        profile_dir = Path(str(item.get("profile_dir") or BROWSER_POOL_DIR / "profiles" / identity_id))
-        policy = item.get("policy") if isinstance(item.get("policy"), dict) else {}
-        max_parallel_sessions = max(1, min(int(policy.get("max_parallel_sessions") or 1), len(SLOTS)))
-        identities[identity_id] = BrowserIdentity(
-            identity_id=identity_id,
-            label=str(item.get("label") or identity_id),
-            slot=slot,
-            profile_dir=profile_dir,
-            proxy_ref=str(item["proxy_ref"]).strip() if item.get("proxy_ref") else None,
-            timezone=str(item["timezone"]).strip() if item.get("timezone") else None,
-            lang=str(item.get("lang") or "en-US"),
-            max_parallel_sessions=max_parallel_sessions,
-        )
+    for candidate in _identity_file_candidates(path):
+        raw = _read_json(candidate, {"identities": {}})
+        for identity_id, item in raw.get("identities", {}).items():
+            slot = str(item.get("slot", "")).strip()
+            if slot != "auto" and slot not in _slot_names():
+                raise IdentityError(f"Identity {identity_id} references unknown slot {slot!r}")
+            profile_dir = Path(str(item.get("profile_dir") or BROWSER_POOL_DIR / "profiles" / identity_id))
+            policy = item.get("policy") if isinstance(item.get("policy"), dict) else {}
+            max_parallel_sessions = max(1, min(int(policy.get("max_parallel_sessions") or 1), len(SLOTS)))
+            identities[identity_id] = BrowserIdentity(
+                identity_id=identity_id,
+                label=str(item.get("label") or identity_id),
+                slot=slot,
+                profile_dir=profile_dir,
+                proxy_ref=str(item["proxy_ref"]).strip() if item.get("proxy_ref") else None,
+                timezone=str(item["timezone"]).strip() if item.get("timezone") else None,
+                lang=str(item.get("lang") or "en-US"),
+                max_parallel_sessions=max_parallel_sessions,
+            )
+    identities.update(_load_pool_slot_identities(identities))
     return identities
 
 

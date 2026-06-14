@@ -138,8 +138,17 @@ def gc_auth_requests(state: dict[str, Any]) -> list[str]:
     return expired
 
 
-def create_auth_request(owner: str, url: str, reason: str = "login_required", identity_id: str | None = None) -> dict[str, Any]:
+def create_auth_request(
+    owner: str,
+    url: str,
+    reason: str = "login_required",
+    identity_id: str | None = None,
+    mode: str = "vnc",
+) -> dict[str, Any]:
     now = int(time.time())
+    normalized_mode = mode.strip().lower().replace("-", "_")
+    if normalized_mode not in {"lease_control", "vnc"}:
+        raise AuthError("mode must be lease_control or vnc")
     if identity_id:
         require_identity(identity_id)
     token = secrets.token_urlsafe(24)
@@ -148,6 +157,7 @@ def create_auth_request(owner: str, url: str, reason: str = "login_required", id
         "owner": owner,
         "url": url,
         "reason": reason,
+        "mode": normalized_mode,
         "status": "pending",
         "created_at": now,
         "expires_at": now + AUTH_REQUEST_TTL_SECONDS,

@@ -12,6 +12,7 @@ def test_auth_request_lifecycle_uses_state_file(tmp_path, monkeypatch) -> None:
 
     request = auth.create_auth_request("tester", "https://example.com/login")
     assert request["status"] == "pending"
+    assert request["mode"] == "vnc"
     assert request["portal_url"].endswith("/auth/" + request["token"])
     assert request["portal_url"] == request["local_portal_url"]
 
@@ -23,6 +24,7 @@ def test_auth_request_lifecycle_uses_state_file(tmp_path, monkeypatch) -> None:
 
     raw = json.loads(state_file.read_text())
     assert raw["requests"][request["token"]]["status"] == "complete"
+    assert raw["requests"][request["token"]]["mode"] == "vnc"
 
 
 def test_auth_request_uses_public_portal_url_when_configured(tmp_path, monkeypatch) -> None:
@@ -191,11 +193,30 @@ def test_auth_request_can_target_identity(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
     monkeypatch.setattr(auth, "require_identity", lambda identity_id: identity_id)
 
-    request = auth.create_auth_request("tester", "https://accounts.google.com", identity_id="chrome-openpaper")
+    request = auth.create_auth_request(
+        "tester", "https://accounts.google.com", identity_id="chrome-openpaper", mode="vnc"
+    )
 
     assert request["identity_id"] == "chrome-openpaper"
+    assert request["mode"] == "vnc"
     raw = json.loads(state_file.read_text())
     assert raw["requests"][request["token"]]["identity_id"] == "chrome-openpaper"
+    assert raw["requests"][request["token"]]["mode"] == "vnc"
+
+
+def test_auth_request_normalizes_and_validates_mode(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+
+    request = auth.create_auth_request("tester", "https://example.com", mode="lease-control")
+
+    assert request["mode"] == "lease_control"
+    try:
+        auth.create_auth_request("tester", "https://example.com", mode="invalid")
+    except auth.AuthError as error:
+        assert "mode must be lease_control or vnc" in str(error)
+    else:
+        raise AssertionError("invalid auth mode was accepted")
 
 
 def test_stop_auth_vnc_terminates_identity_auth_process_groups(tmp_path, monkeypatch) -> None:

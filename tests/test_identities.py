@@ -113,6 +113,37 @@ def test_load_identity_accepts_auto_slot(tmp_path, monkeypatch) -> None:
     assert loaded["chrome-openpaper"].slot == "auto"
 
 
+def test_load_identities_discovers_pool_slot_identity(tmp_path, monkeypatch) -> None:
+    identity_file = tmp_path / "identities.json"
+    identity_file.write_text(json.dumps({"identities": {}}), encoding="utf-8")
+    pool_config_dir = tmp_path / "pool-config"
+    pool_config_dir.mkdir()
+    profile_dir = tmp_path / "profiles" / "chrome-floom"
+    profile_dir.mkdir(parents=True)
+    (pool_config_dir / "pool-c.env").write_text(
+        "\n".join(
+            [
+                "IDENTITY_ID='chrome-floom'",
+                f"PROFILE_DIR={str(profile_dir)!r}",
+                "CHROME_LANG='en-US'",
+                "TZ='Europe/Berlin'",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(identities, "IDENTITIES_FILE", identity_file)
+    monkeypatch.setattr(identities, "POOL_CONFIG_DIR", pool_config_dir)
+    monkeypatch.setattr(identities, "BROWSER_POOL_DIR", tmp_path / "pool")
+
+    loaded = identities.load_identities()
+
+    assert loaded["chrome-floom"].identity_id == "chrome-floom"
+    assert loaded["chrome-floom"].slot == "auto"
+    assert loaded["chrome-floom"].profile_dir == profile_dir
+    assert loaded["chrome-floom"].timezone == "Europe/Berlin"
+
+
 def test_write_slot_config_requires_concrete_slot_for_auto_identity(tmp_path, monkeypatch) -> None:
     identity_file = tmp_path / "identities.json"
     proxy_file = tmp_path / "proxies.json"
