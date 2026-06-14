@@ -42,7 +42,13 @@ from .config import (
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
 from .identities import IdentityError, invalidate_identity_replicas, redacted_status
-from .lease_control import LeaseControlError, complete_control_session, create_control_session, get_control_session
+from .lease_control import (
+    LeaseControlError,
+    complete_control_session,
+    create_control_session,
+    get_control_session,
+    list_control_sessions,
+)
 from .pool import LeaseError, heartbeat, lease, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 from .telemetry import TelemetryError, list_events, record_event, summary
@@ -375,6 +381,7 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
                 snapshot_receipt = {
                     "title": snapshot.get("title"),
                     "url": snapshot.get("url"),
+                    "bodyText": str(snapshot.get("bodyText") or "")[:300],
                     "body_text_length": len(str(snapshot.get("bodyText") or "")),
                     "element_count": len(snapshot.get("elements") or []),
                     "slot": snapshot.get("slot"),
@@ -2204,7 +2211,8 @@ async def openbrowser_open(request: OpenBrowserOpenRequest, _auth: str = Depends
             result["snapshot"] = {
                 "title": snapshot.get("title"),
                 "url": snapshot.get("url"),
-                "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+                "bodyText": str(snapshot.get("bodyText") or "")[:300],
+                "body_text_length": len(str(snapshot.get("bodyText") or "")),
                 "element_count": len(snapshot.get("elements") or []),
                 "slot": snapshot.get("slot"),
             }
@@ -3478,7 +3486,9 @@ async def browser_upload(request: UploadRequest) -> dict[str, Any]:
 
 @app.get("/auth/status")
 async def auth_status() -> dict[str, Any]:
-    return list_auth_requests()
+    result = list_auth_requests()
+    result["lease_control"] = list_control_sessions()
+    return result
 
 
 @app.post("/auth/request")

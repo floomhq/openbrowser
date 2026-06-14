@@ -749,7 +749,7 @@ def test_local_auth_request_defaults_to_lease_control(monkeypatch) -> None:
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
     assert response.json()["identity_id"] == "work-main"
     assert created == ["work-main"]
-    assert "bodyText" not in response.json()["snapshot"]
+    assert response.json()["snapshot"]["bodyText"] == "Sign in"
     assert response.json()["snapshot"]["body_text_length"] == len("Sign in")
 
 
@@ -993,7 +993,8 @@ def test_openbrowser_open_can_return_verified_control_link(monkeypatch) -> None:
     data = response.json()
     assert data["portal_url"].endswith("/auth/lease-control/control-token")
     assert data["snapshot"]["title"] == "Home | Lovable"
-    assert data["snapshot"]["bodyText"] == "A" * 1200
+    assert data["snapshot"]["bodyText"] == "A" * 300
+    assert data["snapshot"]["body_text_length"] == 1400
     assert data["snapshot"]["element_count"] == 1
     assert data["screenshot"]["path"] == "/tmp/shot.png"
     assert "base64" not in data["screenshot"]
@@ -1244,11 +1245,39 @@ def test_lease_control_state_lifecycle(tmp_path, monkeypatch) -> None:
 
     session = lease_control.create_control_session("pytest", "lease-api", ttl_seconds=60)
     loaded = lease_control.get_control_session(session["token"])
+    listed = lease_control.list_control_sessions()
+    empty = lease_control.list_control_sessions(limit=0)
+    sensitive = lease_control.list_control_sessions(include_sensitive=True)
     completed = lease_control.complete_control_session(session["token"])
 
     assert session["portal_url"].startswith("https://browser.example.com/auth/lease-control/")
     assert loaded["lease_id"] == "lease-api"
+    assert listed["count"] == 1
+    assert listed["total_count"] == 1
+    assert listed["sessions"][0]["lease_id"] == "lease-api"
+    assert empty["count"] == 0
+    assert empty["total_count"] == 1
+    assert empty["sessions"] == []
+    assert "token" not in listed["sessions"][0]
+    assert "portal_url" not in listed["sessions"][0]
+    assert sensitive["sessions"][0]["token"] == session["token"]
     assert completed["owner"] == "pytest"
+
+
+def test_auth_status_includes_lease_control_sessions(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(lease_control, "LEASE_CONTROL_STATE_FILE", tmp_path / "lease_control.json")
+    lease_control.create_control_session("pytest", "lease-api", ttl_seconds=60)
+    client = TestClient(api.app)
+
+    response = client.get("/auth/status")
+
+    assert response.status_code == 200
+    assert response.json()["lease_control"]["count"] == 1
+    assert response.json()["lease_control"]["total_count"] == 1
+    assert response.json()["lease_control"]["sessions"][0]["lease_id"] == "lease-api"
+    assert "token" not in response.json()["lease_control"]["sessions"][0]
+    assert "portal_url" not in response.json()["lease_control"]["sessions"][0]
 
 
 def test_feedback_issue_api(tmp_path, monkeypatch) -> None:

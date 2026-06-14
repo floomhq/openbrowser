@@ -127,7 +127,8 @@ def browser_open_control(
         result["snapshot"] = {
             "title": snapshot.get("title"),
             "url": snapshot.get("url"),
-            "bodyText": str(snapshot.get("bodyText") or "")[:1200],
+            "bodyText": str(snapshot.get("bodyText") or "")[:300],
+            "body_text_length": len(str(snapshot.get("bodyText") or "")),
             "element_count": len(snapshot.get("elements") or []),
             "slot": snapshot.get("slot"),
         }

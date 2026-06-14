@@ -102,6 +102,20 @@ def get_control_session(token: str) -> dict[str, Any]:
         return dict(session)
 
 
+def _redact_control_session(session: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in session.items() if key not in {"token", "portal_url", "local_portal_url"}}
+
+
+def list_control_sessions(limit: int = 200, include_sensitive: bool = False) -> dict[str, Any]:
+    bounded = max(0, min(int(limit), 500))
+    with locked_control_state() as state:
+        expired = gc_control_sessions(state)
+        sessions = list(state["sessions"].values())
+    sessions.sort(key=lambda item: int(item.get("created_at", 0)), reverse=True)
+    visible = [dict(item) if include_sensitive else _redact_control_session(dict(item)) for item in sessions[:bounded]]
+    return {"sessions": visible, "count": len(visible), "total_count": len(sessions), "expired": expired}
+
+
 def complete_control_session(token: str) -> dict[str, Any]:
     with locked_control_state() as state:
         gc_control_sessions(state)

@@ -36,13 +36,53 @@ def test_browser_open_control_composes_open_verify_and_control(monkeypatch) -> N
     )
 
     assert result["portal_url"].endswith("/tok")
-    assert result["snapshot"]["bodyText"] == "B" * 1200
+    assert result["snapshot"]["bodyText"] == "B" * 300
+    assert result["snapshot"]["body_text_length"] == 1400
     assert result["snapshot"]["element_count"] == 2
     assert calls == [
         ("POST", "/lease", {"owner": "pytest-mcp", "ttl_seconds": 600, "identity_id": "chrome-work"}),
         ("POST", "/browser/navigate", {"lease_id": "lease-mcp", "url": "https://lovable.dev"}),
         ("POST", "/browser/snapshot", {"lease_id": "lease-mcp"}),
         ("POST", "/lease-control/request", {"lease_id": "lease-mcp", "owner": "pytest-mcp", "ttl_seconds": 300}),
+    ]
+
+
+def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None):
+        calls.append((method, path, body))
+        return {"mode": "lease_control"}
+
+    monkeypatch.setattr(mcp_server, "_request", fake_request)
+
+    result = mcp_server.auth_request(
+        owner="pytest-mcp",
+        url="https://example.com/login",
+        identity_id="work-main",
+        ttl_seconds=120,
+        control_ttl_seconds=180,
+        wait_until="load",
+        verify=False,
+    )
+
+    assert result == {"mode": "lease_control"}
+    assert calls == [
+        (
+            "POST",
+            "/auth/request",
+            {
+                "owner": "pytest-mcp",
+                "url": "https://example.com/login",
+                "reason": "login_required",
+                "identity_id": "work-main",
+                "mode": "lease_control",
+                "ttl_seconds": 120,
+                "control_ttl_seconds": 180,
+                "wait_until": "load",
+                "verify": False,
+            },
+        )
     ]
 
 

@@ -119,8 +119,47 @@ def test_remote_mcp_browser_open_control_posts_one_step_payload(monkeypatch) -> 
         ),
     ]
     assert result["portal_url"].endswith("/tok")
-    assert result["snapshot"]["bodyText"] == "C" * 1200
+    assert result["snapshot"]["bodyText"] == "C" * 300
+    assert result["snapshot"]["body_text_length"] == 1400
     assert "base64" not in result["screenshot"]
+
+
+def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> None:
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["body"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse({"mode": "lease_control"})
+
+    monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
+    monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
+
+    result = remote_mcp_server.auth_request(
+        owner="pytest",
+        url="https://example.com/login",
+        identity_id="work-main",
+        ttl_seconds=120,
+        control_ttl_seconds=180,
+        wait_until="load",
+        verify=False,
+    )
+
+    assert result == {"mode": "lease_control"}
+    assert captured == {
+        "url": "http://127.0.0.1:8767/openbrowser/v1/auth/request",
+        "body": {
+            "owner": "pytest",
+            "url": "https://example.com/login",
+            "reason": "login_required",
+            "identity_id": "work-main",
+            "mode": "lease_control",
+            "ttl_seconds": 120,
+            "control_ttl_seconds": 180,
+            "wait_until": "load",
+            "verify": False,
+        },
+    }
 
 
 def test_remote_mcp_http_errors_are_actionable(monkeypatch) -> None:
