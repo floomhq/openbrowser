@@ -7,7 +7,7 @@ TOPICS: dict[str, dict[str, Any]] = {
     "quickstart": {
         "title": "OpenBrowser Broker Quickstart",
         "steps": [
-            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens or reuses the page, verifies state with a compact snapshot, and returns the control URL. Do not call browser_screenshot for this path unless the user explicitly asks for visual proof.",
+            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens or reuses the page, verifies state with a compact snapshot, and returns the Take Over Tab URL. Do not call browser_screenshot for this path unless the user explicitly asks for visual proof.",
             "Call browser_lease with owner and optional identity_id.",
             "Immediately call browser_snapshot or browser_screenshot to see the current page state before doing anything else.",
             "Do NOT call browser_navigate if the current page is already meaningful (e.g. after a human auth handoff the browser is on the target page). Only navigate when the current page is blank, a new tab, or unrelated to the task.",
@@ -42,7 +42,7 @@ TOPICS: dict[str, dict[str, Any]] = {
             {
                 "route": "openbrowser",
                 "use_for": "OpenBrowser diagnostics and OpenBrowser MCP surface.",
-                "start": "openbrowser <status|docs|open|auth|lease-control|audit> ...",
+                "start": "openbrowser <status|docs|open|auth|takeover|audit> ...",
                 "note": "OpenBrowser is an adapter on top of broker leases, not a separate browser pool.",
             },
             {
@@ -59,7 +59,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "rules": [
             "Use broker identities such as work-main or qa-generic when account state is needed.",
             "Use auth_request for login or password handoff; auth_request returns a real /auth/<token> portal by default.",
-            "Use lease_control_request only when an already-leased browser needs human current-tab control without credential entry.",
+            "Use takeover_request only when an already-leased browser needs human current-tab control without credential entry. The compatibility tool name is lease_control_request.",
             "Use OpenBrowser wrappers instead of aiming custom scripts directly at raw pool CDP ports.",
             "For chat/editor submission, prefer broker keyboard tools over DOM fill because modern editors maintain internal state.",
             "For Slack header/tab controls, dismiss open ReactModal/popovers with Escape before selector clicks.",
@@ -117,9 +117,9 @@ TOPICS: dict[str, dict[str, Any]] = {
         ],
         "notes": [
             "The CLI talks to the local broker API and reads the local server-side API key file when needed.",
-            "Use open --control for simple 'open this for me' requests; it returns a verified control URL in one command.",
-            "openbrowser auth returns a real /auth/<token> login portal by default. Use open --control or lease-control for current-tab control links.",
-            "Use it for status, docs, auth handoffs, active lease-control links, and quick smoke checks.",
+            "Use open --control for simple 'open this for me' requests; it returns a verified Take Over Tab URL in one command.",
+            "openbrowser auth returns a real /auth/<token> login portal by default. Use open --control or takeover for current-tab Take Over Tab links.",
+            "Use it for status, docs, auth handoffs, Take Over Tab links, and quick smoke checks.",
             "Use Broker MCP directly for normal click/type/screenshot workflows when tools are available.",
         ],
     },
@@ -128,21 +128,21 @@ TOPICS: dict[str, dict[str, Any]] = {
         "steps": [
             "When an agent hits a login wall, call auth_request with owner, url, reason, and identity_id.",
             "auth_request returns a real /auth/<token> login portal by default. Send this link when the user must sign in, enter a password, use a passkey, solve 2FA, or complete a provider login flow.",
-            "If the requested identity is already leased, do not convert login auth into lease-control. Release your own stale lease first, or wait if another agent owns the lease.",
-            "Use lease_control_request only when the user explicitly needs to control an already-open current tab, not for credential entry.",
+            "If the requested identity is already leased, do not convert login auth into Take Over Tab. Release your own stale lease first, or wait if another agent owns the lease.",
+            "Use takeover_request only when the user explicitly needs to control an already-open current tab, not for credential entry. The compatibility tool name is lease_control_request.",
             "If no identity_id is supplied, auth_request creates a neutral auth portal and does not use a personal authenticated profile.",
-            "Send the returned portal_url only when it starts with /auth/ and not /auth/lease-control/ for login tasks.",
-            "Use mode=lease_control only for the explicit current-tab fallback. Do not use it for login.",
+            "For login tasks, send only a portal_url that starts with /auth/ and not /auth/lease-control/. The latter is Take Over Tab, not login.",
+            "Use mode=lease_control only as the low-level compatibility flag for explicit current-tab Take Over Tab fallback. Do not use it for login.",
             "During identity auth, the broker pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile.",
             "If the identity has proxy_ref, the legacy temporary auth Chrome also uses that proxy through ax-proxy-forwarder.",
             "If an identity auth handoff is refused before VNC starts, the temporary VNC password file is removed.",
             "When auth completion runs, the broker stops VNC/websockify/Chrome/Xvfb helper processes and removes the temporary password file.",
-            "After auth completion, lease the same identity, snapshot first, and continue from the authenticated state. After lease-control, continue from the same lease_id/current tab.",
+            "After auth completion, lease the same identity, snapshot first, and continue from the authenticated state. After Take Over Tab, continue from the same lease_id/current tab.",
             "After browser work, confirm state with snapshot or screenshot and run broker_audit.",
         ],
         "examples": [
             {"tool": "auth_request", "args": {"owner": "agent-name", "url": "https://example.com/login", "reason": "profile_login", "identity_id": "work-main"}},
-            {"tool": "lease_control_request", "args": {"owner": "agent-name", "lease_id": "<lease_id>", "ttl_seconds": 900}},
+            {"tool": "takeover_request", "args": {"owner": "agent-name", "lease_id": "<lease_id>", "ttl_seconds": 900}},
         ],
     },
     "feedback": {

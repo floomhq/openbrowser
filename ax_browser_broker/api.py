@@ -252,7 +252,7 @@ def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: 
     _safe_record_event(
         source=str(auth_request_data.get("owner") or "auth-handoff"),
         event_type="session",
-        message="Auth handoff redirected to active lease control",
+        message="Auth handoff redirected to active Take Over Tab",
         lease_id=lease_id,
         tags=["auth", "lease-control", "active-identity"],
         data={"identity_id": identity_id, "token": control.get("token")},
@@ -317,22 +317,22 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
     requested_host = _url_host(request.url)
     current_host = _url_host(current_url)
     host_matches = bool(requested_host and current_host and requested_host == current_host)
-    warning = "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this control URL."
+    warning = "Identity is already leased. Inspect tabs/snapshot/screenshot before sharing this Take Over Tab URL."
     takeover_required = bool(tab_query_failed or (current_host and requested_host and current_host != requested_host))
     if tab_query_failed:
         warning = (
-            "Identity is already leased but current tab inspection failed. Lease-control was returned without navigating "
+            "Identity is already leased but current tab inspection failed. Take Over Tab was returned without navigating "
             "the active browser; explicit inspection is required before changing that lease."
         )
     elif current_host and requested_host and current_host != requested_host:
         warning = (
-            "Identity is already leased on a different host. Lease-control was returned without navigating the active "
+            "Identity is already leased on a different host. Take Over Tab was returned without navigating the active "
             "browser; explicit takeover is required before changing that lease."
         )
     _safe_record_event(
         source=request.owner,
         event_type="session",
-        message="Auth request returned active lease control",
+        message="Auth request returned active Take Over Tab",
         lease_id=lease_id,
         url=request.url,
         tags=["auth", "lease-control", "active-identity"],
@@ -645,7 +645,8 @@ def _openbrowser_endpoint_catalog() -> dict[str, str]:
         "type": "POST /openbrowser/v1/browser/type",
         "keyboard_type": "POST /openbrowser/v1/browser/keyboard-type",
         "keyboard_press": "POST /openbrowser/v1/browser/keyboard-press",
-        "lease_control_request": "POST /openbrowser/v1/lease-control/request",
+        "takeover_request": "POST /openbrowser/v1/takeover/request",
+        "lease_control_request": "POST /openbrowser/v1/lease-control/request (compatibility alias)",
         "wait": "POST /openbrowser/v1/browser/wait",
         "tabs": "POST /openbrowser/v1/browser/tabs",
         "new_tab": "POST /openbrowser/v1/browser/new-tab",
@@ -680,7 +681,8 @@ def _openbrowser_endpoint_description(key: str) -> str:
         "type": "Fill standard inputs.",
         "keyboard_type": "Type through real keyboard events.",
         "keyboard_press": "Press Enter, Tab, Escape, and other real keys.",
-        "lease_control_request": "Create a temporary human-control link for an active lease.",
+        "takeover_request": "Create a temporary Take Over Tab link for an active lease.",
+        "lease_control_request": "Compatibility alias for takeover_request.",
         "wait": "Wait for a selector or timeout in a leased browser.",
         "tabs": "List browser tabs for a lease.",
         "new_tab": "Open a new browser tab for a lease.",
@@ -2241,6 +2243,7 @@ async def openbrowser_open(request: OpenBrowserOpenRequest, _auth: str = Depends
             )
         )
         result["control"] = control
+        result["takeover"] = control
         result["portal_url"] = control.get("portal_url")
     return result
 
@@ -2281,6 +2284,7 @@ async def openbrowser_keyboard_press(request: KeyboardPressRequest, _auth: str =
 
 
 @app.post("/openbrowser/v1/lease-control/request")
+@app.post("/openbrowser/v1/takeover/request")
 async def openbrowser_lease_control_request(
     request: LeaseControlRequest, _auth: str = Depends(require_openbrowser_api_key)
 ) -> dict[str, Any]:
@@ -2585,6 +2589,7 @@ async def browser_keyboard_press(request: KeyboardPressRequest) -> dict[str, Any
         raise _http_error(error) from error
 
 
+@app.post("/takeover/request")
 @app.post("/lease-control/request")
 async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
     try:
@@ -2609,7 +2614,7 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
         _safe_record_event(
             source=request.owner,
             event_type="session",
-            message="Lease control session created",
+            message="Take Over Tab session created",
             lease_id=lease_obj.lease_id,
             tags=["lease-control", "human-handoff"],
             data={"slot": lease_obj.name, "identity_id": lease_obj.identity_id, "ttl_seconds": request.ttl_seconds},
@@ -2619,7 +2624,7 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
         _safe_record_event(
             source=request.owner,
             event_type="error",
-            message="Lease control session failed",
+            message="Take Over Tab session failed",
             severity="error",
             lease_id=request.lease_id,
             tags=["lease-control", "failure"],
@@ -3102,7 +3107,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
               <div class="session-icon">{browser_svg}</div>
               <div>
                 <div class="session-name">{safe_identity}</div>
-                <div class="session-status">Human control active</div>
+                <div class="session-status">Take Over Tab active</div>
               </div>
               <div class="kebab" aria-hidden="true">...</div>
             </div>
@@ -3131,16 +3136,16 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
               </form>
               <button class="button-outline button-small" id="controlsFocus" type="button">Controls</button>
             </div>
-            <div class="browser-frame" id="browserFrame" tabindex="0" aria-label="Browser control surface">
+            <div class="browser-frame" id="browserFrame" tabindex="0" aria-label="Take Over Tab browser surface">
               <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
               <textarea id="keyCapture" autocapitalize="off" autocomplete="off" spellcheck="false" aria-hidden="true"></textarea>
             </div>
           </div>
-          <aside class="auth-card is-success is-minimized" id="controlCard" aria-label="Human control request">
-            <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize control request">Hide</button>
+          <aside class="auth-card is-success is-minimized" id="controlCard" aria-label="Take Over Tab request">
+            <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize Take Over Tab request">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
-              <div class="auth-title">Browser control</div>
+              <div class="auth-title">Take Over Tab</div>
               <div class="auth-subtitle">Click inside the browser image, then type normally. Use the URL bar above to navigate. Advanced controls are only a fallback.</div>
               <div class="control-note">This controls the same browser tab the agent is holding.</div>
               <div class="auth-actions">
@@ -3163,10 +3168,10 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
                   <button class="button-outline" id="openImage" type="button">Open screenshot</button>
                 </div>
                 <div class="control-note">This view never exposes session cookies, saved passwords, or proxy credentials.</div>
-                <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Control link active.</div>
+                <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Take Over Tab active.</div>
               </div>
             </details>
-            <button class="auth-chip" type="button" id="restoreControl">Control request</button>
+            <button class="auth-chip" type="button" id="restoreControl">Take Over Tab</button>
           </aside>
         </section>
         <aside class="state-panel">
@@ -3204,7 +3209,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         setThemeLabel();
       }});
       const expiresAt = Number(statusBox.dataset.expiresAt || 0);
-      if (expiresAt) setStatus(`Control link expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
+      if (expiresAt) setStatus(`Take Over Tab expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
       let shotPending = false;
       const refresh = () => {{
         if (shotPending) return;
@@ -3363,7 +3368,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         try {{
           const response = await fetch(`/auth/lease-control/${{token}}/complete`, {{method: 'POST'}});
           if (!response.ok) throw new Error(await response.text());
-          setStatus('Control link ended');
+          setStatus('Take Over Tab ended');
           document.querySelectorAll('button, input').forEach((item) => item.disabled = true);
         }} catch (error) {{
           setStatus(`End failed: ${{String(error.message || error).slice(0, 180)}}`);
@@ -3409,7 +3414,7 @@ async def lease_control_click(token: str, request: MouseClickRequest) -> dict[st
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="browser_action",
-            message="Lease control click",
+            message="Take Over Tab click",
             lease_id=lease_obj.lease_id,
             url=result.get("url"),
             tags=["lease-control", "click"],
@@ -3431,7 +3436,7 @@ async def lease_control_scroll(token: str, request: LeaseControlScrollRequest) -
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="browser_action",
-            message="Lease control scroll",
+            message="Take Over Tab scroll",
             lease_id=lease_obj.lease_id,
             url=result.get("url"),
             tags=["lease-control", "scroll"],
@@ -3453,7 +3458,7 @@ async def lease_control_navigate(token: str, request: LeaseControlNavigateReques
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="browser_action",
-            message="Lease control navigate",
+            message="Take Over Tab navigate",
             lease_id=lease_obj.lease_id,
             url=result.get("url"),
             tags=["lease-control", "navigate"],
@@ -3475,7 +3480,7 @@ async def lease_control_keyboard_type(token: str, request: LeaseControlTypeReque
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="browser_action",
-            message="Lease control keyboard type",
+            message="Take Over Tab keyboard type",
             lease_id=lease_obj.lease_id,
             url=result.get("url"),
             tags=["lease-control", "keyboard", "type"],
@@ -3497,7 +3502,7 @@ async def lease_control_keyboard_press(token: str, request: LeaseControlPressReq
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="browser_action",
-            message="Lease control keyboard press",
+            message="Take Over Tab keyboard press",
             lease_id=lease_obj.lease_id,
             url=result.get("url"),
             tags=["lease-control", "keyboard", "press"],
@@ -3517,7 +3522,7 @@ async def lease_control_complete(token: str) -> dict[str, Any]:
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="session",
-            message="Lease control session completed",
+            message="Take Over Tab session completed",
             lease_id=str(session.get("lease_id")),
             tags=["lease-control", "complete"],
             data={"ttl_seconds": session.get("ttl_seconds")},

@@ -98,7 +98,7 @@ def get_control_session(token: str) -> dict[str, Any]:
         gc_control_sessions(state)
         session = state["sessions"].get(token)
         if not session:
-            raise LeaseControlError("Lease control session not found or expired")
+            raise LeaseControlError("Take Over Tab session not found or expired")
         return dict(session)
 
 
@@ -121,6 +121,6 @@ def complete_control_session(token: str) -> dict[str, Any]:
         gc_control_sessions(state)
         session = state["sessions"].pop(token, None)
         if not session:
-            raise LeaseControlError("Lease control session not found or expired")
+            raise LeaseControlError("Take Over Tab session not found or expired")
         session["completed_at"] = int(time.time())
         return dict(session)

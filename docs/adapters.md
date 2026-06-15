@@ -26,7 +26,7 @@ openbrowser docs quickstart
 openbrowser auth https://example.com/login --identity work-main --owner agent-name
 ```
 
-OpenBrowser is broker-backed, not a separate browser pool. Use the CLI for broker status, docs, auth handoffs, and lease-control links instead of connecting raw OpenBrowser processes to pool CDP ports.
+OpenBrowser is broker-backed, not a separate browser pool. Use the CLI for broker status, docs, auth handoffs, and Take Over Tab links instead of connecting raw OpenBrowser processes to pool CDP ports.
 
 ## Manual Lease
 

@@ -91,7 +91,7 @@ def test_remote_mcp_browser_open_control_posts_one_step_payload(monkeypatch) -> 
             return FakeResponse({"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "C" * 1400, "elements": [{}], "slot": "pool-b"})
         if request.full_url.endswith("/browser/screenshot"):
             return FakeResponse({"path": "/tmp/shot.png", "base64": "image-data"})
-        if request.full_url.endswith("/lease-control/request"):
+        if request.full_url.endswith("/takeover/request"):
             return FakeResponse({"portal_url": "https://browser.example.com/auth/lease-control/tok"})
         raise AssertionError(request.full_url)
 
@@ -115,14 +115,59 @@ def test_remote_mcp_browser_open_control_posts_one_step_payload(monkeypatch) -> 
         ("http://127.0.0.1:8767/openbrowser/v1/browser/snapshot", {"lease_id": "lease-remote"}),
         ("http://127.0.0.1:8767/openbrowser/v1/browser/screenshot", {"lease_id": "lease-remote", "full_page": False}),
         (
-            "http://127.0.0.1:8767/openbrowser/v1/lease-control/request",
+            "http://127.0.0.1:8767/openbrowser/v1/takeover/request",
             {"lease_id": "lease-remote", "owner": "pytest", "ttl_seconds": 300},
         ),
     ]
     assert result["portal_url"].endswith("/tok")
+    assert result["takeover"]["portal_url"].endswith("/tok")
     assert result["snapshot"]["bodyText"] == "C" * 300
     assert result["snapshot"]["body_text_length"] == 1400
     assert "base64" not in result["screenshot"]
+
+
+def test_remote_mcp_takeover_request_posts_primary_endpoint(monkeypatch) -> None:
+    captured = []
+
+    def fake_urlopen(request, timeout):
+        body = json.loads(request.data.decode("utf-8")) if request.data else None
+        captured.append((request.full_url, body))
+        return FakeResponse({"portal_url": "https://browser.example.com/auth/lease-control/tok"})
+
+    monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
+    monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
+
+    result = remote_mcp_server.takeover_request("lease-remote", owner="pytest", ttl_seconds=300)
+
+    assert captured == [
+        (
+            "http://127.0.0.1:8767/openbrowser/v1/takeover/request",
+            {"lease_id": "lease-remote", "owner": "pytest", "ttl_seconds": 300},
+        )
+    ]
+    assert result["portal_url"].endswith("/tok")
+
+
+def test_remote_mcp_lease_control_request_is_takeover_alias(monkeypatch) -> None:
+    captured = []
+
+    def fake_urlopen(request, timeout):
+        body = json.loads(request.data.decode("utf-8")) if request.data else None
+        captured.append((request.full_url, body))
+        return FakeResponse({"portal_url": "https://browser.example.com/auth/lease-control/tok"})
+
+    monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
+    monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
+
+    result = remote_mcp_server.lease_control_request("lease-remote", owner="pytest", ttl_seconds=300)
+
+    assert captured == [
+        (
+            "http://127.0.0.1:8767/openbrowser/v1/takeover/request",
+            {"lease_id": "lease-remote", "owner": "pytest", "ttl_seconds": 300},
+        ),
+    ]
+    assert result["portal_url"].endswith("/tok")
 
 
 def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) -> None:

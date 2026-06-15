@@ -165,7 +165,7 @@ curl -fsS "$BASE/auth/batch" \
 - `POST /browser/type`
 - `POST /browser/keyboard-type`
 - `POST /browser/keyboard-press`
-- `POST /lease-control/request`
+- `POST /takeover/request (or legacy POST /lease-control/request)`
 - `POST /browser/wait`
 - `POST /browser/tabs`
 - `POST /browser/new-tab`
@@ -205,12 +205,12 @@ Opening an auth portal starts or reuses the noVNC login view by default. Set `OP
 
 Use telemetry-only records for expected negative test cases and normal app validation failures. File feedback issues for broker, identity/proxy, auth handoff, upload, screenshot, keyboard, or adapter failures that block the task.
 
-## Active Lease Human Control
+## Take Over Tab
 
-If a leased headless browser hits a prompt that must be handled in the current tab, create a short-lived manual control link:
+If a leased headless browser hits a prompt that must be handled in the current tab, create a short-lived Take Over Tab link:
 
 ```bash
-curl -fsS "$BASE/lease-control/request" \
+curl -fsS "$BASE/takeover/request" \
   -H "authorization: Bearer $KEY" \
   -H "user-agent: openbrowser-client/1.0" \
   -H "content-type: application/json" \

@@ -158,7 +158,7 @@ def cmd_open(args: argparse.Namespace) -> int:
     if lease_id and args.control:
         control = _request(
             "POST",
-            "/openbrowser/v1/lease-control/request",
+            "/openbrowser/v1/takeover/request",
             {
                 "owner": args.control_owner or args.owner,
                 "lease_id": lease_id,
@@ -167,6 +167,7 @@ def cmd_open(args: argparse.Namespace) -> int:
             auth=True,
         )
         result["control"] = control
+        result["takeover"] = control
         result["portal_url"] = control.get("portal_url")
     return _print(result)
 
@@ -194,7 +195,7 @@ def cmd_lease_control(args: argparse.Namespace) -> int:
     return _print(
         _request(
             "POST",
-            "/openbrowser/v1/lease-control/request",
+            "/openbrowser/v1/takeover/request",
             {
                 "owner": args.owner,
                 "lease_id": args.lease_id,
@@ -225,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
     open_cmd.add_argument("--identity", default=None)
     open_cmd.add_argument("--owner", default="openbrowser-cli")
     open_cmd.add_argument("--ttl", type=int, default=900)
-    open_cmd.add_argument("--control", action="store_true", help="Return a temporary human-control portal URL")
+    open_cmd.add_argument("--control", action="store_true", help="Return a temporary Take Over Tab portal URL")
     open_cmd.add_argument("--control-owner", default=None)
     open_cmd.add_argument("--control-ttl", type=int, default=900)
     open_cmd.add_argument("--screenshot", action="store_true", help="Capture a compact screenshot receipt without base64 output")
@@ -243,11 +244,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["lease_control", "vnc"],
         default="vnc",
-        help="vnc is the default real login portal; lease_control is only for explicit current-tab control fallback",
+        help="vnc is the default real login portal; lease_control is only the low-level compatibility flag for Take Over Tab fallback",
     )
     auth.set_defaults(func=cmd_auth)
 
-    control = sub.add_parser("lease-control", help="Create a human control URL for an active lease")
+    control = sub.add_parser("takeover", help="Create a Take Over Tab URL for an active lease")
     control.add_argument("lease_id")
     control.add_argument("--owner", default="openbrowser-cli")
     control.add_argument("--ttl", type=int, default=900)

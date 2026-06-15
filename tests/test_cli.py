@@ -94,7 +94,7 @@ def test_cli_open_control_sends_one_step_handoff_payload(monkeypatch, capsys) ->
             return {"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "ok", "elements": [], "slot": "pool-b"}
         if path == "/openbrowser/v1/browser/screenshot":
             return {"path": "/tmp/shot.png", "base64": "image-data"}
-        if path == "/openbrowser/v1/lease-control/request":
+        if path == "/openbrowser/v1/takeover/request":
             return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
         raise AssertionError(path)
 
@@ -132,13 +132,14 @@ def test_cli_open_control_sends_one_step_handoff_payload(monkeypatch, capsys) ->
         ("POST", "/openbrowser/v1/browser/screenshot", {"lease_id": "lease-cli", "full_page": False}, True),
         (
             "POST",
-            "/openbrowser/v1/lease-control/request",
+            "/openbrowser/v1/takeover/request",
             {"owner": "pytest-open", "lease_id": "lease-cli", "ttl_seconds": 900},
             True,
         ),
     ]
     output = json.loads(capsys.readouterr().out)
     assert output["portal_url"].endswith("/tok")
+    assert output["takeover"]["portal_url"].endswith("/tok")
     assert output["snapshot"]["title"] == "Home | Lovable"
     assert "base64" not in output["screenshot"]
 
@@ -160,7 +161,7 @@ def test_cli_open_control_reuses_matching_active_identity_lease(monkeypatch, cap
             return {"tabs": [{"index": 0, "active": True, "url": "https://lovable.dev/dashboard", "title": "Home | Lovable"}]}
         if path == "/openbrowser/v1/browser/snapshot":
             return {"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "ok", "elements": [], "slot": "pool-f"}
-        if path == "/openbrowser/v1/lease-control/request":
+        if path == "/openbrowser/v1/takeover/request":
             return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
         raise AssertionError(path)
 
@@ -198,11 +199,33 @@ def test_cli_open_control_reuses_matching_active_identity_lease(monkeypatch, cap
         ("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": "lease-active"}, True),
         (
             "POST",
-            "/openbrowser/v1/lease-control/request",
+            "/openbrowser/v1/takeover/request",
             {"owner": "pytest-open", "lease_id": "lease-active", "ttl_seconds": 900},
             True,
         ),
     ]
+
+
+def test_cli_takeover_command_uses_primary_endpoint(monkeypatch, capsys) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None, auth=False):
+        calls.append((method, path, body, auth))
+        return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
+
+    monkeypatch.setattr(cli, "_request", fake_request)
+
+    assert cli.main(["takeover", "lease-cli", "--owner", "pytest-takeover", "--ttl", "300"]) == 0
+
+    assert calls == [
+        (
+            "POST",
+            "/openbrowser/v1/takeover/request",
+            {"owner": "pytest-takeover", "lease_id": "lease-cli", "ttl_seconds": 300},
+            True,
+        )
+    ]
+    assert json.loads(capsys.readouterr().out)["portal_url"].endswith("/tok")
 
 
 def test_cli_prints_compact_http_errors(monkeypatch, capsys) -> None:

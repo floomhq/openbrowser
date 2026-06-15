@@ -1150,8 +1150,40 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
     assert created_kwargs["url"] == "https://example.com/current"
-    assert events[0]["message"] == "Lease control session created"
+    assert events[0]["message"] == "Take Over Tab session created"
     assert events[0]["data"]["slot"] == "pool-b"
+
+
+def test_takeover_request_creates_handoff_link(monkeypatch) -> None:
+    lease = make_lease()
+
+    def fake_create_control_session(owner, lease_id, ttl_seconds, **kwargs):
+        assert owner == "pytest-takeover"
+        assert lease_id == "lease-api"
+        assert ttl_seconds == 600
+        assert kwargs["identity_id"] == lease.identity_id
+        assert kwargs["slot"] == lease.name
+        return {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "ttl_seconds": ttl_seconds,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+        }
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(api.controller, "tabs", lambda _lease: {"tabs": []})
+    monkeypatch.setattr(api, "record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/takeover/request",
+        json={"lease_id": "lease-api", "owner": "pytest-takeover", "ttl_seconds": 600},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
 
 
 def test_openbrowser_lease_control_request_is_protected(monkeypatch) -> None:
@@ -1166,6 +1198,27 @@ def test_openbrowser_lease_control_request_is_protected(monkeypatch) -> None:
     missing = client.post("/openbrowser/v1/lease-control/request", json={"lease_id": "lease-api"})
     ok = client.post(
         "/openbrowser/v1/lease-control/request",
+        json={"lease_id": "lease-api"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert missing.status_code == 401
+    assert ok.status_code == 200
+    assert ok.json()["portal_url"].endswith("/auth/lease-control/tok")
+
+
+def test_openbrowser_takeover_request_is_protected(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+
+    async def fake_lease_control_request(_request):
+        return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
+
+    monkeypatch.setattr(api, "lease_control_request", fake_lease_control_request)
+    client = TestClient(api.app)
+
+    missing = client.post("/openbrowser/v1/takeover/request", json={"lease_id": "lease-api"})
+    ok = client.post(
+        "/openbrowser/v1/takeover/request",
         json={"lease_id": "lease-api"},
         headers={"authorization": "Bearer test-openbrowser-key"},
     )
@@ -1212,8 +1265,10 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "Session State" in portal.text
     assert "chrome-test" in portal.text
     assert "https://example.com/dashboard" in portal.text
-    assert "Browser control" in portal.text
-    assert "Control request" in portal.text
+    assert "Take Over Tab" in portal.text
+    assert "Take Over Tab request" in portal.text
+    assert "Browser control" not in portal.text
+    assert "Control request" not in portal.text
     assert "Advanced fallback controls" in portal.text
     assert "Refresh screenshot" not in portal.text
     assert ">Refresh<" in portal.text
@@ -1265,7 +1320,7 @@ def test_lease_control_click_records_coordinates(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["clicked"] == {"x": 10, "y": 20}
-    assert events[0]["message"] == "Lease control click"
+    assert events[0]["message"] == "Take Over Tab click"
     assert events[0]["data"]["x"] == 10
     assert events[0]["data"]["y"] == 20
 
@@ -1295,7 +1350,7 @@ def test_lease_control_navigate_records_target(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["title"] == "Next"
-    assert events[0]["message"] == "Lease control navigate"
+    assert events[0]["message"] == "Take Over Tab navigate"
     assert events[0]["url"] == "https://example.com/next"
     assert events[0]["tags"] == ["lease-control", "navigate"]
     assert events[0]["data"]["wait_until"] == "domcontentloaded"

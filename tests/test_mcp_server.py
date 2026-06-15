@@ -23,7 +23,7 @@ def test_browser_open_control_composes_open_verify_and_control(monkeypatch) -> N
                 "bodyText": "B" * 1400,
                 "elements": [{}, {}],
             }
-        if path == "/lease-control/request":
+        if path == "/takeover/request":
             return {"lease_id": "lease-mcp", "portal_url": "https://browser.example.com/auth/lease-control/tok"}
         raise AssertionError(path)
 
@@ -45,7 +45,7 @@ def test_browser_open_control_composes_open_verify_and_control(monkeypatch) -> N
         ("POST", "/lease", {"owner": "pytest-mcp", "ttl_seconds": 600, "identity_id": "chrome-work"}),
         ("POST", "/browser/navigate", {"lease_id": "lease-mcp", "url": "https://lovable.dev"}),
         ("POST", "/browser/snapshot", {"lease_id": "lease-mcp"}),
-        ("POST", "/lease-control/request", {"lease_id": "lease-mcp", "owner": "pytest-mcp", "ttl_seconds": 300}),
+        ("POST", "/takeover/request", {"lease_id": "lease-mcp", "owner": "pytest-mcp", "ttl_seconds": 300}),
     ]
 
 
@@ -141,7 +141,7 @@ def test_browser_open_control_reuses_matching_active_identity_lease(monkeypatch)
                 "bodyText": "Lovable dashboard",
                 "elements": [{}],
             }
-        if path == "/lease-control/request":
+        if path == "/takeover/request":
             return {"lease_id": "lease-active", "portal_url": "https://browser.example.com/auth/lease-control/tok"}
         raise AssertionError(path)
 
@@ -158,5 +158,35 @@ def test_browser_open_control_reuses_matching_active_identity_lease(monkeypatch)
         ("GET", "/status", None),
         ("POST", "/browser/tabs", {"lease_id": "lease-active"}),
         ("POST", "/browser/snapshot", {"lease_id": "lease-active"}),
-        ("POST", "/lease-control/request", {"lease_id": "lease-active", "owner": "pytest-mcp", "ttl_seconds": 900}),
+        ("POST", "/takeover/request", {"lease_id": "lease-active", "owner": "pytest-mcp", "ttl_seconds": 900}),
     ]
+
+
+def test_takeover_request_posts_primary_endpoint(monkeypatch) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None):
+        calls.append((method, path, body))
+        return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
+
+    monkeypatch.setattr(mcp_server, "_request", fake_request)
+
+    result = mcp_server.takeover_request("lease-mcp", owner="pytest-mcp", ttl_seconds=300)
+
+    assert result["portal_url"].endswith("/tok")
+    assert calls == [("POST", "/takeover/request", {"lease_id": "lease-mcp", "owner": "pytest-mcp", "ttl_seconds": 300})]
+
+
+def test_lease_control_request_is_takeover_alias(monkeypatch) -> None:
+    calls = []
+
+    def fake_request(method, path, body=None):
+        calls.append((method, path, body))
+        return {"portal_url": "https://browser.example.com/auth/lease-control/tok"}
+
+    monkeypatch.setattr(mcp_server, "_request", fake_request)
+
+    result = mcp_server.lease_control_request("lease-mcp", owner="pytest-mcp", ttl_seconds=300)
+
+    assert result["portal_url"].endswith("/tok")
+    assert calls == [("POST", "/takeover/request", {"lease_id": "lease-mcp", "owner": "pytest-mcp", "ttl_seconds": 300})]

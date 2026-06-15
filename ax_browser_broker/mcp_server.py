@@ -123,7 +123,7 @@ def browser_open_control(
     ttl_seconds: int = 900,
     control_ttl_seconds: int = 900,
 ) -> dict[str, Any]:
-    """Open a URL, verify the page, and return a human-control link in one call."""
+    """Open a URL, verify the page, and return a Take Over Tab link in one call."""
     try:
         lease_obj = browser_lease(owner=owner, ttl_seconds=ttl_seconds, identity_id=identity_id)
     except Exception as error:
@@ -131,7 +131,7 @@ def browser_open_control(
             match = _matching_active_identity_lease(identity_id, url)
             if match:
                 lease_id, lease_obj, snapshot = match
-                control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+                control = takeover_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
                 return {
                     "lease": {"lease_id": lease_id, **lease_obj},
                     "navigation": {
@@ -143,6 +143,7 @@ def browser_open_control(
                     },
                     "snapshot": _compact_snapshot(snapshot),
                     "control": control,
+                    "takeover": control,
                     "portal_url": control.get("portal_url"),
                     "reused_existing_lease": True,
                 }
@@ -154,12 +155,13 @@ def browser_open_control(
         browser_release(lease_id)
         raise
     snapshot = browser_snapshot(lease_id)
-    control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+    control = takeover_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
     return {
         "lease": lease_obj,
         "navigation": navigation,
         "snapshot": _compact_snapshot(snapshot),
         "control": control,
+        "takeover": control,
         "portal_url": control.get("portal_url"),
         "reused_existing_lease": False,
     }
@@ -207,10 +209,16 @@ def browser_keyboard_press(lease_id: str, key: str, selector: str | None = None)
 
 @mcp.tool()
 def lease_control_request(lease_id: str, owner: str = "agent", ttl_seconds: int = 900) -> dict[str, Any]:
-    """Create a short-lived human control link for an existing lease. Use for manual login/challenge handoff."""
+    """Compatibility alias for takeover_request. Do not use for login or credential entry."""
+    return takeover_request(lease_id=lease_id, owner=owner, ttl_seconds=ttl_seconds)
+
+
+@mcp.tool()
+def takeover_request(lease_id: str, owner: str = "agent", ttl_seconds: int = 900) -> dict[str, Any]:
+    """Create a Take Over Tab link for the exact tab already held by an agent. Not for login or credential entry."""
     return _request(
         "POST",
-        "/lease-control/request",
+        "/takeover/request",
         {"lease_id": lease_id, "owner": owner, "ttl_seconds": ttl_seconds},
     )
 
@@ -263,7 +271,7 @@ def auth_request(
     wait_until: str = "domcontentloaded",
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Create a real /auth/<token> login handoff. Use mode='lease_control' only for explicit current-tab control fallback."""
+    """Create a real /auth/<token> login handoff. Use mode='lease_control' only as the low-level Take Over Tab compatibility flag."""
     return _request(
         "POST",
         "/auth/request",

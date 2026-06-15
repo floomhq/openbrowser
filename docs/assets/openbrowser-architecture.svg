@@ -32,7 +32,7 @@
 
     <rect x="790" y="332" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
     <text x="820" y="368" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Human auth</text>
-    <text x="820" y="394" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">login, 2FA, passkeys, control links</text>
+    <text x="820" y="394" fill="#AAB4C0" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="14">login, 2FA, passkeys, takeover links</text>
 
     <rect x="790" y="450" width="300" height="88" rx="14" fill="#202938" stroke="#3D4B5E"/>
     <text x="820" y="486" fill="#F5F7FA" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Telemetry and audits</text>

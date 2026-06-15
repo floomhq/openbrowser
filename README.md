@@ -49,7 +49,7 @@ OpenBrowser gives agents one operating contract: lease, act, release, report.
 - **Remote API**: bearer-token protected `/openbrowser/v1` API for agents on any machine.
 - **MCP servers**: local MCP for same-host agents and remote MCP for HTTPS-backed access.
 - **Human auth handoff**: one-time portal links for login, 2FA, passkeys, and manual challenges.
-- **Active lease control**: short-lived manual control links for a browser tab already held by an agent.
+- **Take Over Tab**: short-lived takeover links for a browser tab already held by an agent.
 - **Rich-text keyboard tools**: real keyboard events for editors that reject simple DOM value changes.
 - **Telemetry and issues**: sanitized events, feedback issue tracking, and usage audits.
 - **browser-use and OpenBrowser adapters**: wrappers lease a slot, run the tool, then release the slot.
@@ -160,7 +160,7 @@ curl -fsS "$BASE/docs" \
   -H "user-agent: openbrowser-client/1.0"
 ```
 
-The API covers leases, navigation, snapshots, screenshots, clicks, typing, keyboard events, tabs, auth handoff, lease control, profiles, feedback issues, telemetry, and audits.
+The API covers leases, navigation, snapshots, screenshots, clicks, typing, keyboard events, tabs, auth handoff, Take Over Tab, profiles, feedback issues, telemetry, and audits.
 
 ```mermaid
 flowchart TD
@@ -208,7 +208,7 @@ Core MCP tools:
 - `browser_navigate`, `browser_snapshot`, `browser_screenshot`
 - `browser_click`, `browser_type`, `browser_keyboard_type`, `browser_keyboard_press`
 - `browser_tabs`, `browser_new_tab`, `browser_switch_tab`, `browser_wait`
-- `auth_request`, `auth_status`, `lease_control_request`
+- `auth_request`, `auth_status`, `takeover_request` (`lease_control_request` remains as a compatibility alias)
 - `feedback_report_issue`, `feedback_list_issues`, `feedback_update_issue`
 - `telemetry_record_event`, `telemetry_list_events`, `telemetry_summary`
 - `broker_audit`, `broker_docs`, `profile_status`

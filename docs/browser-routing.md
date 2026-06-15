@@ -22,7 +22,7 @@ flowchart TD
 | --- | --- | --- |
 | Broker MCP | Normal browser agents, authenticated identities, concurrent sessions, feedback, telemetry, audits | `broker_docs`, `browser_lease`, `browser_release`, `broker_audit` |
 | Remote MCP | Agents running outside the browser host | `openbrowser-remote-mcp` with `OPENBROWSER_API_KEY` and `OPENBROWSER_BASE_URL` |
-| OpenBrowser CLI | Broker status, docs, auth handoffs, active lease-control links, and smoke checks | `openbrowser <status|docs|auth|open|lease-control|audit> ...` |
+| OpenBrowser CLI | Broker status, docs, auth handoffs, active Take Over Tab links, and smoke checks | `openbrowser <status|docs|auth|open|takeover|audit> ...` |
 | browser-use wrapper | browser-use task execution against broker-leased browsers | `openbrowser-use --identity <id> ...` |
 | Fast disposable browser | Anonymous QA, local dev-server screenshots, public pages, no account state | gstack `/browse` or another disposable-browser command |
 
@@ -31,7 +31,7 @@ flowchart TD
 1. Lease before browser work.
 2. Use identities only when account state or proxy routing is required.
 3. Use `auth_request` for login, passkeys, 2FA, or password entry.
-4. Use `lease_control_request` only when a human must control the currently leased tab without entering credentials.
+4. Use `takeover_request` (`lease_control_request` remains as a compatibility alias) only when a human must control the currently leased tab without entering credentials.
 5. Release every lease.
 6. Run `broker_audit` after browser-agent work.
 7. Do not connect custom scripts directly to raw pool CDP ports during normal agent work.

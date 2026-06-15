@@ -119,7 +119,7 @@ def browser_open_control(
     control_ttl_seconds: int = 900,
     screenshot: bool = False,
 ) -> dict[str, Any]:
-    """Open a URL, verify the page, and return a human-control link in one call."""
+    """Open a URL, verify the page, and return a Take Over Tab link in one call."""
     result = browser_open(owner=owner, url=url, identity_id=identity_id, ttl_seconds=ttl_seconds)
     lease_id = str((result.get("lease") or {}).get("lease_id") or result.get("lease_id") or "")
     if lease_id:
@@ -134,8 +134,9 @@ def browser_open_control(
         }
         if screenshot:
             result["screenshot"] = {key: value for key, value in browser_screenshot(lease_id).items() if key != "base64"}
-        control = lease_control_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
+        control = takeover_request(lease_id=lease_id, owner=owner, ttl_seconds=control_ttl_seconds)
         result["control"] = control
+        result["takeover"] = control
         result["portal_url"] = control.get("portal_url")
     return result
 
@@ -188,8 +189,14 @@ def browser_keyboard_press(lease_id: str, key: str, selector: str | None = None)
 
 @mcp.tool()
 def lease_control_request(lease_id: str, owner: str = "remote-agent", ttl_seconds: int = 900) -> dict[str, Any]:
-    """Create a short-lived human control link for an existing lease."""
-    return _request("POST", "/lease-control/request", {"lease_id": lease_id, "owner": owner, "ttl_seconds": ttl_seconds})
+    """Compatibility alias for takeover_request. Do not use for login or credential entry."""
+    return takeover_request(lease_id=lease_id, owner=owner, ttl_seconds=ttl_seconds)
+
+
+@mcp.tool()
+def takeover_request(lease_id: str, owner: str = "remote-agent", ttl_seconds: int = 900) -> dict[str, Any]:
+    """Create a Take Over Tab link for the exact tab already held by an agent. Not for login or credential entry."""
+    return _request("POST", "/takeover/request", {"lease_id": lease_id, "owner": owner, "ttl_seconds": ttl_seconds})
 
 
 @mcp.tool()
@@ -234,7 +241,7 @@ def auth_request(
     wait_until: str = "domcontentloaded",
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Create a real /auth/<token> login handoff. Use mode='lease_control' only for explicit current-tab control fallback."""
+    """Create a real /auth/<token> login handoff. Use mode='lease_control' only as the low-level Take Over Tab compatibility flag."""
     return _request(
         "POST",
         "/auth/request",
