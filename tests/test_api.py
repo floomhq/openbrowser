@@ -738,6 +738,49 @@ def test_openbrowser_auth_request_marks_takeover_when_active_tab_query_fails(mon
     assert "inspection failed" in response.json()["warning"]
 
 
+def test_openbrowser_auth_request_explicit_lease_control_warns_not_login(monkeypatch) -> None:
+    monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
+    monkeypatch.setattr(api, "status", lambda: {"leases": {}})
+
+    async def fake_create_lease(_request):
+        return {"lease_id": "lease-explicit", "name": "pool-b", "identity_id": None}
+
+    async def fake_browser_navigate(_request):
+        return {"lease_id": "lease-explicit", "slot": "pool-b", "url": "https://example.com/login", "title": "Login"}
+
+    async def fake_browser_snapshot(_request):
+        return {"title": "Login", "url": "https://example.com/login", "bodyText": "Login", "elements": [], "slot": "pool-b"}
+
+    monkeypatch.setattr(api, "create_lease", fake_create_lease)
+    monkeypatch.setattr(api, "browser_navigate", fake_browser_navigate)
+    monkeypatch.setattr(api, "browser_snapshot", fake_browser_snapshot)
+    monkeypatch.setattr(
+        api,
+        "create_control_session",
+        lambda owner, lease_id, ttl_seconds=900, **_kwargs: {
+            "token": "control-token",
+            "owner": owner,
+            "lease_id": lease_id,
+            "ttl_seconds": ttl_seconds,
+            "portal_url": "https://browser.example.com/auth/lease-control/control-token",
+            "local_portal_url": "http://127.0.0.1:8767/auth/lease-control/control-token",
+        },
+    )
+    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/openbrowser/v1/auth/request",
+        json={"owner": "pytest", "url": "https://example.com/login", "mode": "lease_control"},
+        headers={"authorization": "Bearer test-openbrowser-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "lease_control"
+    assert "returns Take Over Tab, not a login portal" in response.json()["warning"]
+    assert "neutral broker browser" in response.json()["warning"]
+
+
 def test_local_auth_request_defaults_to_vnc_auth(monkeypatch) -> None:
     created = stub_auth_vnc(monkeypatch)
     client = TestClient(api.app)

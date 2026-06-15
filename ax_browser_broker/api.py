@@ -408,7 +408,7 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
         _safe_record_event(
             source=request.owner,
             event_type="session",
-            message="Explicit lease-control auth fallback opened",
+            message="Explicit Take Over Tab auth fallback opened",
             lease_id=lease_id,
             url=navigation.get("url") or request.url,
             tags=["auth", "lease-control", "explicit"],
@@ -421,9 +421,11 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
                 "neutral_profile": request.identity_id is None,
             },
         )
-        warning = None
+        warnings = [
+            "mode=lease_control is compatibility-only and returns Take Over Tab, not a login portal.",
+        ]
         if request.identity_id is None:
-            warning = "No identity_id supplied; opened a neutral broker browser instead of any personal authenticated profile."
+            warnings.append("No identity_id supplied; opened a neutral broker browser instead of any personal authenticated profile.")
         result: dict[str, Any] = {
             "token": control["token"],
             "owner": request.owner,
@@ -440,8 +442,7 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
             "local_portal_url": control["local_portal_url"],
             "lease_control": control,
         }
-        if warning:
-            result["warning"] = warning
+        result["warning"] = " ".join(warnings)
         return result
     except Exception:
         try:
