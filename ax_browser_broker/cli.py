@@ -232,7 +232,7 @@ def build_parser() -> argparse.ArgumentParser:
     open_cmd.add_argument("--no-verify", action="store_true", help="Skip the post-navigation snapshot receipt")
     open_cmd.set_defaults(func=cmd_open)
 
-    auth = sub.add_parser("auth", help="Create an auth handoff or active lease-control response")
+    auth = sub.add_parser("auth", help="Create a real /auth/<token> login handoff")
     auth.add_argument("url")
     auth.add_argument("--identity", default=None)
     auth.add_argument("--owner", default="openbrowser-cli")
@@ -242,8 +242,8 @@ def build_parser() -> argparse.ArgumentParser:
     auth.add_argument(
         "--mode",
         choices=["lease_control", "vnc"],
-        default="lease_control",
-        help="lease_control is the default; vnc is the legacy full-login-view fallback",
+        default="vnc",
+        help="vnc is the default real login portal; lease_control is only for explicit current-tab control fallback",
     )
     auth.set_defaults(func=cmd_auth)
 

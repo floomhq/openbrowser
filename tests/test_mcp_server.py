@@ -49,12 +49,12 @@ def test_browser_open_control_composes_open_verify_and_control(monkeypatch) -> N
     ]
 
 
-def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
+def test_auth_request_forwards_vnc_options_by_default(monkeypatch) -> None:
     calls = []
 
     def fake_request(method, path, body=None):
         calls.append((method, path, body))
-        return {"mode": "lease_control"}
+        return {"mode": "vnc"}
 
     monkeypatch.setattr(mcp_server, "_request", fake_request)
 
@@ -68,7 +68,7 @@ def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
         verify=False,
     )
 
-    assert result == {"mode": "lease_control"}
+    assert result == {"mode": "vnc"}
     assert calls == [
         (
             "POST",
@@ -78,7 +78,7 @@ def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
                 "url": "https://example.com/login",
                 "reason": "login_required",
                 "identity_id": "work-main",
-                "mode": "lease_control",
+                "mode": "vnc",
                 "ttl_seconds": 120,
                 "control_ttl_seconds": 180,
                 "wait_until": "load",
@@ -89,7 +89,7 @@ def test_auth_request_forwards_lease_control_options(monkeypatch) -> None:
 
 
 def test_auth_request_mode_annotation_exposes_enum() -> None:
-    assert get_args(get_type_hints(mcp_server.auth_request)["mode"]) == ("lease_control", "vnc")
+    assert get_args(get_type_hints(mcp_server.auth_request)["mode"]) == ("vnc", "lease_control")
 
 
 def test_browser_open_control_releases_on_navigation_failure(monkeypatch) -> None:

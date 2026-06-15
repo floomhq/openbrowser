@@ -81,7 +81,7 @@ sequenceDiagram
   C-->>B: page state
   B-->>A: snapshot or result
   alt login or challenge required
-    A->>B: auth_request or lease_control_request
+    A->>B: auth_request
     B-->>H: one-time portal URL
     H->>C: human completes login
   end

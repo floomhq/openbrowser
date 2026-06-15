@@ -228,13 +228,13 @@ def auth_request(
     url: str,
     reason: str = "login_required",
     identity_id: str | None = None,
-    mode: Literal["lease_control", "vnc"] = "lease_control",
+    mode: Literal["vnc", "lease_control"] = "vnc",
     ttl_seconds: int = 900,
     control_ttl_seconds: int = 900,
     wait_until: str = "domcontentloaded",
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Create a human auth handoff. Defaults to lease-control; pass mode='vnc' only for the legacy login-view fallback."""
+    """Create a real /auth/<token> login handoff. Use mode='lease_control' only for explicit current-tab control fallback."""
     return _request(
         "POST",
         "/auth/request",

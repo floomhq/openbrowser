@@ -9,7 +9,7 @@ flowchart TD
   NeedAuth -->|Yes| Identity["Lease named identity"]
   Identity --> Login{"Login wall?"}
   Login -->|No| Act["Navigate, click, type, screenshot"]
-  Login -->|Yes| Handoff["auth_request or lease_control_request"]
+  Login -->|Yes| Handoff["auth_request -> /auth/<token>"]
   Generic --> Act
   Handoff --> Act
   Act --> Release["Release lease"]
@@ -31,7 +31,7 @@ flowchart TD
 1. Lease before browser work.
 2. Use identities only when account state or proxy routing is required.
 3. Use `auth_request` for login, passkeys, 2FA, or password entry.
-4. Use `lease_control_request` when a human must control the currently leased tab.
+4. Use `lease_control_request` only when a human must control the currently leased tab without entering credentials.
 5. Release every lease.
 6. Run `broker_audit` after browser-agent work.
 7. Do not connect custom scripts directly to raw pool CDP ports during normal agent work.

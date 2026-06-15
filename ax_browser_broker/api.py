@@ -41,7 +41,7 @@ from .config import (
 )
 from .docs import docs
 from .feedback import FeedbackError, list_issues, report_issue, update_issue
-from .identities import IdentityError, invalidate_identity_replicas, redacted_status
+from .identities import IdentityError, invalidate_identity_replicas, redacted_status, require_identity
 from .lease_control import (
     LeaseControlError,
     complete_control_session,
@@ -152,7 +152,7 @@ class AuthRequest(BaseModel):
     reason: str = "login_required"
     identity_id: str | None = None
     profile: str | None = None
-    mode: str = "lease_control"
+    mode: str = "vnc"
     ttl_seconds: int = Field(default=900, ge=60, le=14400)
     control_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     wait_until: str = "domcontentloaded"
@@ -233,6 +233,8 @@ def _active_identity_lease_id(identity_id: str | None) -> str | None:
 
 
 def _active_identity_control_redirect(auth_request_data: dict[str, Any], error: AuthError) -> RedirectResponse | None:
+    if str(auth_request_data.get("mode") or "vnc") == "vnc":
+        return None
     identity_id = str(auth_request_data.get("identity_id") or "")
     message = str(error)
     if not identity_id or "actively leased" not in message:
@@ -268,11 +270,13 @@ def _url_host(url: str | None) -> str:
 
 
 async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
+    if request.identity_id:
+        require_identity(request.identity_id)
     result = create_auth_request(request.owner, request.url, request.reason, request.identity_id, mode=request.mode)
     _safe_record_event(
         source=request.owner,
         event_type="auth",
-        message="Legacy VNC auth request created",
+        message="Auth handoff request created",
         url=request.url,
         tags=["auth", "vnc", request.reason],
         data={"token": result.get("token"), "status": result.get("status"), "identity_id": request.identity_id},
@@ -365,11 +369,11 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
 
 
 async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
+    if request.mode == "vnc":
+        return await _legacy_vnc_auth_request(request)
     active_response = await _active_identity_control_response(request)
     if active_response:
         return active_response
-    if request.mode == "vnc":
-        return await _legacy_vnc_auth_request(request)
     lease_obj = await create_lease(
         LeaseRequest(owner=request.owner, ttl_seconds=request.ttl_seconds, identity_id=request.identity_id)
     )
@@ -404,10 +408,10 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
         _safe_record_event(
             source=request.owner,
             event_type="session",
-            message="Auth request opened lease control",
+            message="Explicit lease-control auth fallback opened",
             lease_id=lease_id,
             url=navigation.get("url") or request.url,
-            tags=["auth", "lease-control", "default"],
+            tags=["auth", "lease-control", "explicit"],
             data={
                 "slot": lease_obj.get("name"),
                 "identity_id": request.identity_id,

@@ -125,13 +125,13 @@ def test_remote_mcp_browser_open_control_posts_one_step_payload(monkeypatch) -> 
     assert "base64" not in result["screenshot"]
 
 
-def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> None:
+def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) -> None:
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["body"] = json.loads(request.data.decode("utf-8"))
-        return FakeResponse({"mode": "lease_control"})
+        return FakeResponse({"mode": "vnc"})
 
     monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
     monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
@@ -146,7 +146,7 @@ def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> 
         verify=False,
     )
 
-    assert result == {"mode": "lease_control"}
+    assert result == {"mode": "vnc"}
     assert captured == {
         "url": "http://127.0.0.1:8767/openbrowser/v1/auth/request",
         "body": {
@@ -154,7 +154,7 @@ def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> 
             "url": "https://example.com/login",
             "reason": "login_required",
             "identity_id": "work-main",
-            "mode": "lease_control",
+            "mode": "vnc",
             "ttl_seconds": 120,
             "control_ttl_seconds": 180,
             "wait_until": "load",
@@ -164,7 +164,7 @@ def test_remote_mcp_auth_request_forwards_lease_control_options(monkeypatch) -> 
 
 
 def test_remote_mcp_auth_request_mode_annotation_exposes_enum() -> None:
-    assert get_args(get_type_hints(remote_mcp_server.auth_request)["mode"]) == ("lease_control", "vnc")
+    assert get_args(get_type_hints(remote_mcp_server.auth_request)["mode"]) == ("vnc", "lease_control")
 
 
 def test_remote_mcp_http_errors_are_actionable(monkeypatch) -> None:
