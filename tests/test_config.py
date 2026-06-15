@@ -56,15 +56,21 @@ supervisor = BROWSER_POOL_DIR / 'bin' / 'supervisor.sh'
 print(json.dumps({
     'launch_exists': launch.exists(),
     'launch_executable': bool(launch.stat().st_mode & 0o111),
+    'launch_text': launch.read_text(),
     'supervisor_exists': supervisor.exists(),
     'supervisor_executable': bool(supervisor.stat().st_mode & 0o111),
 }))
 """,
     )
 
-    assert json.loads(result.stdout) == {
+    data = json.loads(result.stdout)
+    launch_text = data.pop("launch_text")
+    assert data == {
         "launch_exists": True,
         "launch_executable": True,
         "supervisor_exists": True,
         "supervisor_executable": True,
     }
+    assert "--disable-background-networking" in launch_text
+    assert "--disable-breakpad" in launch_text
+    assert "--metrics-recording-only" in launch_text

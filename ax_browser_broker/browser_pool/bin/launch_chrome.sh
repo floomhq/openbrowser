@@ -153,6 +153,9 @@ fi
     --disable-gpu \
     --disable-gpu-sandbox \
     --disable-dev-shm-usage \
+    --disable-background-networking \
+    --disable-breakpad \
+    --metrics-recording-only \
     --disable-extensions \
     --disable-component-extensions-with-background-pages \
     --remote-debugging-port="$PORT" \
