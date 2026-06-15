@@ -539,6 +539,69 @@ def _verify_auth_cookie_landed(identity_id: str, host: str | None) -> dict[str, 
     return result
 
 
+SIGNED_OUT_PHRASES = (
+    "sign in",
+    "log in",
+    "login",
+    "register",
+    "create account",
+    "continue with microsoft",
+    "continue with google",
+)
+
+SIGNED_IN_PHRASES = (
+    "sign out",
+    "log out",
+    "logout",
+    "my profile",
+    "account settings",
+    "profile settings",
+)
+
+
+def _assess_auth_page_state(snapshot: dict[str, Any], host: str | None) -> dict[str, Any]:
+    body = str(snapshot.get("bodyText") or "").lower()
+    title = str(snapshot.get("title") or "")
+    current_url = str(snapshot.get("url") or "")
+    signed_in = [phrase for phrase in SIGNED_IN_PHRASES if phrase in body]
+    signed_out = [phrase for phrase in SIGNED_OUT_PHRASES if phrase in body]
+    host_text = (host or "").lower()
+    if host_text.endswith("microsoft.com") and "register sign in" in body and "register sign in" not in signed_out:
+        signed_out.append("register sign in")
+    ok = bool(signed_in) or not bool(signed_out)
+    return {
+        "ok": ok,
+        "checked": True,
+        "host": host,
+        "url": current_url,
+        "title": title,
+        "signed_in_indicators": signed_in,
+        "signed_out_indicators": signed_out,
+    }
+
+
+async def _verify_auth_page_state(identity_id: str, target_url: str, host: str | None, owner: str) -> dict[str, Any]:
+    if not target_url:
+        return {"ok": False, "checked": False, "error": "missing target url"}
+    lease_id: str | None = None
+    try:
+        lease_obj = await create_lease(
+            LeaseRequest(owner=f"auth-verify-{owner}"[:80], ttl_seconds=300, identity_id=identity_id)
+        )
+        lease_id = str(lease_obj["lease_id"])
+        await browser_navigate(NavigateRequest(lease_id=lease_id, url=target_url))
+        snapshot = await browser_snapshot(LeaseIdRequest(lease_id=lease_id))
+        return _assess_auth_page_state(snapshot, host)
+    except Exception as error:
+        return {"ok": False, "checked": False, "host": host, "url": target_url, "error": str(error)}
+    finally:
+        if lease_id:
+            try:
+                await release_lease(lease_id)
+            except Exception:
+                pass
+
+
 def _record_browser_failure(request: LeaseIdRequest, action: str, error: Exception, data: dict[str, Any] | None = None) -> None:
     _safe_record_event(
         source="broker-api",
@@ -4400,6 +4463,24 @@ async def auth_complete(token: str) -> dict[str, Any]:
                     url=target_url,
                     tags=["auth", "complete", "cookie-missing"],
                     data={"token": token, "identity_id": identity_id, "verification": verification},
+                )
+            page_verification = await _verify_auth_page_state(
+                str(identity_id),
+                target_url,
+                host,
+                str(request.get("owner", "unknown")),
+            )
+            request["page_verification"] = page_verification
+            request["auth_verified"] = bool(verification.get("ok") and page_verification.get("ok"))
+            if not page_verification.get("ok"):
+                _safe_record_event(
+                    source=str(request.get("owner", "unknown")),
+                    event_type="auth",
+                    message="Auth completed but post-handoff page still appears signed out",
+                    severity="warning",
+                    url=target_url,
+                    tags=["auth", "complete", "page-signed-out"],
+                    data={"token": token, "identity_id": identity_id, "verification": page_verification},
                 )
         _safe_record_event(
             source=str(request.get("owner", "unknown")),

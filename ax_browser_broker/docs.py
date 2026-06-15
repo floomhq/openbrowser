@@ -137,7 +137,8 @@ TOPICS: dict[str, dict[str, Any]] = {
             "If the identity has proxy_ref, the legacy temporary auth Chrome also uses that proxy through ax-proxy-forwarder.",
             "If an identity auth handoff is refused before VNC starts, the temporary VNC password file is removed.",
             "When auth completion runs, the broker stops VNC/websockify/Chrome/Xvfb helper processes and removes the temporary password file.",
-            "After auth completion, lease the same identity, snapshot first, and continue from the authenticated state. After Take Over Tab, continue from the same lease_id/current tab.",
+            "After auth completion, inspect auth_verified, cookie_verification, and page_verification from the complete response. If auth_verified is false, do not ask the user to log in again; report the failed verification and signed-out indicators.",
+            "When auth_verified is true, lease the same identity, snapshot first, and continue from the authenticated state. After Take Over Tab, continue from the same lease_id/current tab.",
             "After browser work, confirm state with snapshot or screenshot and run broker_audit.",
         ],
         "examples": [

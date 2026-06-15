@@ -1501,6 +1501,10 @@ def test_auth_complete_invalidates_replicas_and_verifies_cookie(tmp_path, monkey
         "invalidate_identity_replicas",
         lambda identity_id: invalidations.append(identity_id) or {"identity_id": identity_id, "removed_replicas": []},
     )
+    async def fake_page_verify(identity_id, target_url, host, owner):
+        return {"ok": True, "checked": True, "host": host, "url": target_url, "signed_out_indicators": []}
+
+    monkeypatch.setattr(api, "_verify_auth_page_state", fake_page_verify)
 
     # Base profile with a slack cookie (simulating a completed login).
     base_profile = tmp_path / "chrome-depontefede"
@@ -1532,12 +1536,18 @@ def test_auth_complete_invalidates_replicas_and_verifies_cookie(tmp_path, monkey
     assert body["replica_invalidation"]["identity_id"] == "chrome-depontefede"
     assert body["cookie_verification"]["ok"] is True
     assert body["cookie_verification"]["host_cookie_matches"] >= 1
+    assert body["page_verification"]["ok"] is True
+    assert body["auth_verified"] is True
 
 
 def test_auth_complete_flags_missing_target_cookie(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
     monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: {"stopped": []})
     monkeypatch.setattr(api, "invalidate_identity_replicas", lambda identity_id: {"identity_id": identity_id})
+    async def fake_page_verify(identity_id, target_url, host, owner):
+        return {"ok": True, "checked": True, "host": host, "url": target_url, "signed_out_indicators": []}
+
+    monkeypatch.setattr(api, "_verify_auth_page_state", fake_page_verify)
 
     base_profile = tmp_path / "empty-identity"
     base_profile.mkdir()
@@ -1556,4 +1566,58 @@ def test_auth_complete_flags_missing_target_cookie(tmp_path, monkeypatch) -> Non
     response = client.post("/auth/" + request["token"] + "/complete")
 
     assert response.status_code == 200
-    assert response.json()["cookie_verification"]["ok"] is False
+    body = response.json()
+    assert body["cookie_verification"]["ok"] is False
+    assert body["page_verification"]["ok"] is True
+    assert body["auth_verified"] is False
+
+
+def test_auth_complete_flags_signed_out_page_after_cookie_match(tmp_path, monkeypatch) -> None:
+    import sqlite3
+
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: {"stopped": []})
+    monkeypatch.setattr(api, "invalidate_identity_replicas", lambda identity_id: {"identity_id": identity_id})
+
+    base_profile = tmp_path / "chrome-depontefede"
+    cookie_dir = base_profile / "Default"
+    cookie_dir.mkdir(parents=True)
+    connection = sqlite3.connect(cookie_dir / "Cookies")
+    connection.execute("create table cookies (host_key text, name text)")
+    connection.execute("insert into cookies values ('techcommunity.microsoft.com', 'session')")
+    connection.commit()
+    connection.close()
+
+    async def fake_page_verify(identity_id, target_url, host, owner):
+        return {
+            "ok": False,
+            "checked": True,
+            "host": host,
+            "url": target_url,
+            "title": "Startups at Microsoft",
+            "signed_in_indicators": [],
+            "signed_out_indicators": ["register", "sign in", "register sign in"],
+        }
+
+    class Identity:
+        identity_id = "chrome-depontefede"
+        profile_dir = base_profile
+
+    monkeypatch.setattr("ax_browser_broker.identities.require_identity", lambda _id: Identity())
+    monkeypatch.setattr(auth, "require_identity", lambda _id: Identity())
+    monkeypatch.setattr(api, "_verify_auth_page_state", fake_page_verify)
+
+    request = auth.create_auth_request(
+        "tester",
+        "https://techcommunity.microsoft.com/t5/startups-atmicrosoft/bd-p/startupsatmicrosoft",
+        identity_id="chrome-depontefede",
+    )
+    client = TestClient(api.app)
+    response = client.post("/auth/" + request["token"] + "/complete")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cookie_verification"]["ok"] is True
+    assert body["page_verification"]["ok"] is False
+    assert "sign in" in body["page_verification"]["signed_out_indicators"]
+    assert body["auth_verified"] is False
