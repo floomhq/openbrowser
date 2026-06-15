@@ -150,6 +150,7 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
     assert "Trusted connection" in response.text
     assert 'data-async-action="Auth handoff marked complete"' in response.text
     assert "Temporary VNC password" not in response.text
+    assert "trust-pass" in response.text
 
 
 def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatch) -> None:
@@ -183,6 +184,8 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert "Temporary VNC password" in response.text
     assert "enter it in the browser prompt" in response.text
     assert "manual-pass" in response.text
+    assert response.text.count("manual-pass") == 1
+    assert response.text.count("VNC password") == 1
     assert "#password=manual-pass" not in response.text
     assert 'id="authCard"' in response.text
     assert 'id="minimizeAuth"' in response.text

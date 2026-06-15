@@ -3725,12 +3725,6 @@ def _auth_portal_html(
 """
         else:
             safe_password = html.escape(str(vnc.get("password", "")))
-            inline_password_controls = f"""
-            <div class="request-row">
-              <span class="label">VNC password</span>
-              <span class="value"><span class="password-row password-row-inline"><code id="vncPasswordInline">{safe_password}</code><button class="button button-soft button-small copy-password" type="button">Copy</button></span></span>
-            </div>
-"""
             floating_auth = f"""
           <aside class="auth-card is-warning is-minimized" id="authCard" aria-label="Human auth request">
             <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize auth request">Hide</button>
@@ -4100,7 +4094,6 @@ def _auth_portal_html(
       .auth-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
       .auth-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
       .password-row {{ margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
-      .password-row-inline {{ margin-top: 0; }}
       .auth-actions {{ margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
       .auth-actions form, .auth-actions button, .auth-copy form, .auth-copy form button {{ width: 100%; }}
       .auth-copy form {{ margin-top: 14px; }}
@@ -4258,7 +4251,7 @@ def _auth_portal_html(
       }};
       document.querySelectorAll('.copy-password').forEach((copyButton) => {{
         copyButton.addEventListener('click', async () => {{
-          const passwordNode = copyButton.closest('.password-row')?.querySelector('code') || document.getElementById('vncPasswordInline') || document.getElementById('vncPassword');
+          const passwordNode = copyButton.closest('.password-row')?.querySelector('code') || document.getElementById('vncPassword');
           const value = passwordNode ? passwordNode.textContent : '';
           try {{
             await navigator.clipboard.writeText(value);
