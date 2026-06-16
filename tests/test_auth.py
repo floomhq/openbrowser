@@ -427,3 +427,4 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     assert any(str(call[0]).endswith("/bin/ax-proxy-forwarder") for call in popen_calls)
     chrome_call = next(call for call in popen_calls if call[0] == "/usr/bin/google-chrome-stable")
     assert "--proxy-server=http://127.0.0.1:18901" in chrome_call
+    assert "--remote-allow-origins=*" in chrome_call

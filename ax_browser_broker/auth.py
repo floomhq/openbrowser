@@ -509,6 +509,7 @@ def _start_identity_auth_vnc(
                     "--no-first-run",
                     f"--remote-debugging-port={cdp_port}",
                     "--remote-debugging-address=127.0.0.1",
+                    "--remote-allow-origins=*",
                     f"--lang={identity.lang}",
                     "--window-size=1280,800",
                     "--window-position=0,0",
