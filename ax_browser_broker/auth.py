@@ -755,6 +755,30 @@ def _close_chrome_via_cdp(cdp_port: int) -> bool:
         return False
 
 
+def _port_accepts_connections(port: int, timeout: float = 0.2) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", int(port)), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _wait_for_process_port(proc: subprocess.Popen[Any], port: int, log_path: Path, label: str, timeout_seconds: float = 5.0) -> None:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            break
+        if _port_accepts_connections(port):
+            return
+        time.sleep(0.1)
+    error_tail = ""
+    try:
+        error_tail = log_path.read_text(encoding="utf-8", errors="replace")[-1200:]
+    except OSError:
+        pass
+    raise AuthError(f"{label} failed to listen on 127.0.0.1:{port}: {error_tail}")
+
+
 def _start_lease_vnc(
     request: dict[str, Any],
     websocket_port: int,
@@ -812,6 +836,13 @@ def _start_lease_vnc(
             env=env,
             start_new_session=True,
         )
+    try:
+        _wait_for_process_port(x11vnc_proc, vnc_port, log_path, "x11vnc")
+        _wait_for_process_port(websockify_proc, websocket_port, log_path, "websockify")
+    except AuthError:
+        _terminate_process_group(x11vnc_proc.pid)
+        _terminate_process_group(websockify_proc.pid)
+        raise
     return {
         "mode": "same-lease",
         "lease_id": lease_id,

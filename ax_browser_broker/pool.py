@@ -86,6 +86,53 @@ def _slot_ready(slot: Slot) -> bool:
     return healthy(slot.port) and _slot_proxy_ready(slot.name)
 
 
+def _pid_alive(pid_file: Path) -> bool:
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return Path(f"/proc/{pid}").exists()
+
+
+def _slot_chrome_is_headed(slot: Slot) -> bool:
+    try:
+        for proc in Path("/proc").iterdir():
+            if not proc.name.isdigit():
+                continue
+            cmdline_path = proc / "cmdline"
+            try:
+                raw = cmdline_path.read_bytes()
+            except OSError:
+                continue
+            if not raw:
+                continue
+            args = raw.replace(b"\x00", b" ").decode("utf-8", "replace")
+            if f"--remote-debugging-port={slot.port}" not in args:
+                continue
+            if "--headless" in args or "--ozone-platform=headless" in args:
+                return False
+            return True
+    except OSError:
+        return False
+    return False
+
+
+def _slot_headed_ready(slot: Slot) -> bool:
+    config = read_slot_config(slot.name)
+    if config.get("CHROME_HEADLESS") != "0":
+        return False
+    display_path = BROWSER_POOL_DIR / "state" / f"{slot.name}.display"
+    try:
+        display = display_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    if not display:
+        return False
+    if not _pid_alive(BROWSER_POOL_DIR / "state" / f"{slot.name}.xvfb.pid"):
+        return False
+    return _slot_chrome_is_headed(slot)
+
+
 def slot_in_maintenance(slot_name: str) -> bool:
     path = BROWSER_POOL_MAINTENANCE_DIR / f"{slot_name}.json"
     if not path.exists():
@@ -403,7 +450,7 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 or not _slot_ready(slot)
                 or reconcile_stale_identity_slots
                 or replica_needs_refresh
-                or (headed and read_slot_config(slot.name).get("CHROME_HEADLESS") != "0")
+                or (headed and not _slot_headed_ready(slot))
             ):
                 try:
                     activation_kwargs = {
@@ -423,6 +470,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                     activation_errors.append(f"{slot.name}: {error}")
                     continue
             if not _slot_ready(slot):
+                continue
+            if headed and not _slot_headed_ready(slot):
                 continue
             lease_id = str(uuid.uuid4())
             state["leases"][lease_id] = {

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from ax_browser_broker import auth
 
 
@@ -170,6 +172,7 @@ def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monke
                 assert auth.Path(password_path).exists()
 
     monkeypatch.setattr(auth.subprocess, "Popen", FakePopen)
+    monkeypatch.setattr(auth, "_wait_for_process_port", lambda *_args, **_kwargs: None)
 
     request = auth.create_auth_request("tester", "https://example.com")
     data = json.loads(state_file.read_text())
@@ -186,6 +189,53 @@ def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monke
     assert result["password"]
     assert any(call[0] == "/usr/bin/x11vnc" for call in popen_calls)
     assert any(call[0] == "/usr/bin/websockify" for call in popen_calls)
+
+
+def test_same_lease_vnc_fails_fast_when_display_backend_dies(tmp_path, monkeypatch) -> None:
+    class Lease:
+        lease_id = "lease-one"
+        name = "pool-b"
+        identity_id = "chrome-openpaper"
+        profile_dir = str(tmp_path / "chrome-openpaper")
+        cdp = "http://127.0.0.1:9224"
+
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    (state_dir / "pool-b.display").write_text(":224", encoding="utf-8")
+    monkeypatch.setattr(auth, "BROWSER_POOL_DIR", tmp_path)
+    monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr("ax_browser_broker.pool.require_lease", lambda _lease_id: Lease())
+
+    class FakeProc:
+        next_pid = 5000
+
+        def __init__(self, args, **_kwargs) -> None:
+            self.args = args
+            self.pid = FakeProc.next_pid
+            FakeProc.next_pid += 1
+
+        def poll(self):
+            if str(self.args[0]).endswith("x11vnc"):
+                return 1
+            return None
+
+    terminated = []
+    monkeypatch.setattr(auth.subprocess, "Popen", FakeProc)
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
+    log_path = tmp_path / "auth.log"
+    log_path.write_text("XOpenDisplay failed (:224)\n", encoding="utf-8")
+
+    with pytest.raises(auth.AuthError) as error:
+        auth._start_lease_vnc(
+            {"lease_id": "lease-one", "identity_id": "chrome-openpaper"},
+            6081,
+            5901,
+            tmp_path / "passwd",
+            log_path,
+        )
+
+    assert "x11vnc failed to listen" in str(error.value)
+    assert terminated == [5000, 5001]
 
 
 def test_auth_request_can_target_identity(tmp_path, monkeypatch) -> None:

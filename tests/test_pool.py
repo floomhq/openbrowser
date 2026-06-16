@@ -867,3 +867,37 @@ def test_warm_replica_resynced_when_base_has_fresher_cookies(tmp_path, monkeypat
         assert activations[0][0][1] == "pool-a"
     finally:
         pool.release(leased.lease_id)
+
+
+def test_headed_identity_lease_reactivates_stale_headless_process(tmp_path, monkeypatch):
+    base = tmp_path / "chrome-one"
+    base.mkdir()
+    active = {"pool-a": "chrome-one", "pool-b": None, "pool-c": None}
+    activations = []
+
+    class Identity:
+        identity_id = "chrome-one"
+        slot = "auto"
+        profile_dir = base
+        proxy_ref = None
+        max_parallel_sessions = 1
+
+    identity = Identity()
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "require_identity", lambda _identity_id: identity)
+    monkeypatch.setattr(pool, "load_identities", lambda: {"chrome-one": identity})
+    monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
+    monkeypatch.setattr(pool, "read_slot_config", lambda _slot_name: {"PROFILE_DIR": str(base), "CHROME_HEADLESS": "0"})
+    monkeypatch.setattr(pool, "_slot_headed_ready", lambda _slot: bool(activations))
+    monkeypatch.setattr(pool, "activate_identity", lambda *args, **kwargs: activations.append((args, kwargs)))
+
+    leased = pool.lease("agent-headed", identity_id="chrome-one", headed=True)
+    try:
+        assert leased.name == "pool-a"
+        assert leased.headed is True
+        assert len(activations) == 1
+        assert activations[0][1]["headed"] is True
+    finally:
+        pool.release(leased.lease_id)
