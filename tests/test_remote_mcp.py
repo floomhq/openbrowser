@@ -170,13 +170,13 @@ def test_remote_mcp_lease_control_request_is_takeover_alias(monkeypatch) -> None
     assert result["portal_url"].endswith("/tok")
 
 
-def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) -> None:
+def test_remote_mcp_auth_request_forwards_same_lease_options_by_default(monkeypatch) -> None:
     captured = {}
 
     def fake_urlopen(request, timeout):
         captured["url"] = request.full_url
         captured["body"] = json.loads(request.data.decode("utf-8"))
-        return FakeResponse({"mode": "vnc"})
+        return FakeResponse({"mode": "same_lease"})
 
     monkeypatch.setenv("OPENBROWSER_API_KEY", "secret-key")
     monkeypatch.setattr(remote_mcp_server.urllib.request, "urlopen", fake_urlopen)
@@ -191,7 +191,7 @@ def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) ->
         verify=False,
     )
 
-    assert result == {"mode": "vnc"}
+    assert result == {"mode": "same_lease"}
     assert captured == {
         "url": "http://127.0.0.1:8767/openbrowser/v1/auth/request",
         "body": {
@@ -199,7 +199,7 @@ def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) ->
             "url": "https://example.com/login",
             "reason": "login_required",
             "identity_id": "work-main",
-            "mode": "vnc",
+                "mode": "same_lease",
             "ttl_seconds": 120,
             "control_ttl_seconds": 180,
             "wait_until": "load",
@@ -209,7 +209,7 @@ def test_remote_mcp_auth_request_forwards_vnc_options_by_default(monkeypatch) ->
 
 
 def test_remote_mcp_auth_request_mode_annotation_exposes_enum() -> None:
-    assert get_args(get_type_hints(remote_mcp_server.auth_request)["mode"]) == ("vnc", "lease_control")
+    assert get_args(get_type_hints(remote_mcp_server.auth_request)["mode"]) == ("same_lease", "vnc")
 
 
 def test_remote_mcp_http_errors_are_actionable(monkeypatch) -> None:

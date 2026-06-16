@@ -61,6 +61,7 @@ class LeaseRequest(BaseModel):
     owner: str = "unknown"
     ttl_seconds: int = Field(default=14400, ge=60, le=14400)
     identity_id: str | None = None
+    headed: bool = False
 
 
 class LeaseIdRequest(BaseModel):
@@ -152,7 +153,7 @@ class AuthRequest(BaseModel):
     reason: str = "login_required"
     identity_id: str | None = None
     profile: str | None = None
-    mode: str = "vnc"
+    mode: str = "same_lease"
     ttl_seconds: int = Field(default=900, ge=60, le=14400)
     control_ttl_seconds: int = Field(default=900, ge=60, le=3600)
     wait_until: str = "domcontentloaded"
@@ -165,8 +166,8 @@ class AuthRequest(BaseModel):
                 raise ValueError("profile and identity_id must match when both are provided")
             self.identity_id = self.profile
         normalized_mode = self.mode.strip().lower().replace("-", "_")
-        if normalized_mode not in {"lease_control", "vnc"}:
-            raise ValueError("mode must be lease_control or vnc")
+        if normalized_mode not in {"lease_control", "same_lease", "vnc"}:
+            raise ValueError("mode must be lease_control, same_lease, or vnc")
         self.mode = normalized_mode
         return self
 
@@ -284,6 +285,76 @@ async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
     return result
 
 
+async def _same_lease_auth_request(request: AuthRequest) -> dict[str, Any]:
+    if request.identity_id:
+        require_identity(request.identity_id)
+    active_lease_id = _active_identity_lease_id(request.identity_id) if request.identity_id else None
+    lease_obj: dict[str, Any]
+    created_for_auth = False
+    navigation: dict[str, Any] | None = None
+    if active_lease_id:
+        lease_data = require_lease(active_lease_id)
+        if not lease_data.headed:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Identity is already leased in a non-visual slot: {request.identity_id}. "
+                    "Release that lease before starting a login handoff."
+                ),
+            )
+        lease_obj = lease_data.__dict__
+    else:
+        lease_obj = await create_lease(
+            LeaseRequest(
+                owner=request.owner,
+                ttl_seconds=request.ttl_seconds,
+                identity_id=request.identity_id,
+                headed=True,
+            )
+        )
+        created_for_auth = True
+        try:
+            navigation = await browser_navigate(
+                NavigateRequest(lease_id=str(lease_obj["lease_id"]), url=request.url, wait_until=request.wait_until)
+            )
+        except Exception:
+            await release_lease(str(lease_obj["lease_id"]))
+            raise
+    auth_data = create_auth_request(
+        request.owner,
+        request.url,
+        request.reason,
+        request.identity_id,
+        mode="same_lease",
+        lease_id=str(lease_obj["lease_id"]),
+        slot=str(lease_obj.get("name") or ""),
+        cdp=str(lease_obj.get("cdp") or ""),
+    )
+    auth_data["lease_id"] = str(lease_obj["lease_id"])
+    auth_data["lease"] = lease_obj
+    auth_data["auth_url"] = auth_data["portal_url"]
+    auth_data["handoff_url"] = auth_data["portal_url"]
+    auth_data["created_lease"] = created_for_auth
+    if navigation:
+        auth_data["navigation"] = navigation
+    _safe_record_event(
+        source=request.owner,
+        event_type="auth",
+        message="Same-lease auth handoff request created",
+        lease_id=str(lease_obj["lease_id"]),
+        url=request.url,
+        tags=["auth", "same-lease", request.reason],
+        data={
+            "token": auth_data.get("token"),
+            "status": auth_data.get("status"),
+            "identity_id": request.identity_id,
+            "slot": lease_obj.get("name"),
+            "created_lease": created_for_auth,
+        },
+    )
+    return auth_data
+
+
 async def _active_identity_control_response(request: AuthRequest) -> dict[str, Any] | None:
     if not request.identity_id:
         return None
@@ -369,6 +440,11 @@ async def _active_identity_control_response(request: AuthRequest) -> dict[str, A
 
 
 async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
+    if request.mode == "same_lease":
+        if not request.identity_id:
+            legacy_request = request.model_copy(update={"mode": "vnc"})
+            return await _legacy_vnc_auth_request(legacy_request)
+        return await _same_lease_auth_request(request)
     if request.mode == "vnc":
         return await _legacy_vnc_auth_request(request)
     active_response = await _active_identity_control_response(request)
@@ -632,6 +708,18 @@ async def _verify_live_auth_browser(cdp: str | None, target_url: str, host: str 
                 return _assess_auth_page_state(snapshot, host)
             finally:
                 await browser.close()
+    except Exception as error:
+        return {"ok": False, "checked": False, "host": host, "url": target_url, "error": str(error)}
+
+
+async def _verify_live_lease_page_state(lease_id: str, target_url: str, host: str | None) -> dict[str, Any]:
+    if not lease_id:
+        return {"ok": False, "checked": False, "error": "missing lease_id"}
+    try:
+        if target_url:
+            await browser_navigate(NavigateRequest(lease_id=lease_id, url=target_url))
+        snapshot = await browser_snapshot(LeaseIdRequest(lease_id=lease_id))
+        return _assess_auth_page_state(snapshot, host)
     except Exception as error:
         return {"ok": False, "checked": False, "host": host, "url": target_url, "error": str(error)}
 
@@ -2223,6 +2311,11 @@ async def openbrowser_docs(_auth: str = Depends(require_openbrowser_api_key)) ->
         "dashboard": "/openbrowser",
         "base_url": _openbrowser_base_url(),
         "endpoints": _openbrowser_endpoint_catalog(),
+        "agent_guidance": {
+            "quickstart": docs("quickstart"),
+            "auth": docs("auth"),
+            "routing": docs("routing"),
+        },
         "identities": {
             "generic": "omit identity_id for a neutral non-account browser",
             "configured": {
@@ -2467,7 +2560,7 @@ async def openbrowser_telemetry_summary(
 @app.post("/lease")
 async def create_lease(request: LeaseRequest) -> dict[str, Any]:
     try:
-        lease_obj = lease(request.owner, request.ttl_seconds, request.identity_id)
+        lease_obj = lease(request.owner, request.ttl_seconds, request.identity_id, headed=request.headed)
         result = lease_obj.__dict__
         _safe_record_event(
             source=lease_obj.owner,
@@ -4474,6 +4567,44 @@ async def auth_complete(token: str) -> dict[str, Any]:
         pending_target_url = str(pending_request.get("url") or "")
         pending_host = urllib.parse.urlsplit(pending_target_url).hostname if pending_target_url else None
         pending_vnc = pending_request.get("vnc") or {}
+        if pending_request.get("mode") == "same_lease":
+            live_verification = await _verify_live_lease_page_state(
+                str(pending_request.get("lease_id") or ""),
+                pending_target_url,
+                pending_host,
+            )
+            if not live_verification.get("ok"):
+                response = dict(pending_request)
+                response["completion_blocked"] = True
+                response["auth_verified"] = False
+                response["live_page_verification"] = live_verification
+                _safe_record_event(
+                    source=str(pending_request.get("owner", "unknown")),
+                    event_type="auth",
+                    message="Same-lease auth completion blocked because live tab still appears signed out",
+                    severity="warning",
+                    lease_id=str(pending_request.get("lease_id") or ""),
+                    url=pending_target_url,
+                    tags=["auth", "complete", "blocked", "same-lease", "live-page-signed-out"],
+                    data={"token": token, "identity_id": pending_identity_id, "verification": live_verification},
+                )
+                return response
+            request = complete_auth_request(token)
+            request["vnc_stop"] = stop_auth_vnc(token, missing_ok=True)
+            request["auth_verified"] = True
+            request["live_page_verification"] = live_verification
+            request["lease_id"] = str(pending_request.get("lease_id") or "")
+            request["handoff_url"] = request.get("portal_url")
+            _safe_record_event(
+                source=str(request.get("owner", "unknown")),
+                event_type="auth",
+                message="Same-lease auth request completed",
+                lease_id=str(request.get("lease_id") or ""),
+                url=str(request.get("url") or ""),
+                tags=["auth", "complete", "same-lease"],
+                data={"token": token, "status": request.get("status")},
+            )
+            return request
         if pending_identity_id and pending_vnc.get("cdp"):
             live_verification = await _verify_live_auth_browser(
                 str(pending_vnc.get("cdp")),

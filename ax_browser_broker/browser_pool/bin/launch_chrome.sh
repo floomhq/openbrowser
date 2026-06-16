@@ -11,8 +11,12 @@ PROFILE_DIR="${BROWSER_POOL_DIR}/profiles/${NAME}"
 LOG="${BROWSER_POOL_DIR}/logs/${NAME}.log"
 MAINTENANCE_FILE="${BROWSER_POOL_DIR}/state/maintenance/${NAME}.json"
 PROXY_PID_FILE="${BROWSER_POOL_DIR}/state/${NAME}.proxy.pid"
+XVFB_PID_FILE="${BROWSER_POOL_DIR}/state/${NAME}.xvfb.pid"
+DISPLAY_FILE="${BROWSER_POOL_DIR}/state/${NAME}.display"
 PROXY_ARGS=()
 SYNC_ARGS=()
+HEADLESS_ARGS=(--headless)
+DISPLAY_ARGS=()
 CHROME_LANG="en-US"
 
 find_chrome_bin() {
@@ -88,6 +92,14 @@ if [[ -f "$PROXY_PID_FILE" ]]; then
   fi
   rm -f "$PROXY_PID_FILE"
 fi
+if [[ -f "$XVFB_PID_FILE" ]]; then
+  old_xvfb_pid="$(cat "$XVFB_PID_FILE" 2>/dev/null || true)"
+  if [[ -n "$old_xvfb_pid" ]]; then
+    kill "$old_xvfb_pid" 2>/dev/null || true
+  fi
+  rm -f "$XVFB_PID_FILE"
+fi
+rm -f "$DISPLAY_FILE"
 sleep 1
 
 if [[ -n "${PROXY_REF:-}" ]]; then
@@ -142,12 +154,29 @@ if ! CHROME_BIN="$(find_chrome_bin)"; then
   exit 1
 fi
 
+if [[ "${CHROME_HEADLESS:-1}" == "0" ]]; then
+  XVFB_BIN="${OPENBROWSER_XVFB_BIN:-$(command -v Xvfb || true)}"
+  if [[ -z "$XVFB_BIN" ]]; then
+    echo "$(date -Is) ${NAME} headed mode requested but Xvfb is missing" >>"$LOG"
+    exit 1
+  fi
+  DISPLAY_NUM="${CHROME_DISPLAY_NUM:-$((PORT - 9000))}"
+  DISPLAY=":${DISPLAY_NUM}"
+  "$XVFB_BIN" "$DISPLAY" -screen 0 "${CHROME_WINDOW_SIZE:-1280x800x24}" -nolisten tcp >>"$LOG" 2>&1 &
+  XVFB_PID=$!
+  echo "$XVFB_PID" > "$XVFB_PID_FILE"
+  echo "$DISPLAY" > "$DISPLAY_FILE"
+  export DISPLAY
+  HEADLESS_ARGS=()
+  DISPLAY_ARGS=(--ozone-platform=x11)
+fi
+
 (
   if [[ -w "/proc/${BASHPID}/oom_score_adj" ]]; then
     echo 300 >"/proc/${BASHPID}/oom_score_adj" || true
   fi
   exec "$CHROME_BIN" \
-    --headless \
+    "${HEADLESS_ARGS[@]}" \
     --user-data-dir="$PROFILE_DIR" \
     --no-sandbox \
     --disable-gpu \
@@ -169,6 +198,7 @@ fi
     --window-size=1280,800 \
     --window-position=0,0 \
     --remote-allow-origins='*' \
+    "${DISPLAY_ARGS[@]}" \
     "${PROXY_ARGS[@]}"
 ) >"$LOG" 2>&1 &
 CHROME_PID=$!

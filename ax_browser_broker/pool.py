@@ -54,6 +54,7 @@ class Lease:
     cdp: str
     profile_dir: str
     identity_id: str | None = None
+    headed: bool = False
 
 
 def healthy(port: int, timeout: float = 1.5) -> bool:
@@ -147,6 +148,7 @@ def _lease_from_state(lease_id: str, lease: dict[str, Any]) -> Lease:
         cdp=slot.cdp,
         profile_dir=profile_dir,
         identity_id=str(lease["identity_id"]) if lease.get("identity_id") else None,
+        headed=bool(lease.get("headed")),
     )
 
 
@@ -320,7 +322,7 @@ def _has_duplicate_profile_slot(identity_id: str, selected_slot: str, selected_p
     return False
 
 
-def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None) -> Lease:
+def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | None = None, headed: bool = False) -> Lease:
     now = int(time.time())
     effective_ttl = max(60, min(int(ttl_seconds), LEASE_TTL_SECONDS))
     allowed_slot = None
@@ -401,15 +403,21 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 or not _slot_ready(slot)
                 or reconcile_stale_identity_slots
                 or replica_needs_refresh
+                or (headed and read_slot_config(slot.name).get("CHROME_HEADLESS") != "0")
             ):
                 try:
+                    activation_kwargs = {
+                        "profile_dir_override": Path(identity_profile_dir) if identity_profile_dir else None,
+                        "clear_existing": reconcile_stale_identity_slots
+                        or getattr(identity, "max_parallel_sessions", 1) <= 1,
+                    }
+                    if headed:
+                        activation_kwargs["headed"] = True
                     activate_identity(
                         identity_id,
                         slot.name,
                         check_leases=False,
-                        profile_dir_override=Path(identity_profile_dir) if identity_profile_dir else None,
-                        clear_existing=reconcile_stale_identity_slots
-                        or getattr(identity, "max_parallel_sessions", 1) <= 1,
+                        **activation_kwargs,
                     )
                 except (IdentityError, subprocess.CalledProcessError) as error:
                     activation_errors.append(f"{slot.name}: {error}")
@@ -430,6 +438,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 state["leases"][lease_id]["identity_id"] = identity_id
             if identity_profile_dir:
                 state["leases"][lease_id]["profile_dir"] = identity_profile_dir
+            if headed:
+                state["leases"][lease_id]["headed"] = True
             return _lease_from_state(lease_id, state["leases"][lease_id])
         if not identity_id:
             for slot in reclaimable_slots:

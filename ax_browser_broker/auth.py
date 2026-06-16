@@ -145,11 +145,14 @@ def create_auth_request(
     reason: str = "login_required",
     identity_id: str | None = None,
     mode: str = "vnc",
+    lease_id: str | None = None,
+    slot: str | None = None,
+    cdp: str | None = None,
 ) -> dict[str, Any]:
     now = int(time.time())
     normalized_mode = mode.strip().lower().replace("-", "_")
-    if normalized_mode not in {"lease_control", "vnc"}:
-        raise AuthError("mode must be lease_control or vnc")
+    if normalized_mode not in {"lease_control", "same_lease", "vnc"}:
+        raise AuthError("mode must be lease_control, same_lease, or vnc")
     if identity_id:
         require_identity(identity_id)
     token = secrets.token_urlsafe(24)
@@ -167,6 +170,12 @@ def create_auth_request(
     }
     if identity_id:
         request["identity_id"] = identity_id
+    if lease_id:
+        request["lease_id"] = lease_id
+    if slot:
+        request["slot"] = slot
+    if cdp:
+        request["cdp"] = cdp
     with locked_auth_state() as state:
         gc_auth_requests(state)
         state["requests"][token] = request
@@ -605,7 +614,10 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     os.chmod(password_file, 0o600)
 
     try:
-        if request.get("identity_id"):
+        if request.get("mode") == "same_lease":
+            vnc_state = _start_lease_vnc(request, websocket_port, vnc_port, password_file, log_path)
+            display = str(vnc_state["display"])
+        elif request.get("identity_id"):
             vnc_state = _start_identity_auth_vnc(request, websocket_port, vnc_port, password_file, log_path)
             display = str(vnc_state["display"])
         else:
@@ -741,6 +753,80 @@ def _close_chrome_via_cdp(cdp_port: int) -> bool:
                 pass
     except Exception:
         return False
+
+
+def _start_lease_vnc(
+    request: dict[str, Any],
+    websocket_port: int,
+    vnc_port: int,
+    password_file: Path,
+    log_path: Path,
+) -> dict[str, Any]:
+    from .pool import require_lease
+
+    lease_id = str(request.get("lease_id") or "")
+    if not lease_id:
+        raise AuthError("same_lease auth request is missing lease_id")
+    lease = require_lease(lease_id)
+    display_file = BROWSER_POOL_DIR / "state" / f"{lease.name}.display"
+    try:
+        display = display_file.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise AuthError(f"Headed display is not available for lease slot {lease.name}") from error
+    if not display:
+        raise AuthError(f"Headed display is empty for lease slot {lease.name}")
+    x11vnc = shutil.which("x11vnc")
+    websockify = shutil.which("websockify")
+    if not x11vnc or not websockify:
+        raise AuthError("x11vnc or websockify is missing")
+    env = os.environ.copy()
+    env["DISPLAY"] = display
+    with log_path.open("ab") as log:
+        x11vnc_proc = subprocess.Popen(
+            [
+                x11vnc,
+                "-display",
+                display,
+                "-rfbport",
+                str(vnc_port),
+                "-localhost",
+                "-forever",
+                "-shared",
+                "-passwdfile",
+                str(password_file),
+            ],
+            stdout=log,
+            stderr=log,
+            env=env,
+            start_new_session=True,
+        )
+        websockify_proc = subprocess.Popen(
+            [
+                websockify,
+                "--web=/usr/share/novnc",
+                f"127.0.0.1:{websocket_port}",
+                f"127.0.0.1:{vnc_port}",
+            ],
+            stdout=log,
+            stderr=log,
+            env=env,
+            start_new_session=True,
+        )
+    return {
+        "mode": "same-lease",
+        "lease_id": lease_id,
+        "slot": lease.name,
+        "identity_id": lease.identity_id,
+        "display": display,
+        "x11vnc_pid": x11vnc_proc.pid,
+        "websockify_pid": websockify_proc.pid,
+        "websocket_port": websocket_port,
+        "vnc_port": vnc_port,
+        "password_file": str(password_file),
+        "started_at": int(time.time()),
+        "profile_dir": lease.profile_dir,
+        "cdp": lease.cdp,
+    }
 
 
 def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:

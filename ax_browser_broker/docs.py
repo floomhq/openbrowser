@@ -7,7 +7,8 @@ TOPICS: dict[str, dict[str, Any]] = {
     "quickstart": {
         "title": "OpenBrowser Broker Quickstart",
         "steps": [
-            "For simple user handoff requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens or reuses the page, verifies state with a compact snapshot, and returns the Take Over Tab URL. Do not call browser_screenshot for this path unless the user explicitly asks for visual proof.",
+            "For login, password, passkey, or 2FA work, call auth_request with owner, url, and identity_id. It reserves a visual same-lease browser and returns /auth/<token>; the agent continues on the returned lease_id after completion.",
+            "For simple user viewing/control requests such as 'open Lovable for me', call browser_open_control with owner, url, and optional identity_id. It opens or reuses the page, verifies state with a compact snapshot, and returns a Take Over Tab URL. Do not use it for login.",
             "Call browser_lease with owner and optional identity_id.",
             "Immediately call browser_snapshot or browser_screenshot to see the current page state before doing anything else.",
             "Do NOT call browser_navigate if the current page is already meaningful (e.g. after a human auth handoff the browser is on the target page). Only navigate when the current page is blank, a new tab, or unrelated to the task.",
@@ -18,6 +19,15 @@ TOPICS: dict[str, dict[str, Any]] = {
             "Call broker_audit after browser-agent work.",
         ],
         "examples": [
+            {
+                "tool": "auth_request",
+                "args": {
+                    "owner": "agent-name",
+                    "identity_id": "work-main",
+                    "url": "https://example.com/login",
+                    "reason": "profile_login",
+                },
+            },
             {"tool": "browser_open_control", "args": {"owner": "agent-name", "identity_id": "work-main", "url": "https://example.com"}},
             {"tool": "browser_lease", "args": {"owner": "agent-name", "identity_id": "work-main"}},
             {"tool": "browser_snapshot", "args": {"lease_id": "<lease_id>"}},
@@ -118,7 +128,7 @@ TOPICS: dict[str, dict[str, Any]] = {
         "notes": [
             "The CLI talks to the local broker API and reads the local server-side API key file when needed.",
             "Use open --control for simple 'open this for me' requests; it returns a verified Take Over Tab URL in one command.",
-            "openbrowser auth returns a real /auth/<token> login portal by default. Use open --control or takeover for current-tab Take Over Tab links.",
+            "openbrowser auth returns a same-lease /auth/<token> login portal by default. Use open --control or takeover only for current-tab Take Over Tab links.",
             "Use it for status, docs, auth handoffs, Take Over Tab links, and quick smoke checks.",
             "Use Broker MCP directly for normal click/type/screenshot workflows when tools are available.",
         ],
@@ -127,18 +137,20 @@ TOPICS: dict[str, dict[str, Any]] = {
         "title": "Human Auth Handoff",
         "steps": [
             "When an agent hits a login wall, call auth_request with owner, url, reason, and identity_id.",
-            "auth_request returns a real /auth/<token> login portal by default. Send this link when the user must sign in, enter a password, use a passkey, solve 2FA, or complete a provider login flow.",
+            "auth_request returns a same-lease /auth/<token> login portal by default. Send this link when the user must sign in, enter a password, use a passkey, solve 2FA, or complete a provider login flow.",
+            "Same-lease auth means the human and agent use one browser lease and one tab. Completion returns lease_id, auth_verified, and current page state; the agent resumes on that lease_id.",
             "If the requested identity is already leased, do not convert login auth into Take Over Tab. Release your own stale lease first, or wait if another agent owns the lease.",
             "Use takeover_request only when the user explicitly needs to control an already-open current tab, not for credential entry. The compatibility tool name is lease_control_request.",
             "If no identity_id is supplied, auth_request creates a neutral auth portal and does not use a personal authenticated profile.",
             "For login tasks, send only a portal_url that starts with /auth/ and not /auth/lease-control/. The latter is Take Over Tab, not login.",
-            "Use mode=lease_control only as the low-level compatibility flag for explicit current-tab Take Over Tab fallback. Do not use it for login.",
-            "During identity auth, the broker pauses the matching pool slot with a maintenance marker so headless Chrome cannot re-lock the profile.",
-            "If the identity has proxy_ref, the legacy temporary auth Chrome also uses that proxy through ax-proxy-forwarder.",
+            "mode=lease_control is a low-level compatibility flag for explicit current-tab Take Over Tab fallback only. It is never a login handoff.",
+            "During same-lease identity auth, the broker leases a visual headed slot so no temporary second Chrome is needed.",
+            "If the identity has proxy_ref, the same leased browser uses that proxy through the normal slot config.",
+            "Legacy mode=vnc remains available only as a fallback separate auth browser path.",
             "If an identity auth handoff is refused before VNC starts, the temporary VNC password file is removed.",
-            "When auth completion runs, the broker stops VNC/websockify/Chrome/Xvfb helper processes and removes the temporary password file.",
-            "After auth completion, inspect auth_verified, cookie_verification, and page_verification from the complete response. If auth_verified is false, do not ask the user to log in again; report the failed verification and signed-out indicators.",
-            "When auth_verified is true, lease the same identity, snapshot first, and continue from the authenticated state. After Take Over Tab, continue from the same lease_id/current tab.",
+            "When same-lease auth completion runs, the broker stops only the VNC bridge and keeps the browser lease alive.",
+            "After auth completion, inspect auth_verified and live_page_verification from the complete response. If auth_verified is false, do not ask the user to log in again; report the failed verification and signed-out indicators.",
+            "When auth_verified is true, continue with the returned lease_id/current tab. Do not create a new lease first.",
             "After browser work, confirm state with snapshot or screenshot and run broker_audit.",
         ],
         "examples": [

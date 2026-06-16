@@ -14,7 +14,7 @@ def test_docs_topics_and_quickstart() -> None:
 
     quickstart = docs("quickstart")
     assert quickstart["topic"] == "quickstart"
-    assert quickstart["examples"][0]["tool"] == "browser_open_control"
+    assert quickstart["examples"][0]["tool"] == "auth_request"
 
     identities = docs("identities")
     assert any("not overwritten" in item for item in identities["facts"])

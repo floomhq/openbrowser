@@ -375,6 +375,7 @@ def write_slot_config(
     local_proxy_port: int = 18801,
     slot_name: str | None = None,
     profile_dir_override: Path | None = None,
+    headed: bool = False,
 ) -> Path:
     identity = require_identity(identity_id)
     raw_identity = _read_json(IDENTITIES_FILE, {"identities": {}}).get("identities", {}).get(identity_id, {})
@@ -398,6 +399,8 @@ def write_slot_config(
         f"PROFILE_DIR={str(profile_dir)!r}",
         f"CHROME_LANG={identity.lang!r}",
     ]
+    if headed:
+        lines.append("CHROME_HEADLESS='0'")
     if identity.timezone:
         lines.append(f"TZ={identity.timezone!r}")
     if raw_identity.get("source", {}).get("type") == "mac-chrome-profile":
@@ -438,6 +441,7 @@ def activate_identity(
     check_leases: bool = True,
     profile_dir_override: Path | None = None,
     clear_existing: bool = True,
+    headed: bool = False,
 ) -> dict[str, Any]:
     identity = require_identity(identity_id)
     target_slot = slot_name or identity.slot
@@ -451,7 +455,7 @@ def activate_identity(
     local_proxy_port = local_proxy_port_for_slot(target_slot)
     cleared_slots = clear_auto_identity_from_other_slots(identity, target_slot) if clear_existing else []
     active_profile_dir = profile_dir_override or identity.profile_dir
-    write_slot_config(identity_id, local_proxy_port, target_slot, active_profile_dir)
+    write_slot_config(identity_id, local_proxy_port, target_slot, active_profile_dir, headed=headed)
     active_profile_dir.mkdir(parents=True, exist_ok=True)
     supervisor_was_active = subprocess.run(
         ["systemctl", "is-active", "--quiet", "browser-pool-supervisor.service"],

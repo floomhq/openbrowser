@@ -69,6 +69,8 @@ def stub_auth_lease_control(monkeypatch, *, lease_id: str = "lease-auth", identi
         }
 
     monkeypatch.setattr(api, "status", lambda: {"leases": {}})
+    monkeypatch.setattr(api, "require_identity", lambda identity_id: {"identity_id": identity_id})
+    monkeypatch.setattr(auth, "require_identity", lambda identity_id: {"identity_id": identity_id})
     monkeypatch.setattr(api, "create_lease", fake_create_lease)
     monkeypatch.setattr(api, "browser_navigate", fake_navigate)
     monkeypatch.setattr(api, "browser_snapshot", fake_snapshot)
@@ -80,7 +82,7 @@ def stub_auth_lease_control(monkeypatch, *, lease_id: str = "lease-auth", identi
 def stub_auth_vnc(monkeypatch) -> list[tuple[str, str, str, str | None, str]]:
     created: list[tuple[str, str, str, str | None, str]] = []
 
-    def fake_create_auth_request(owner, url, reason, identity_id, mode="vnc"):
+    def fake_create_auth_request(owner, url, reason, identity_id, mode="vnc", **_kwargs):
         created.append((owner, url, reason, identity_id, mode))
         return {
             "token": "auth-token",
@@ -427,6 +429,8 @@ def test_openbrowser_api_requires_bearer_key(monkeypatch) -> None:
     assert ok.json()["endpoints"]["keyboard_type"] == "POST /openbrowser/v1/browser/keyboard-type"
     assert ok.json()["endpoints"]["keyboard_press"] == "POST /openbrowser/v1/browser/keyboard-press"
     assert ok.json()["endpoints"]["upload"] == "POST /openbrowser/v1/browser/upload"
+    assert ok.json()["agent_guidance"]["quickstart"]["examples"][0]["tool"] == "auth_request"
+    assert "same-lease /auth/<token>" in " ".join(ok.json()["agent_guidance"]["auth"]["steps"])
 
 
 def test_openbrowser_health_redacts_profile_paths(monkeypatch) -> None:
@@ -509,7 +513,7 @@ def test_openbrowser_identities_requires_key_and_returns_redacted_status(monkeyp
 
 def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
-    stub_auth_vnc(monkeypatch)
+    stub_auth_lease_control(monkeypatch)
     client = TestClient(api.app)
 
     missing = client.post(
@@ -524,15 +528,16 @@ def test_openbrowser_auth_request_is_protected(monkeypatch) -> None:
 
     assert missing.status_code == 401
     assert ok.status_code == 200
-    assert ok.json()["mode"] == "vnc"
+    assert ok.json()["mode"] == "same_lease"
     assert ok.json()["status"] == "pending"
-    assert ok.json()["portal_url"].endswith("/auth/auth-token")
+    assert ok.json()["portal_url"].startswith("http")
     assert ok.json()["identity_id"] == "chrome-one"
+    assert ok.json()["lease_id"] == "lease-auth"
 
 
 def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
-    created = stub_auth_vnc(monkeypatch)
+    created = stub_auth_lease_control(monkeypatch)
     client = TestClient(api.app)
 
     response = client.post(
@@ -542,32 +547,14 @@ def test_openbrowser_auth_request_accepts_legacy_profile_alias(monkeypatch) -> N
     )
 
     assert response.status_code == 200
-    assert response.json()["mode"] == "vnc"
+    assert response.json()["mode"] == "same_lease"
     assert response.json()["identity_id"] == "work-main"
-    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main", "vnc")]
+    assert created == ["work-main"]
 
 
-def test_openbrowser_auth_request_defaults_to_vnc_auth(monkeypatch) -> None:
+def test_openbrowser_auth_request_defaults_to_same_lease_auth(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
-    monkeypatch.setattr(api, "status", lambda: {"leases": {}})
-    created = []
-
-    def fake_create_auth_request(owner, url, reason, identity_id, mode="vnc"):
-        created.append((owner, url, reason, identity_id, mode))
-        return {
-            "token": "tok",
-            "owner": owner,
-            "url": url,
-            "reason": reason,
-            "identity_id": identity_id,
-            "mode": mode,
-            "portal_url": "https://browser.example.com/auth/tok",
-            "status": "pending",
-        }
-
-    monkeypatch.setattr(api, "create_auth_request", fake_create_auth_request)
-    monkeypatch.setattr(api, "require_identity", lambda identity_id: {"identity_id": identity_id})
-    monkeypatch.setattr(api, "_safe_record_event", lambda **_kwargs: {"id": "event"})
+    created = stub_auth_lease_control(monkeypatch, lease_id="lease-same")
     client = TestClient(api.app)
 
     response = client.post(
@@ -578,9 +565,10 @@ def test_openbrowser_auth_request_defaults_to_vnc_auth(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
-    assert response.json()["mode"] == "vnc"
-    assert response.json()["portal_url"].endswith("/auth/tok")
-    assert created == [("pytest", "https://lovable.dev/", "login_required", "work-main", "vnc")]
+    assert response.json()["mode"] == "same_lease"
+    assert response.json()["lease_id"] == "lease-same"
+    assert response.json()["handoff_url"] == response.json()["portal_url"]
+    assert created == ["work-main"]
 
 
 def test_openbrowser_auth_request_vnc_mode_does_not_return_active_lease_control(monkeypatch) -> None:
@@ -781,8 +769,8 @@ def test_openbrowser_auth_request_explicit_lease_control_warns_not_login(monkeyp
     assert "neutral broker browser" in response.json()["warning"]
 
 
-def test_local_auth_request_defaults_to_vnc_auth(monkeypatch) -> None:
-    created = stub_auth_vnc(monkeypatch)
+def test_local_auth_request_defaults_to_same_lease_auth(monkeypatch) -> None:
+    created = stub_auth_lease_control(monkeypatch)
     client = TestClient(api.app)
 
     response = client.post(
@@ -791,11 +779,11 @@ def test_local_auth_request_defaults_to_vnc_auth(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["mode"] == "vnc"
+    assert response.json()["mode"] == "same_lease"
     assert response.json()["status"] == "pending"
-    assert response.json()["portal_url"].endswith("/auth/auth-token")
+    assert response.json()["lease_id"] == "lease-auth"
     assert response.json()["identity_id"] == "work-main"
-    assert created == [("pytest", "https://accounts.google.com/", "login_required", "work-main", "vnc")]
+    assert created == ["work-main"]
 
 
 def test_local_auth_request_explicit_vnc_mode(monkeypatch) -> None:
@@ -868,7 +856,7 @@ def test_openbrowser_auth_request_rejects_unknown_identity(monkeypatch) -> None:
 
 def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
-    created = stub_auth_vnc(monkeypatch)
+    created = stub_auth_lease_control(monkeypatch)
     client = TestClient(api.app)
 
     response = client.post(
@@ -880,10 +868,7 @@ def test_openbrowser_auth_batch_creates_requests(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["count"] == 2
     assert [item["identity_id"] for item in response.json()["requests"]] == ["chrome-one", "chrome-two"]
-    assert created == [
-        ("pytest", "https://accounts.google.com/", "profile_login", "chrome-one", "vnc"),
-        ("pytest", "https://accounts.google.com/", "profile_login", "chrome-two", "vnc"),
-    ]
+    assert created == ["chrome-one", "chrome-two"]
 
 
 def test_openbrowser_ops_endpoints_are_protected(monkeypatch) -> None:

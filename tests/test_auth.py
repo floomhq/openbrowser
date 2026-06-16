@@ -214,7 +214,7 @@ def test_auth_request_normalizes_and_validates_mode(tmp_path, monkeypatch) -> No
     try:
         auth.create_auth_request("tester", "https://example.com", mode="invalid")
     except auth.AuthError as error:
-        assert "mode must be lease_control or vnc" in str(error)
+        assert "mode must be lease_control, same_lease, or vnc" in str(error)
     else:
         raise AssertionError("invalid auth mode was accepted")
 

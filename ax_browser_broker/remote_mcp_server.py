@@ -235,13 +235,13 @@ def auth_request(
     url: str,
     reason: str = "login_required",
     identity_id: str | None = None,
-    mode: Literal["vnc", "lease_control"] = "vnc",
+    mode: Literal["same_lease", "vnc"] = "same_lease",
     ttl_seconds: int = 900,
     control_ttl_seconds: int = 900,
     wait_until: str = "domcontentloaded",
     verify: bool = True,
 ) -> dict[str, Any]:
-    """Create a real /auth/<token> login handoff. Use mode='lease_control' only as the low-level Take Over Tab compatibility flag."""
+    """Create a real /auth/<token> login handoff. Default same_lease returns the exact browser lease the agent continues with."""
     return _request(
         "POST",
         "/auth/request",

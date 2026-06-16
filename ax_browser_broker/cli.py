@@ -242,9 +242,9 @@ def build_parser() -> argparse.ArgumentParser:
     auth.add_argument("--control-ttl", type=int, default=900)
     auth.add_argument(
         "--mode",
-        choices=["lease_control", "vnc"],
-        default="vnc",
-        help="vnc is the default real login portal; lease_control is only the low-level compatibility flag for Take Over Tab fallback",
+        choices=["same_lease", "vnc"],
+        default="same_lease",
+        help="same_lease is the default login handoff; vnc keeps the legacy separate auth browser path",
     )
     auth.set_defaults(func=cmd_auth)
 
