@@ -1621,3 +1621,52 @@ def test_auth_complete_flags_signed_out_page_after_cookie_match(tmp_path, monkey
     assert body["page_verification"]["ok"] is False
     assert "sign in" in body["page_verification"]["signed_out_indicators"]
     assert body["auth_verified"] is False
+
+
+def test_auth_complete_blocks_when_live_auth_browser_is_signed_out(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    stopped: list[str] = []
+    monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: stopped.append(token) or {"stopped": []})
+
+    async def fake_live_verify(cdp, target_url, host):
+        return {
+            "ok": False,
+            "checked": True,
+            "host": host,
+            "url": target_url,
+            "title": "Login",
+            "signed_out_indicators": ["sign in"],
+            "signed_in_indicators": [],
+        }
+
+    monkeypatch.setattr(api, "_verify_live_auth_browser", fake_live_verify)
+
+    request = auth.create_auth_request(
+        "tester",
+        "https://techcommunity.microsoft.com/t5/startups-atmicrosoft/bd-p/startupsatmicrosoft",
+        identity_id="chrome-depontefede",
+    )
+    state = auth.AUTH_STATE_FILE.read_text(encoding="utf-8")
+    import json
+
+    data = json.loads(state)
+    data["requests"][request["token"]]["vnc"] = {
+        "mode": "identity",
+        "identity_id": "chrome-depontefede",
+        "cdp": "http://127.0.0.1:19400",
+        "cdp_port": 19400,
+    }
+    auth.AUTH_STATE_FILE.write_text(json.dumps(data), encoding="utf-8")
+
+    client = TestClient(api.app)
+    response = client.post("/auth/" + request["token"] + "/complete")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["completion_blocked"] is True
+    assert body["auth_verified"] is False
+    assert body["live_page_verification"]["signed_out_indicators"] == ["sign in"]
+    assert stopped == []
+    persisted = json.loads(auth.AUTH_STATE_FILE.read_text(encoding="utf-8"))
+    assert persisted["requests"][request["token"]]["status"] == "pending"

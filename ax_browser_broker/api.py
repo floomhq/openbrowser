@@ -602,6 +602,40 @@ async def _verify_auth_page_state(identity_id: str, target_url: str, host: str |
                 pass
 
 
+async def _verify_live_auth_browser(cdp: str | None, target_url: str, host: str | None) -> dict[str, Any]:
+    if not cdp:
+        return {"ok": False, "checked": False, "error": "missing auth browser cdp"}
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as playwright:
+            browser = await playwright.chromium.connect_over_cdp(cdp)
+            try:
+                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                page = context.pages[0] if context.pages else await context.new_page()
+                if target_url:
+                    await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+                    try:
+                        await page.wait_for_load_state("networkidle", timeout=8000)
+                    except Exception:
+                        pass
+                body_text = ""
+                try:
+                    body_text = await page.locator("body").inner_text(timeout=10000)
+                except Exception:
+                    pass
+                snapshot = {
+                    "title": await page.title(),
+                    "url": page.url,
+                    "bodyText": " ".join(body_text.split()),
+                }
+                return _assess_auth_page_state(snapshot, host)
+            finally:
+                await browser.close()
+    except Exception as error:
+        return {"ok": False, "checked": False, "host": host, "url": target_url, "error": str(error)}
+
+
 def _record_browser_failure(request: LeaseIdRequest, action: str, error: Exception, data: dict[str, Any] | None = None) -> None:
     _safe_record_event(
         source="broker-api",
@@ -4435,6 +4469,32 @@ async def auth_start_vnc(token: str, request: Request) -> Any:
 @app.post("/auth/{token}/complete")
 async def auth_complete(token: str) -> dict[str, Any]:
     try:
+        pending_request = get_pending_auth_request(token)
+        pending_identity_id = pending_request.get("identity_id")
+        pending_target_url = str(pending_request.get("url") or "")
+        pending_host = urllib.parse.urlsplit(pending_target_url).hostname if pending_target_url else None
+        pending_vnc = pending_request.get("vnc") or {}
+        if pending_identity_id and pending_vnc.get("cdp"):
+            live_verification = await _verify_live_auth_browser(
+                str(pending_vnc.get("cdp")),
+                pending_target_url,
+                pending_host,
+            )
+            if not live_verification.get("ok"):
+                response = dict(pending_request)
+                response["completion_blocked"] = True
+                response["auth_verified"] = False
+                response["live_page_verification"] = live_verification
+                _safe_record_event(
+                    source=str(pending_request.get("owner", "unknown")),
+                    event_type="auth",
+                    message="Auth completion blocked because live auth browser still appears signed out",
+                    severity="warning",
+                    url=pending_target_url,
+                    tags=["auth", "complete", "blocked", "live-page-signed-out"],
+                    data={"token": token, "identity_id": pending_identity_id, "verification": live_verification},
+                )
+                return response
         request = complete_auth_request(token)
         # Stop the portal browser FIRST so Chrome flushes the freshly-authenticated
         # cookies to the identity's base profile on disk before we touch replicas.
