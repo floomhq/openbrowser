@@ -408,7 +408,7 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     monkeypatch.setattr(auth, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
     monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
-    monkeypatch.setattr(auth, "_find_free_tcp_port", lambda: 18901)
+    monkeypatch.setattr(auth, "_find_free_tcp_port", lambda *args, **kwargs: 18901)
     monkeypatch.setattr(auth, "_process_rows", lambda: [])
     monkeypatch.setattr(auth, "_terminate_pids", lambda _pids: None)
     monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)

@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import time
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -283,6 +284,44 @@ def _find_free_tcp_port(start: int = 18900, end: int = 18999) -> int:
     raise AuthError("No free local proxy port found for identity auth")
 
 
+def _terminate_tcp_listeners(port: int) -> list[int]:
+    try:
+        output = subprocess.check_output(["lsof", "-ti", f"TCP:{port}", "-sTCP:LISTEN"], text=True)
+    except Exception:
+        return []
+    stopped: list[int] = []
+    for line in output.splitlines():
+        try:
+            pid = int(line.strip())
+        except ValueError:
+            continue
+        if _terminate_process_group(pid, timeout_seconds=3.0):
+            stopped.append(pid)
+    return stopped
+
+
+def _stop_conflicting_auth_vncs(token: str, websocket_port: int, vnc_port: int) -> None:
+    with locked_auth_state() as state:
+        candidates = [
+            item_token
+            for item_token, item in state.get("requests", {}).items()
+            if item_token != token
+            and item.get("vnc")
+            and not item.get("vnc", {}).get("stopped_at")
+            and (
+                int(item.get("vnc", {}).get("websocket_port", 0) or 0) == websocket_port
+                or int(item.get("vnc", {}).get("vnc_port", 0) or 0) == vnc_port
+            )
+        ]
+    for item_token in candidates:
+        try:
+            stop_auth_vnc(item_token, missing_ok=True)
+        except AuthError:
+            pass
+    _terminate_tcp_listeners(websocket_port)
+    _terminate_tcp_listeners(vnc_port)
+
+
 def _identity_auth_slots(identity_id: str, profile_dir: Path, configured_slot: str) -> list[str]:
     slots: list[str] = []
     if configured_slot != "auto":
@@ -420,6 +459,7 @@ def _start_identity_auth_vnc(
     proxy_pid = None
     proxy_local_port = None
     proxy_args: list[str] = []
+    cdp_port = _find_free_tcp_port(19400, 19499)
     with log_path.open("ab") as log:
         try:
             xvfb_proc = subprocess.Popen(
@@ -467,6 +507,8 @@ def _start_identity_auth_vnc(
                     "--disable-extensions",
                     "--disable-component-extensions-with-background-pages",
                     "--no-first-run",
+                    f"--remote-debugging-port={cdp_port}",
+                    "--remote-debugging-address=127.0.0.1",
                     f"--lang={identity.lang}",
                     "--window-size=1280,800",
                     "--window-position=0,0",
@@ -527,6 +569,8 @@ def _start_identity_auth_vnc(
         "websockify_pid": websockify_proc.pid,
         "proxy_pid": proxy_pid,
         "proxy_local_port": proxy_local_port,
+        "cdp_port": cdp_port,
+        "cdp": f"http://127.0.0.1:{cdp_port}",
         "websocket_port": websocket_port,
         "vnc_port": vnc_port,
         "password_file": str(password_file),
@@ -553,6 +597,7 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
     log_path = runtime_dir / f"{token}.log"
 
     stop_auth_vnc(token, missing_ok=True)
+    _stop_conflicting_auth_vncs(token, websocket_port, vnc_port)
 
     password = secrets.token_urlsafe(12)
     password_file.write_text(password + "\n", encoding="utf-8")
@@ -627,6 +672,8 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
         "local_websocket_url": _local_novnc_url(websocket_port),
         "websocket_port": websocket_port,
         "vnc_port": vnc_port,
+        "cdp_port": vnc_state.get("cdp_port"),
+        "cdp": vnc_state.get("cdp"),
         "password": password,
         "log": str(log_path),
     }
@@ -672,6 +719,29 @@ def _terminate_process_group(pid: int, timeout_seconds: float = 2.0) -> bool:
     return _process_gone(pid)
 
 
+def _close_chrome_via_cdp(cdp_port: int) -> bool:
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{cdp_port}/json/version", timeout=2) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        websocket_url = payload.get("webSocketDebuggerUrl")
+        if not websocket_url:
+            return False
+        import websocket
+
+        ws = websocket.create_connection(websocket_url, timeout=3)
+        try:
+            ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
+            time.sleep(2.0)
+            return True
+        finally:
+            try:
+                ws.close()
+            except Exception:
+                pass
+    except Exception:
+        return False
+
+
 def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
     try:
         request = get_auth_request(token)
@@ -681,6 +751,9 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
         raise
     vnc = request.get("vnc") or {}
     stopped = []
+    cdp_port = vnc.get("cdp_port")
+    if cdp_port:
+        _close_chrome_via_cdp(int(cdp_port))
     for key in ("x11vnc_pid", "websockify_pid", "chrome_pid", "xvfb_pid", "proxy_pid"):
         pid = vnc.get(key)
         if not pid:
