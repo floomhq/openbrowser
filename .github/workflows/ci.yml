@@ -9,8 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      OPENBROWSER_BROKER_ROOT: ${{ runner.temp }}/openbrowser-root
-      OPENBROWSER_BROWSER_POOL_DIR: ${{ runner.temp }}/openbrowser-pool
+      OPENBROWSER_BROKER_ROOT: /tmp/openbrowser-root
+      OPENBROWSER_BROWSER_POOL_DIR: /tmp/openbrowser-pool
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
