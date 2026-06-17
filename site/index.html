@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OpenBrowser | Browser infrastructure for AI agents</title>
     <meta
       name="description"
       content="OpenBrowser gives AI agents isolated Chrome sessions, persistent profiles, proxy-aware identities, human login handoff, remote API, MCP tools, telemetry, and audits."
     />
     <meta name="robots" content="index,follow" />
-    <meta name="theme-color" content="#0b1220" />
+    <meta name="theme-color" content="#fafafa" />
     <link rel="canonical" href="https://browser.floom.dev/" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <meta property="og:type" content="website" />
@@ -29,7 +29,6 @@
       content="Browser infrastructure for AI agents: real browsers, real logins, human in the loop."
     />
     <meta name="twitter:image" content="https://browser.floom.dev/og.svg" />
-    <link rel="stylesheet" href="/styles.css" />
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -45,274 +44,7 @@
     </script>
   </head>
   <body>
-    <header class="site-header">
-      <a class="brand" href="/" aria-label="OpenBrowser home">
-        <img src="/assets/brand/openbrowser-mark.svg" alt="" />
-        <span>OpenBrowser</span>
-      </a>
-      <nav aria-label="Primary navigation">
-        <a href="#api">API</a>
-        <a href="#mcp">MCP</a>
-        <a href="#profiles">Profiles</a>
-        <a href="https://github.com/floomhq/openbrowser">GitHub</a>
-      </nav>
-      <button class="theme-button" type="button" data-theme-toggle aria-label="Switch color theme">
-        <span data-theme-label>Night mode</span>
-      </button>
-    </header>
-
-    <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <div class="eyebrow">
-            <span class="live-dot"></span>
-            Real browsers for real agents
-          </div>
-          <h1>Browser infrastructure for AI agents.</h1>
-          <p>
-            OpenBrowser gives Claude, Codex, Cursor, browser-use, and custom workers isolated Chrome
-            sessions with persistent logins, proxy-aware profiles, human handoff, telemetry, and audit trails.
-          </p>
-          <div class="hero-actions">
-            <a class="button primary" href="https://github.com/floomhq/openbrowser">Star on GitHub</a>
-            <a class="button secondary" href="#quickstart">Quick start</a>
-          </div>
-          <div class="hero-proof" aria-label="OpenBrowser capabilities">
-            <span>Remote API</span>
-            <span>MCP tools</span>
-            <span>Human login links</span>
-          </div>
-        </div>
-
-        <div class="product-window" aria-label="OpenBrowser product preview">
-          <div class="window-top">
-            <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
-            <div class="address"><span>LIVE</span> browser.floom.dev/openbrowser/v1</div>
-            <button type="button">Docs</button>
-          </div>
-          <div class="app-shell">
-            <aside class="sessions">
-              <div class="small-title">Browser sessions</div>
-              <div class="session active">
-                <img src="/assets/logos/googlechrome.svg" alt="Chrome logo" />
-                <div><strong>work-main</strong><small>Active lease</small></div>
-              </div>
-              <div class="session">
-                <img src="/assets/logos/modelcontextprotocol.svg" alt="Model Context Protocol logo" />
-                <div><strong>research-01</strong><small>Ready</small></div>
-              </div>
-              <div class="session">
-                <img src="/assets/logos/github.svg" alt="GitHub logo" />
-                <div><strong>ops-watch</strong><small>Idle</small></div>
-              </div>
-              <div class="capacity-card">
-                <span>Browser pool</span>
-                <strong>8 / 8 ready</strong>
-                <div class="meter"><i></i></div>
-              </div>
-            </aside>
-            <section class="browser-preview">
-              <div class="browser-bar">
-                <span class="lock">LOCK</span>
-                <span>https://linkedin.com/search/results/people/</span>
-              </div>
-              <div class="fake-browser">
-                <div class="linkedin-top">
-                  <img src="/assets/logos/googlechrome.svg" alt="" />
-                  <div class="search">Search</div>
-                  <span>Home</span><span>Network</span><span>Jobs</span><span>Messaging</span>
-                </div>
-                <div class="profile-card">
-                  <div class="avatar"></div>
-                  <div class="profile-main">
-                    <div class="line wide"></div>
-                    <div class="line mid"></div>
-                    <div class="line short"></div>
-                    <div class="actions"><span></span><span></span><span></span></div>
-                  </div>
-                  <div class="agent-note">
-                    <strong>Agent action</strong>
-                    <span>Save to prospect list</span>
-                  </div>
-                </div>
-                <div class="handoff-card">
-                  <img src="/assets/brand/openbrowser-mark.svg" alt="" />
-                  <div>
-                    <strong>Human auth request</strong>
-                    <span>LinkedIn approval needed for work-main</span>
-                  </div>
-                  <button type="button">Approve</button>
-                </div>
-              </div>
-            </section>
-            <aside class="state">
-              <div class="small-title">Session state</div>
-              <div class="state-item"><span></span><div><strong>Active lease</strong><small>28m remaining</small></div></div>
-              <div class="state-item"><span></span><div><strong>Profile</strong><small>work-main</small></div></div>
-              <div class="state-item"><span></span><div><strong>Proxy</strong><small>Residential, US-West</small></div></div>
-              <div class="state-item"><span></span><div><strong>Telemetry</strong><small>Audit clean</small></div></div>
-            </aside>
-          </div>
-        </div>
-      </section>
-
-      <section class="logo-strip" aria-label="Integrations">
-        <span>Built for the tools agents already use</span>
-        <div>
-          <img src="/assets/logos/anthropic.svg" alt="Anthropic logo" />
-          <img src="/assets/logos/cursor.svg" alt="Cursor logo" />
-          <img src="/assets/logos/googlechrome.svg" alt="Google Chrome logo" />
-          <img src="/assets/logos/modelcontextprotocol.svg" alt="Model Context Protocol logo" />
-          <img src="/assets/logos/github.svg" alt="GitHub logo" />
-          <img src="/assets/logos/discord.svg" alt="Discord logo" />
-          <img src="/assets/logos/notion.svg" alt="Notion logo" />
-          <img src="/assets/logos/linear.svg" alt="Linear logo" />
-          <img src="/assets/logos/fastapi.svg" alt="FastAPI logo" />
-          <img src="/assets/logos/python.svg" alt="Python logo" />
-          <img src="/assets/logos/docker.svg" alt="Docker logo" />
-          <img src="/assets/logos/cloudflare.svg" alt="Cloudflare logo" />
-          <img src="/assets/logos/opentelemetry.svg" alt="OpenTelemetry logo" />
-        </div>
-      </section>
-
-      <section class="grid-section" id="profiles">
-        <div class="section-heading">
-          <span class="eyebrow">Why it exists</span>
-          <h2>One browser contract for every agent.</h2>
-          <p>
-            Stop sharing one fragile CDP port. OpenBrowser gives agents leases, profiles, proxies,
-            handoff links, and a feedback loop that can be audited later.
-          </p>
-        </div>
-        <div class="feature-grid">
-          <article>
-            <span class="icon">01</span>
-            <h3>Persistent browser profiles</h3>
-            <p>Named identities keep Chrome session state for Gmail, LinkedIn, GitHub, Slack, and internal apps.</p>
-          </article>
-          <article>
-            <span class="icon">02</span>
-            <h3>Parallel isolated leases</h3>
-            <p>Agents reserve a slot, work through the broker, heartbeat, and release without blocking each other.</p>
-          </article>
-          <article>
-            <span class="icon">03</span>
-            <h3>Proxy-aware identities</h3>
-            <p>Pin selected profiles to residential or ISP proxy routes while keeping generic QA sessions neutral.</p>
-          </article>
-          <article>
-            <span class="icon">04</span>
-            <h3>Human handoff links</h3>
-            <p>Login, 2FA, passkeys, and approvals stay in a temporary browser portal, away from chat transcripts.</p>
-          </article>
-          <article>
-            <span class="icon">05</span>
-            <h3>Agent-steered browser-use</h3>
-            <p>Use browser-use as a browser tool for screenshots, navigation, clicking, typing, and extraction.</p>
-          </article>
-          <article>
-            <span class="icon">06</span>
-            <h3>Telemetry and audits</h3>
-            <p>Every lease, browser action, feedback issue, and failure can be tracked and scored.</p>
-          </article>
-        </div>
-      </section>
-
-      <section class="split" id="api">
-        <div>
-          <span class="eyebrow">Remote API</span>
-          <h2>Call a real browser from any machine.</h2>
-          <p>
-            Put OpenBrowser behind HTTPS and give agents a bearer token. The same API handles leases,
-            navigation, screenshots, keyboard events, tabs, auth handoff, telemetry, and audits.
-          </p>
-        </div>
-        <pre><code>BASE=https://browser.example.com/openbrowser/v1
-KEY=your-openbrowser-api-key
-
-curl "$BASE/leases" \
-  -H "authorization: Bearer $KEY" \
-  -H "content-type: application/json" \
-  -d '{"owner":"codex","identity_id":"work-main"}'</code></pre>
-      </section>
-
-      <section class="split alt" id="mcp">
-        <pre><code>{
-  "mcpServers": {
-    "openbrowser-remote": {
-      "command": "openbrowser-remote-mcp",
-      "env": {
-        "OPENBROWSER_API_KEY": "...",
-        "OPENBROWSER_BASE_URL": "https://browser.example.com/openbrowser/v1"
-      }
-    }
-  }
-}</code></pre>
-        <div>
-          <span class="eyebrow">MCP native</span>
-          <h2>Give Claude, Codex, Cursor, and workers the same browser tools.</h2>
-          <p>
-            The MCP surface exposes leasing, screenshots, snapshots, clicks, real keyboard input,
-            profile status, feedback issues, telemetry, and broker audits.
-          </p>
-        </div>
-      </section>
-
-      <section class="quickstart" id="quickstart">
-        <div class="section-heading">
-          <span class="eyebrow">Quick start</span>
-          <h2>Run it locally or behind your own HTTPS domain.</h2>
-        </div>
-        <div class="steps">
-          <pre><code>git clone https://github.com/floomhq/openbrowser.git
-cd openbrowser
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
-openbrowser-broker</code></pre>
-          <pre><code>OPENBROWSER_API_KEYS="$(openssl rand -base64 48)"
-OPENBROWSER_PUBLIC_AUTH_BASE_URL="https://browser.example.com"
-OPENBROWSER_PUBLIC_OPENBROWSER_BASE_URL="https://browser.example.com/openbrowser/v1"</code></pre>
-        </div>
-      </section>
-
-      <section class="final-cta">
-        <img src="/assets/brand/openbrowser-logo-white.svg" alt="OpenBrowser" />
-        <h2>Give your agents browsers they can actually use.</h2>
-        <p>Open-source browser infrastructure with real profiles, real handoff, and real audit trails.</p>
-        <div class="hero-actions">
-          <a class="button light" href="https://github.com/floomhq/openbrowser">Open GitHub</a>
-          <a class="button ghost" href="https://github.com/floomhq/openbrowser/blob/main/docs/openbrowser-api.md">Read API docs</a>
-        </div>
-      </section>
-    </main>
-
-    <footer>
-      <span>OpenBrowser</span>
-      <a href="https://github.com/floomhq/openbrowser">GitHub</a>
-      <a href="https://github.com/floomhq/openbrowser/blob/main/docs/openbrowser-api.md">API docs</a>
-      <a href="https://github.com/floomhq/openbrowser/blob/main/LICENSE">MIT License</a>
-    </footer>
-
-    <script>
-      const root = document.documentElement;
-      const button = document.querySelector('[data-theme-toggle]');
-      const label = document.querySelector('[data-theme-label]');
-      const stored = localStorage.getItem('openbrowser-theme');
-      if (stored) root.dataset.theme = stored;
-
-      function syncLabel() {
-        const dark = root.dataset.theme === 'dark';
-        label.textContent = dark ? 'Day mode' : 'Night mode';
-      }
-
-      button.addEventListener('click', () => {
-        const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
-        root.dataset.theme = next;
-        localStorage.setItem('openbrowser-theme', next);
-        syncLabel();
-      });
-      syncLabel();
-    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
