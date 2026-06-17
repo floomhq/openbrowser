@@ -1613,6 +1613,12 @@ def test_auth_complete_blocks_when_live_auth_browser_is_signed_out(tmp_path, mon
     stopped: list[str] = []
     monkeypatch.setattr(api, "stop_auth_vnc", lambda token, missing_ok=False: stopped.append(token) or {"stopped": []})
 
+    class Identity:
+        identity_id = "chrome-depontefede"
+        profile_dir = tmp_path / "profile"
+
+    monkeypatch.setattr(auth, "require_identity", lambda _id: Identity())
+
     async def fake_live_verify(cdp, target_url, host):
         return {
             "ok": False,
