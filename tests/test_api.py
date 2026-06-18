@@ -1067,6 +1067,60 @@ def test_browser_action_failure_records_telemetry(monkeypatch) -> None:
     assert events[0]["data"]["selector"] == "#submit"
 
 
+def test_browser_navigate_rejects_auth_sensitive_host_on_neutral_lease(monkeypatch) -> None:
+    events = []
+    lease = make_lease()
+
+    async def fake_navigate(*_args, **_kwargs):
+        raise AssertionError("neutral auth navigation must fail before controller.navigate")
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "navigate", fake_navigate)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/browser/navigate",
+        json={"lease_id": "lease-api", "url": "https://accounts.google.com/v3/signin/identifier"},
+    )
+
+    assert response.status_code == 409
+    assert "Refusing to navigate a neutral browser lease" in response.text
+    assert events[0]["message"] == "Browser navigate failed"
+
+
+def test_browser_navigate_allows_auth_sensitive_host_with_identity(monkeypatch) -> None:
+    lease = Lease(
+        lease_id="lease-api",
+        name="pool-b",
+        port=9224,
+        owner="pytest",
+        created_at=1,
+        heartbeat_at=1,
+        expires_at=2,
+        cdp="http://127.0.0.1:9224",
+        profile_dir="/tmp/profile",
+        identity_id="fede-floom-aws",
+    )
+
+    async def fake_navigate(lease_obj, url, wait_until):
+        assert lease_obj == lease
+        return {"lease_id": lease_obj.lease_id, "slot": lease_obj.name, "url": url, "title": "Sign in", "status": 200}
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "navigate", fake_navigate)
+    monkeypatch.setattr(api, "record_event", lambda **kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/browser/navigate",
+        json={"lease_id": "lease-api", "url": "https://accounts.google.com/v3/signin/identifier"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["url"] == "https://accounts.google.com/v3/signin/identifier"
+
+
 def test_browser_keyboard_type_endpoint_records_text_length_only(monkeypatch) -> None:
     events = []
     lease = make_lease()

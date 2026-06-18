@@ -93,6 +93,42 @@ class KeyboardTypeRequest(LeaseIdRequest):
     delay_ms: int = Field(default=0, ge=0, le=1000)
 
 
+AUTH_SENSITIVE_HOSTS = {
+    "accounts.google.com",
+    "aistudio.google.com",
+    "signin.aws.amazon.com",
+    "console.aws.amazon.com",
+    "aws.amazon.com",
+    "login.microsoftonline.com",
+    "login.live.com",
+    "app.slack.com",
+    "discord.com",
+    "linkedin.com",
+    "www.linkedin.com",
+}
+
+
+def _auth_sensitive_host(url: str) -> str | None:
+    host = (urllib.parse.urlparse(url).hostname or "").removeprefix("www.").lower()
+    if not host:
+        return None
+    for sensitive_host in AUTH_SENSITIVE_HOSTS:
+        normalized = sensitive_host.removeprefix("www.")
+        if host == normalized or host.endswith("." + normalized):
+            return host
+    return None
+
+
+def _reject_neutral_auth_navigation(lease_obj: Any, url: str) -> None:
+    sensitive_host = _auth_sensitive_host(url)
+    if not sensitive_host or getattr(lease_obj, "identity_id", None):
+        return
+    raise LeaseError(
+        f"Refusing to navigate a neutral browser lease to auth-sensitive host {sensitive_host}. "
+        "Open this URL with a registered identity_id or create an auth request for the intended profile."
+    )
+
+
 class KeyboardPressRequest(LeaseIdRequest):
     key: str
     selector: str | None = None
@@ -2627,6 +2663,7 @@ async def heartbeat_lease(lease_id: str) -> dict[str, Any]:
 async def browser_navigate(request: NavigateRequest) -> dict[str, Any]:
     try:
         lease_obj = require_lease(request.lease_id)
+        _reject_neutral_auth_navigation(lease_obj, request.url)
         result = await controller.navigate(lease_obj, request.url, request.wait_until)
         _safe_record_event(
             source=lease_obj.owner,
