@@ -68,14 +68,6 @@
 }
 
 @layer components {
-  .surface-grid {
-    background-image:
-      linear-gradient(to right, hsl(var(--border) / 0.42) 1px, transparent 1px),
-      linear-gradient(to bottom, hsl(var(--border) / 0.42) 1px, transparent 1px);
-    background-size: 44px 44px;
-    mask-image: linear-gradient(to bottom, black, transparent 78%);
-  }
-
   .product-shadow {
     box-shadow:
       0 1px 2px hsl(240 10% 3.9% / 0.04),

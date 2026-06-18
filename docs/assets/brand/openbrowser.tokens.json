@@ -1,0 +1,42 @@
+{
+  "brand": {
+    "name": "OpenBrowser",
+    "tagline": "The browser infrastructure for AI agents.",
+    "one_liner": "Real browsers. Real logins. Human in the loop."
+  },
+  "color": {
+    "ink": "#0B1220",
+    "slate_900": "#0F172A",
+    "slate_700": "#334155",
+    "slate_500": "#64748B",
+    "slate_300": "#CBD5E1",
+    "slate_200": "#E2E8F0",
+    "slate_100": "#F1F5F9",
+    "surface": "#FFFFFF",
+    "glass": "rgba(255,255,255,0.72)",
+    "glass_strong": "rgba(255,255,255,0.86)",
+    "success": "#10B981",
+    "link": "#2563EB"
+  },
+  "typography": {
+    "display": "Inter Display, Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    "body": "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    "mono": "JetBrains Mono, SFMono-Regular, Consolas, monospace"
+  },
+  "radius": {
+    "sm": "8px",
+    "md": "12px",
+    "lg": "18px",
+    "xl": "28px",
+    "panel": "32px"
+  },
+  "shadow": {
+    "panel": "0 24px 80px rgba(15, 23, 42, 0.16)",
+    "card": "0 10px 40px rgba(15, 23, 42, 0.10)",
+    "hairline": "0 0 0 1px rgba(15, 23, 42, 0.08)"
+  },
+  "blur": {
+    "glass": "24px",
+    "hero_panel": "40px"
+  }
+}
