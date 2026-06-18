@@ -62,7 +62,7 @@ Use these identity concurrency modes:
 
 The default contract is a single canonical lease unless the identity explicitly opts into replicas with `policy.max_parallel_sessions`.
 
-`max_parallel_sessions` is a policy cap, not a Chrome feature cap. The hard broker cap is the configured slot count. The default pool has eight slots (`pool-a` through `pool-h`), and each live Chrome slot consumes CPU, RAM, profile disk I/O, and possibly a proxy lane. Keep high-risk identities lower than the pool maximum unless the task explicitly needs more parallelism.
+`max_parallel_sessions` is a policy cap, not a Chrome feature cap. The hard broker cap is the configured slot count. Slot count is controlled by `OPENBROWSER_SLOT_COUNT` or an explicit `OPENBROWSER_SLOTS` list; the AX41 deployment currently runs 12 slots (`pool-a` through `pool-l`). Each live Chrome slot consumes CPU, RAM, profile disk I/O, and possibly a proxy lane. Keep high-risk identities lower than the pool maximum unless the task explicitly needs more parallelism.
 
 ## Fast QA Lane
 

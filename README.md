@@ -24,7 +24,7 @@ flowchart LR
   Lease --> Pool["Chrome pool"]
   Profiles --> Pool
   Proxy --> Pool
-  Pool --> Slots["pool-a ... pool-h\nisolated CDP sessions"]
+  Pool --> Slots["pool-a ... pool-N\nisolated CDP sessions"]
 ```
 
 ## Why

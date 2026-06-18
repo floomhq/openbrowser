@@ -1,0 +1,6 @@
+[Service]
+# Increase or decrease total Chrome pool capacity.
+# Install as a drop-in for both ax-browser-broker.service and
+# browser-pool-supervisor.service so the API and supervisor agree.
+Environment=OPENBROWSER_SLOT_COUNT=12
+Environment=OPENBROWSER_SLOT_PORT_START=9223

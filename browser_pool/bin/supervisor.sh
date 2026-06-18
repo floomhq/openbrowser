@@ -4,16 +4,24 @@ set -euo pipefail
 BROWSER_POOL_DIR="${OPENBROWSER_BROWSER_POOL_DIR:-/var/lib/openbrowser/pool}"
 BROKER_ROOT="${OPENBROWSER_BROKER_ROOT:-/opt/openbrowser}"
 
-SLOTS=(
-  "pool-a:9223"
-  "pool-b:9224"
-  "pool-c:9225"
-  "pool-d:9226"
-  "pool-e:9227"
-  "pool-f:9228"
-  "pool-g:9229"
-  "pool-h:9230"
-)
+build_slots() {
+  if [[ -n "${OPENBROWSER_SLOTS:-}" ]]; then
+    tr ',' '\n' <<<"$OPENBROWSER_SLOTS"
+    return
+  fi
+  local count="${OPENBROWSER_SLOT_COUNT:-8}"
+  local start="${OPENBROWSER_SLOT_PORT_START:-9223}"
+  python3 - "$count" "$start" <<'PY'
+import string
+import sys
+
+count = max(1, int(sys.argv[1]))
+start = int(sys.argv[2])
+for index in range(count):
+    suffix = string.ascii_lowercase[index] if index < 26 else str(index + 1)
+    print(f"pool-{suffix}:{start + index}")
+PY
+}
 
 maintenance_active() {
   local file="$1"
@@ -81,7 +89,8 @@ PY
 }
 
 while true; do
-  for slot in "${SLOTS[@]}"; do
+  while IFS= read -r slot; do
+    [[ -n "$slot" ]] || continue
     name="${slot%%:*}"
     port="${slot##*:}"
     if maintenance_active "${BROWSER_POOL_DIR}/state/maintenance/${name}.json"; then
@@ -91,6 +100,6 @@ while true; do
       "${BROKER_ROOT}/browser_pool/bin/launch_chrome.sh" "$name" "$port" || true
       sleep 2
     fi
-  done
+  done < <(build_slots)
   sleep 10
 done
