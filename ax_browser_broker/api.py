@@ -306,6 +306,75 @@ def _url_host(url: str | None) -> str:
         return ""
 
 
+AUTH_HANDOFF_HOSTS = {
+    "accounts.google.com",
+    "appleid.apple.com",
+    "github.com",
+    "id.atlassian.com",
+    "login.live.com",
+    "login.microsoftonline.com",
+    "login.salesforce.com",
+    "slack.com",
+}
+
+AUTH_HANDOFF_PATH_MARKERS = (
+    "/auth",
+    "/challenge",
+    "/login",
+    "/oauth",
+    "/pwd",
+    "/saml",
+    "/sign-in",
+    "/signin",
+    "/sso",
+)
+
+AUTH_HANDOFF_QUERY_MARKERS = (
+    "2fa",
+    "challenge",
+    "login",
+    "mfa",
+    "oauth",
+    "passkey",
+    "password",
+    "saml",
+    "signin",
+)
+
+
+def _auth_handoff_required_reason(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").removeprefix("www.").lower()
+    path = parsed.path.lower()
+    query = parsed.query.lower()
+    if not host:
+        return None
+    host_requires_auth = any(host == auth_host or host.endswith("." + auth_host) for auth_host in AUTH_HANDOFF_HOSTS)
+    path_requires_auth = any(marker in path for marker in AUTH_HANDOFF_PATH_MARKERS)
+    query_requires_auth = any(marker in query for marker in AUTH_HANDOFF_QUERY_MARKERS)
+    if host_requires_auth and (path_requires_auth or query_requires_auth):
+        return f"{host} is on an auth-sensitive path"
+    if path_requires_auth and query_requires_auth:
+        return f"{host} looks like a login or identity-provider challenge"
+    return None
+
+
+def _reject_takeover_for_auth_page(url: str | None) -> None:
+    reason = _auth_handoff_required_reason(url)
+    if not reason:
+        return
+    raise LeaseError(
+        f"Take Over Tab is blocked for this page because {reason}. "
+        "Use auth_request to create a real /auth/<token> login portal; do not send /auth/lease-control/<token> for "
+        "password, passkey, 2FA, or provider login."
+    )
+
+
 async def _legacy_vnc_auth_request(request: AuthRequest) -> dict[str, Any]:
     if request.identity_id:
         require_identity(request.identity_id)
@@ -2831,6 +2900,7 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
                 current_url = str(selected_tab["url"])
         except Exception:
             current_url = None
+        _reject_takeover_for_auth_page(current_url)
         result = create_control_session(
             request.owner,
             lease_obj.lease_id,

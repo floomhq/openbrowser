@@ -1268,6 +1268,44 @@ def test_takeover_request_creates_handoff_link(monkeypatch) -> None:
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
 
 
+def test_lease_control_rejects_auth_sensitive_current_tab(monkeypatch) -> None:
+    lease = make_lease()
+    created = []
+
+    async def fake_tabs(_lease):
+        return {
+            "tabs": [
+                {
+                    "index": 0,
+                    "url": "https://accounts.google.com/v3/signin/challenge/pwd?continue=https%3A%2F%2Fconsole.cloud.google.com",
+                    "title": "Sign in - Google Accounts",
+                    "active": True,
+                }
+            ]
+        }
+
+    def fake_create_control_session(*_args, **_kwargs):
+        created.append(True)
+        return {}
+
+    monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
+    monkeypatch.setattr(api.controller, "tabs", fake_tabs)
+    monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(api, "record_event", lambda **_kwargs: {"id": "event"})
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/lease-control/request",
+        json={"lease_id": "lease-api", "owner": "pytest-control", "ttl_seconds": 600},
+    )
+
+    assert response.status_code == 409
+    assert created == []
+    assert "Take Over Tab is blocked" in response.json()["detail"]
+    assert "auth_request" in response.json()["detail"]
+    assert "/auth/<token>" in response.json()["detail"]
+
+
 def test_openbrowser_lease_control_request_is_protected(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
 
