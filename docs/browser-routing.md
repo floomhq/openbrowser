@@ -31,7 +31,7 @@ flowchart TD
 1. Lease before browser work.
 2. Use identities only when account state or proxy routing is required.
 3. Use `auth_request` for login, passkeys, 2FA, or password entry.
-4. Use `takeover_request` (`lease_control_request` remains as a compatibility alias) only when a human must control the currently leased tab without entering credentials.
+4. Use `takeover_request` (`lease_control_request` remains as a compatibility alias) only when a human must control the currently leased tab without entering credentials. Auth-sensitive current tabs are refused with HTTP 409 and `auth_request` guidance.
 5. Release every lease.
 6. Run `broker_audit` after browser-agent work.
 7. Do not connect custom scripts directly to raw pool CDP ports during normal agent work.

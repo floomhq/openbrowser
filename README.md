@@ -248,6 +248,8 @@ curl -fsS "$BASE/auth/request" \
 
 Open the returned `portal_url`, complete login in the browser view, then mark the request complete. Future leases for that identity reuse the saved profile state.
 
+Take Over Tab links under `/auth/lease-control/<token>` are for non-credential current-tab control only. Login, password, passkey, 2FA, SSO, and provider-auth handoffs use `/auth/<token>` from `auth_request`; takeover and legacy lease-control requests refuse auth-sensitive current tabs.
+
 For parallel work, set `policy.max_parallel_sessions` above `1`. OpenBrowser then seeds per-slot replicas instead of starting multiple Chrome processes against one profile directory. That matters: several windows in a desktop Chrome profile are one Chrome process, but several server-side agents are independent Chrome processes. Directly sharing the same `profile_dir` across those processes risks Chrome singleton-lock failures and profile database corruption.
 
 ```mermaid

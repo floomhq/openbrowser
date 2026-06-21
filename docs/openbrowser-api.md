@@ -207,7 +207,7 @@ Use telemetry-only records for expected negative test cases and normal app valid
 
 ## Take Over Tab
 
-If a leased headless browser hits a prompt that must be handled in the current tab, create a short-lived Take Over Tab link:
+If a leased browser hits a non-auth prompt that must be handled in the current tab, create a short-lived Take Over Tab link:
 
 ```bash
 curl -fsS "$BASE/takeover/request" \
@@ -218,6 +218,8 @@ curl -fsS "$BASE/takeover/request" \
 ```
 
 Open the returned `portal_url`. The page shows fresh screenshots and lets the human click or type into the existing tab. It is a manual handoff surface, not an automated CAPTCHA solver.
+
+Do not use Take Over Tab for login, password, passkey, 2FA, SSO, or provider-auth pages. `/takeover/request` and legacy `/lease-control/request` return HTTP 409 on auth-sensitive current tabs with guidance to use `/auth/request`; login handoff links live under `/auth/<token>`, not `/auth/lease-control/<token>`.
 
 ## Rich-Text Editors
 
