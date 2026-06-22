@@ -310,11 +310,12 @@ def test_lifespan_starts_and_stops_controller(monkeypatch) -> None:
 
     monkeypatch.setattr(api.controller, "start", fake_start)
     monkeypatch.setattr(api.controller, "stop", fake_stop)
+    monkeypatch.setattr(api, "reconcile_active_leases", lambda: events.append("reconcile"))
 
     with TestClient(api.app) as client:
         assert client.get("/status").status_code == 200
 
-    assert events == ["start", "stop"]
+    assert events == ["start", "reconcile", "stop"]
 
 
 def test_agent_docs_endpoint() -> None:

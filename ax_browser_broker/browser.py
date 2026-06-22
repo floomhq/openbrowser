@@ -73,6 +73,9 @@ class BrowserController:
         self._active_pages.pop(lease.lease_id, None)
         self._browsers.pop(lease.port, None)
 
+    async def forget_port(self, port: int) -> None:
+        self._browsers.pop(port, None)
+
     async def _with_transport_recovery(self, lease: Lease, action: Any) -> Any:
         try:
             return await action()

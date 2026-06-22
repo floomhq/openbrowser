@@ -13,6 +13,7 @@ def three_slot_pool(tmp_path, monkeypatch):
     monkeypatch.setattr(pool, "read_slot_config", lambda _slot_name: {})
     monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
     monkeypatch.setattr(pool, "BROWSER_POOL_MAINTENANCE_DIR", tmp_path / "maintenance")
+    monkeypatch.setattr(pool, "slot_cdp_healthy", lambda slot, timeout=1.5: pool.healthy(slot.port))
 
 
 def test_status_shape() -> None:
@@ -53,6 +54,74 @@ def test_lease_release_round_trip(tmp_path, monkeypatch) -> None:
     finally:
         released = pool.release(lease.lease_id)
     assert released["released"] == lease.lease_id
+
+
+def test_release_self_heals_released_slot_when_cdp_is_wedged(tmp_path, monkeypatch) -> None:
+    calls = {"pool-a": 0}
+    restarts = []
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+
+    lease = pool.lease("test-self-heal")
+
+    def fake_slot_cdp_healthy(slot, timeout=1.5):
+        if slot.name != lease.name:
+            return True
+        calls[slot.name] = calls.get(slot.name, 0) + 1
+        return calls[slot.name] >= 2
+
+    def fake_run(args, check):
+        restarts.append(args)
+
+    monkeypatch.setattr(pool, "slot_cdp_healthy", fake_slot_cdp_healthy)
+    monkeypatch.setattr(pool.subprocess, "run", fake_run)
+
+    released = pool.release(lease.lease_id)
+
+    assert released["released"] == lease.lease_id
+    assert released["slot"] == lease.name
+    assert released["self_heal"]["restarted"] is True
+    assert released["self_heal"]["cdp_healthy"] is True
+    assert restarts == [[str(pool.BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), lease.name, str(lease.port)]]
+
+
+def test_reconcile_active_leases_self_heals_wedged_active_slot(tmp_path, monkeypatch) -> None:
+    calls = {"pool-a": 0}
+    restarts = []
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+
+    lease = pool.lease("test-startup-heal", identity_id=None)
+
+    def fake_slot_cdp_healthy(slot, timeout=1.5):
+        if slot.name != lease.name:
+            return True
+        calls[slot.name] = calls.get(slot.name, 0) + 1
+        return calls[slot.name] >= 2
+
+    def fake_run(args, check):
+        restarts.append(args)
+
+    monkeypatch.setattr(pool, "slot_cdp_healthy", fake_slot_cdp_healthy)
+    monkeypatch.setattr(pool.subprocess, "run", fake_run)
+
+    results = pool.reconcile_active_leases()
+
+    assert results == [
+        {
+            "lease_id": lease.lease_id,
+            "slot": lease.name,
+            "cdp_healthy": True,
+            "restarted": True,
+        }
+    ]
+    assert restarts == [[str(pool.BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), lease.name, str(lease.port)]]
 
 
 def test_gc_leases_records_expiry_telemetry(tmp_path, monkeypatch) -> None:

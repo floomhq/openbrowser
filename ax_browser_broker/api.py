@@ -49,7 +49,7 @@ from .lease_control import (
     get_control_session,
     list_control_sessions,
 )
-from .pool import LeaseError, heartbeat, lease, release, require_lease, status
+from .pool import LeaseError, heartbeat, lease, reconcile_active_leases, release, require_lease, status
 from .profiles import profile_status, seed_slot, snapshot_golden
 from .telemetry import TelemetryError, list_events, record_event, summary
 
@@ -645,6 +645,7 @@ async def _open_auth_lease_control(request: AuthRequest) -> dict[str, Any]:
 async def lifespan(_app: FastAPI):
     ensure_dirs()
     await controller.start()
+    reconcile_active_leases()
     try:
         yield
     finally:
@@ -2691,6 +2692,8 @@ async def create_lease(request: LeaseRequest) -> dict[str, Any]:
 @app.post("/release/{lease_id}")
 async def release_lease(lease_id: str) -> dict[str, Any]:
     result = release(lease_id)
+    if result.get("released") and result.get("port"):
+        await controller.forget_port(int(result["port"]))
     _safe_record_event(
         source="broker-api",
         event_type="lease",
