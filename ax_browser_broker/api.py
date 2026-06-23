@@ -3995,12 +3995,13 @@ def _auth_portal_html(
     start_error: str | None = None,
 ) -> str:
     safe_token = html.escape(token, quote=True)
-    safe_url = html.escape(str(auth_request_data["url"]))
+    target_url = str(auth_request_data["url"])
+    parsed_target = urllib.parse.urlsplit(target_url)
+    target_host = parsed_target.netloc or parsed_target.path or "requested site"
+    safe_target_host = html.escape(target_host)
     safe_owner = html.escape(str(auth_request_data["owner"]))
     safe_status = html.escape(str(auth_request_data["status"]))
     safe_identity = html.escape(str(auth_request_data.get("identity_id") or "authenticated-chrome"))
-    safe_reason = html.escape(str(auth_request_data.get("reason") or "login_required"))
-    safe_client_ip = html.escape(client_ip or "unknown")
     safe_start_error = html.escape(start_error or "")
     mark_svg = """<img class="brand-icon" src="/openbrowser/assets/brand/logo/mark/openbrowser-mark.svg" alt="">"""
     browser_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"></rect><path d="M3 9h18"></path><path d="M8 15h3"></path><path d="M14 15h2"></path></svg>"""
@@ -4018,33 +4019,36 @@ def _auth_portal_html(
         safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
             floating_auth = f"""
-          <aside class="auth-card is-success is-minimized" id="authCard" aria-label="Human auth request">
-            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize auth request">Hide</button>
+          <aside class="auth-card is-success is-minimized" id="authCard" aria-label="Remote browser session">
+            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize remote session card">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
-              <div class="auth-title">Trusted connection</div>
-              <div class="auth-subtitle">The browser opens without a temporary VNC password prompt.</div>
-              <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Done</button></form>
+              <div class="auth-title">Trusted remote session</div>
+              <div class="auth-subtitle">This device is approved for direct browser access.</div>
+              <form method="post" action="/auth/{safe_token}/complete" data-async-action="Remote session marked complete"><button type="submit">Done</button></form>
             </div>
-            <button class="auth-chip" type="button" id="restoreAuth">Auth request</button>
+            <button class="auth-chip" type="button" id="restoreAuth">Session</button>
           </aside>
 """
         else:
-            safe_password = html.escape(str(vnc.get("password", "")))
+            safe_access_code = html.escape(str(vnc.get("password", "")))
             floating_auth = f"""
-          <aside class="auth-card is-warning is-minimized" id="authCard" aria-label="Human auth request">
-            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize auth request">Hide</button>
+          <aside class="auth-card is-warning is-minimized" id="authCard" aria-label="Remote browser session">
+            <button class="auth-dismiss" type="button" id="minimizeAuth" aria-label="Minimize remote session card">Hide</button>
             <div class="auth-logo">{mark_svg}</div>
             <div class="auth-copy">
-              <div class="auth-title">Human auth request</div>
-              <div class="auth-subtitle">Temporary VNC password: copy it here, enter it in the browser prompt, finish login, then mark complete.</div>
-              <div class="password-row"><code id="vncPassword">{safe_password}</code><button class="button button-soft button-small copy-password" type="button">Copy</button></div>
+              <div class="auth-title">Remote browser session</div>
+              <div class="auth-subtitle">Continue in the browser below. If the viewer asks for an access code, reveal it here.</div>
+              <details class="access-code-details">
+                <summary>Show access code</summary>
+                <div class="access-code-row"><code id="remoteAccessCode">{safe_access_code}</code><button class="button button-soft button-small copy-access-code" type="button">Copy</button></div>
+              </details>
               <div class="auth-actions">
-                <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Mark complete</button></form>
+                <form method="post" action="/auth/{safe_token}/complete" data-async-action="Remote session marked complete"><button type="submit">Mark ready</button></form>
                 <button class="button button-soft" type="button" id="minimizeAuthSecondary">Keep browsing</button>
               </div>
             </div>
-            <button class="auth-chip" type="button" id="restoreAuth">Auth request</button>
+            <button class="auth-chip" type="button" id="restoreAuth">Session</button>
           </aside>
 """
         frame = f"""
@@ -4058,11 +4062,11 @@ def _auth_portal_html(
               <div class="toolbar-left" aria-hidden="true">
                 <span></span><span></span><span></span>
               </div>
-              <div class="toolbar-url"><span class="lock">lock</span>{safe_url}</div>
+              <div class="toolbar-url" title="{safe_target_host}"><span class="lock">live</span>{safe_target_host}</div>
               <a class="icon-button" href="{safe_open_url}" target="_blank" rel="noopener noreferrer" aria-label="Open full screen">Open</a>
             </div>
             <div class="browser-frame">
-              <iframe src="{safe_embed_url}" title="OpenBrowser login view" allow="clipboard-read; clipboard-write"></iframe>
+              <iframe src="{safe_embed_url}" title="OpenBrowser remote browser view" allow="clipboard-read; clipboard-write"></iframe>
             </div>
           </div>
           {floating_auth}
@@ -4075,10 +4079,10 @@ def _auth_portal_html(
           <div class="empty-state">
             <div class="empty-icon">{mark_svg}</div>
             <div>
-              <div class="title-small">Browser login view is not running</div>
-              <p>{safe_start_error or "Start it below, then sign in inside the browser view."}</p>
+              <div class="title-small">Remote browser view is not running</div>
+              <p>{safe_start_error or "Start it below, then continue inside the browser view."}</p>
             </div>
-            <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start browser login view</button></form>
+            <form method="post" action="/auth/{safe_token}/start-vnc"><button type="submit">Start remote browser view</button></form>
           </div>
         </section>
 """
@@ -4088,7 +4092,9 @@ def _auth_portal_html(
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>OpenBrowser Login Handoff</title>
+    <meta name="robots" content="noindex,nofollow,noarchive">
+    <meta name="referrer" content="no-referrer">
+    <title>OpenBrowser Remote Session</title>
     <script>
       (() => {{
         try {{
@@ -4399,7 +4405,9 @@ def _auth_portal_html(
       }}
       .auth-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
       .auth-subtitle {{ margin-top: 5px; color: var(--muted); font-size: 14px; font-weight: 560; }}
-      .password-row {{ margin-top: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+      .access-code-details {{ margin-top: 12px; color: var(--muted); font-size: 13px; font-weight: 650; }}
+      .access-code-details summary {{ cursor: pointer; user-select: none; }}
+      .access-code-row {{ margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
       .auth-actions {{ margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }}
       .auth-actions form, .auth-actions button, .auth-copy form, .auth-copy form button {{ width: 100%; }}
       .auth-copy form {{ margin-top: 14px; }}
@@ -4508,26 +4516,26 @@ def _auth_portal_html(
             </div>
           </div>
           <section class="request-card" aria-label="Handoff details">
-            <div class="request-row"><span class="label">Target</span><span class="value mono" title="{safe_url}">{safe_url}</span></div>
-            <div class="request-row"><span class="label">Agent</span><span class="value">{safe_owner}</span></div>
-            <div class="request-row"><span class="label">Reason</span><span class="value">{safe_reason}</span></div>
+            <div class="request-row"><span class="label">Site</span><span class="value mono" title="{safe_target_host}">{safe_target_host}</span></div>
+            <div class="request-row"><span class="label">Requested by</span><span class="value">{safe_owner}</span></div>
+            <div class="request-row"><span class="label">Profile</span><span class="value">{safe_identity}</span></div>
             {inline_password_controls}
             <div class="actions">
-              <form method="post" action="/auth/{safe_token}/complete" data-async-action="Auth handoff marked complete"><button type="submit">Mark complete</button></form>
-              <form method="post" action="/auth/{safe_token}/stop-vnc" data-async-action="Browser login view stopped"><button class="button-outline" type="submit">Stop view</button></form>
+              <form method="post" action="/auth/{safe_token}/complete" data-async-action="Remote session marked complete"><button type="submit">Mark ready</button></form>
+              <form method="post" action="/auth/{safe_token}/stop-vnc" data-async-action="Remote browser view stopped"><button class="button-outline" type="submit">Stop view</button></form>
             </div>
-            <div id="portalStatus" class="auth-subtitle" aria-live="polite">Complete the login in the browser view, then mark this request complete.</div>
+            <div id="portalStatus" class="auth-subtitle" aria-live="polite">When the page is ready, mark this session complete.</div>
           </section>
         </aside>
         {frame}
         <aside class="state-panel">
           <div class="panel-title">Session State</div>
           <div class="state-list">
-            <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Agent handoff active</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Status: {safe_status}</div><div class="state-subtitle">Remote session active</div></div><span class="state-dot"></span></div>
             <div class="state-item"><div class="state-icon">{identity_svg}</div><div><div class="state-title">Profile: {safe_identity}</div><div class="state-subtitle">Persistent broker identity</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{handoff_svg}</div><div><div class="state-title">Human handoff ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{network_svg}</div><div><div class="state-title">Client: {safe_client_ip}</div><div class="state-subtitle">Connection recognized</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">Browser view</div><div class="state-subtitle">Ready for login</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{handoff_svg}</div><div><div class="state-title">Approval ready</div><div class="state-subtitle">Enabled</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{network_svg}</div><div><div class="state-title">Connection</div><div class="state-subtitle">Verified request channel</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">Browser view</div><div class="state-subtitle">Ready</div></div><span class="state-dot"></span></div>
           </div>
         </aside>
       </main>
@@ -4550,15 +4558,15 @@ def _auth_portal_html(
       const authCard = document.getElementById('authCard');
       const minimizeAuthCard = () => {{
         if (authCard) authCard.classList.add('is-minimized');
-        if (portalStatus) portalStatus.textContent = 'Auth request minimized. Use the Auth request button to reopen it.';
+        if (portalStatus) portalStatus.textContent = 'Session card minimized. Use the Session button to reopen it.';
       }};
       const restoreAuthCard = () => {{
         if (authCard) authCard.classList.remove('is-minimized');
       }};
-      document.querySelectorAll('.copy-password').forEach((copyButton) => {{
+      document.querySelectorAll('.copy-access-code').forEach((copyButton) => {{
         copyButton.addEventListener('click', async () => {{
-          const passwordNode = copyButton.closest('.password-row')?.querySelector('code') || document.getElementById('vncPassword');
-          const value = passwordNode ? passwordNode.textContent : '';
+          const codeNode = copyButton.closest('.access-code-row')?.querySelector('code') || document.getElementById('remoteAccessCode');
+          const value = codeNode ? codeNode.textContent : '';
           try {{
             await navigator.clipboard.writeText(value);
           }} catch (error) {{
@@ -4636,13 +4644,16 @@ async def auth_portal(token: str, request: Request) -> Any:
             if redirect:
                 return redirect
             start_error = str(error)
-    return _auth_portal_html(
-        token,
-        auth_request_data,
-        vnc,
-        trusted_client=_auth_client_is_trusted(request),
-        client_ip=_auth_client_ip(request),
-        start_error=start_error,
+    return HTMLResponse(
+        _auth_portal_html(
+            token,
+            auth_request_data,
+            vnc,
+            trusted_client=_auth_client_is_trusted(request),
+            client_ip=_auth_client_ip(request),
+            start_error=start_error,
+        ),
+        headers={"X-Robots-Tag": "noindex, nofollow, noarchive"},
     )
 
 
@@ -4660,12 +4671,15 @@ async def auth_start_vnc(token: str, request: Request) -> Any:
         if redirect:
             return redirect
         raise HTTPException(status_code=410 if "expired" in str(error) or "is expired" in str(error) else 400, detail=str(error)) from error
-    return _auth_portal_html(
-        token,
-        auth_request_data,
-        vnc,
-        trusted_client=_auth_client_is_trusted(request),
-        client_ip=_auth_client_ip(request),
+    return HTMLResponse(
+        _auth_portal_html(
+            token,
+            auth_request_data,
+            vnc,
+            trusted_client=_auth_client_is_trusted(request),
+            client_ip=_auth_client_ip(request),
+        ),
+        headers={"X-Robots-Tag": "noindex, nofollow, noarchive"},
     )
 
 

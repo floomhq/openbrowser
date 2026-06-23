@@ -111,7 +111,8 @@ def test_auth_portal_escapes_request_values(tmp_path, monkeypatch) -> None:
 
     assert response.status_code == 200
     assert "https://example.com/?x=<script>" not in response.text
-    assert "&lt;script&gt;" in response.text
+    assert "&lt;script&gt;" not in response.text
+    assert "example.com" in response.text
     assert "&lt;owner&gt;" in response.text
 
 
@@ -146,12 +147,15 @@ def test_auth_portal_autostarts_and_embeds_password_for_trusted_ip(tmp_path, mon
     assert "Live Browser Session" in response.text
     assert "Session State" in response.text
     assert "Night mode" in response.text
+    assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert '<meta name="robots" content="noindex,nofollow,noarchive">' in response.text
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
     assert "#password=trust-pass" in response.text
-    assert "Trusted connection" in response.text
-    assert 'data-async-action="Auth handoff marked complete"' in response.text
+    assert "Trusted remote session" in response.text
+    assert 'data-async-action="Remote session marked complete"' in response.text
     assert "Temporary VNC password" not in response.text
+    assert "OpenBrowser Login Handoff" not in response.text
     assert "trust-pass" in response.text
 
 
@@ -180,21 +184,23 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     response = client.get("/auth/" + request["token"], headers={"x-forwarded-for": "203.0.113.10"})
 
     assert response.status_code == 200
-    assert "Human auth request" in response.text
+    assert response.headers["x-robots-tag"] == "noindex, nofollow, noarchive"
+    assert "Remote browser session" in response.text
     assert "resize=scale" in response.text
     assert "resize=remote" not in response.text
-    assert "Temporary VNC password" in response.text
-    assert "enter it in the browser prompt" in response.text
+    assert "Temporary VNC password" not in response.text
+    assert "VNC password" not in response.text
+    assert "OpenBrowser Login Handoff" not in response.text
+    assert "access code" in response.text
     assert "manual-pass" in response.text
     assert response.text.count("manual-pass") == 1
-    assert response.text.count("VNC password") == 1
     assert "#password=manual-pass" not in response.text
     assert 'id="authCard"' in response.text
     assert 'id="minimizeAuth"' in response.text
     assert 'id="minimizeAuthSecondary"' in response.text
     assert 'id="restoreAuth"' in response.text
     assert "auth-card is-warning is-minimized" in response.text
-    assert "copy-password" in response.text
+    assert "copy-access-code" in response.text
     assert "setTimeout(minimizeAuthCard, 450)" in response.text
     assert "if (event.key === 'Escape') minimizeAuthCard();" in response.text
 
