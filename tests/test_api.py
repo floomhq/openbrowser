@@ -981,6 +981,7 @@ def test_openbrowser_open_can_return_verified_control_link(monkeypatch) -> None:
     monkeypatch.setenv("OPENBROWSER_API_KEYS", "test-openbrowser-key")
 
     async def fake_create_lease(_request):
+        assert _request.headed is True
         return {"lease_id": "lease-open", "name": "pool-b", "identity_id": "chrome-work"}
 
     async def fake_browser_navigate(_request):
@@ -1200,6 +1201,7 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     events = []
     lease = make_lease()
     created_kwargs = {}
+    auth_created = []
 
     def fake_create_control_session(owner, lease_id, ttl_seconds, **kwargs):
         assert owner == "pytest-control"
@@ -1227,6 +1229,23 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
 
     monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
     monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(
+        api,
+        "create_auth_request",
+        lambda *args, **kwargs: auth_created.append((args, kwargs)) or {"token": "live-auth-token"},
+    )
+    monkeypatch.setattr(api, "_find_free_tcp_port", lambda start, _end: start)
+    monkeypatch.setattr(
+        api,
+        "start_auth_vnc",
+        lambda token, websocket_port, vnc_port: {
+            "token": token,
+            "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+            "password": "live-pass",
+            "websocket_port": websocket_port,
+            "vnc_port": vnc_port,
+        },
+    )
     monkeypatch.setattr(api.controller, "tabs", fake_tabs)
     monkeypatch.setattr(api, "record_event", lambda **kwargs: events.append(kwargs) or {"id": "event"})
     client = TestClient(api.app)
@@ -1239,6 +1258,11 @@ def test_lease_control_request_creates_handoff_link(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json()["portal_url"].endswith("/auth/lease-control/control-token")
     assert created_kwargs["url"] == "https://example.com/current"
+    assert created_kwargs["auth_token"] == "live-auth-token"
+    assert created_kwargs["vnc"]["websocket_port"] == 6081
+    assert created_kwargs["vnc"]["vnc_port"] == 5901
+    assert auth_created[0][1]["mode"] == "same_lease"
+    assert auth_created[0][1]["lease_id"] == "lease-api"
     assert events[0]["message"] == "Take Over Tab session created"
     assert events[0]["data"]["slot"] == "pool-b"
 
@@ -1262,6 +1286,19 @@ def test_takeover_request_creates_handoff_link(monkeypatch) -> None:
 
     monkeypatch.setattr(api, "require_lease", lambda _lease_id: lease)
     monkeypatch.setattr(api, "create_control_session", fake_create_control_session)
+    monkeypatch.setattr(api, "create_auth_request", lambda *_args, **_kwargs: {"token": "live-auth-token"})
+    monkeypatch.setattr(api, "_find_free_tcp_port", lambda start, _end: start)
+    monkeypatch.setattr(
+        api,
+        "start_auth_vnc",
+        lambda token, websocket_port, vnc_port: {
+            "token": token,
+            "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+            "password": "live-pass",
+            "websocket_port": websocket_port,
+            "vnc_port": vnc_port,
+        },
+    )
     monkeypatch.setattr(api.controller, "tabs", lambda _lease: {"tabs": []})
     monkeypatch.setattr(api, "record_event", lambda **_kwargs: {"id": "event"})
     client = TestClient(api.app)
@@ -1368,6 +1405,13 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
             "reason": "approval",
             "slot": "pool-b",
             "expires_at": 123,
+            "auth_token": "live-auth-token",
+            "vnc": {
+                "websocket_url": "https://browser.example.com/vnc.html?autoconnect=1&resize=remote",
+                "password": "live-pass",
+                "websocket_port": 6081,
+                "vnc_port": 5901,
+            },
         }
 
     async def fake_screenshot(lease_obj, full_page):
@@ -1393,27 +1437,32 @@ def test_lease_control_portal_and_screenshot(monkeypatch) -> None:
     assert "chrome-test" in portal.text
     assert "https://example.com/dashboard" in portal.text
     assert "Take Over Tab" in portal.text
-    assert "Take Over Tab request" in portal.text
+    assert "Take Over Tab request" not in portal.text
     assert "Browser control" not in portal.text
     assert "Control request" not in portal.text
-    assert "Advanced fallback controls" in portal.text
+    assert "Advanced fallback controls" not in portal.text
+    assert 'id="liveView"' in portal.text
+    assert "vnc.html?autoconnect=1&amp;resize=scale" in portal.text
+    assert "#password=live-pass" in portal.text
+    assert "Live control active" in portal.text
+    assert "Direct pointer control" in portal.text
+    assert "Direct keyboard control" in portal.text
     assert "Refresh screenshot" not in portal.text
-    assert ">Refresh<" in portal.text
     assert "Mark complete" in portal.text
     assert 'id="urlForm"' in portal.text
     assert 'id="urlInput"' in portal.text
     assert 'id="browserFrame"' in portal.text
-    assert 'id="keyCapture"' in portal.text
-    assert ".auth-card.is-minimized .advanced-controls" in portal.text
-    assert "Click inside the browser image, then type normally" in portal.text
+    assert 'id="keyCapture"' not in portal.text
+    assert 'id="screen"' not in portal.text
+    assert "Click inside the browser image, then type normally" not in portal.text
     assert "keyboard-type" in portal.text
     assert "keyboard-press" in portal.text
     assert "/navigate" in portal.text
-    assert "Text to type into focused field" in portal.text
-    assert "Press key" in portal.text
+    assert "Text to type into focused field" not in portal.text
+    assert "Press key" not in portal.text
     assert "End control link" not in portal.text
-    assert "This controls the same browser tab the agent is holding." in portal.text
-    assert "This view never exposes session cookies, saved passwords, or proxy credentials." in portal.text
+    assert "This controls the same browser tab the agent is holding." not in portal.text
+    assert "This view never exposes session cookies, saved passwords, or proxy credentials." not in portal.text
     assert "No cookies or passwords exposed" in portal.text
     assert "cursor: crosshair" not in portal.text
     assert 'data-key="PageDown"' not in portal.text

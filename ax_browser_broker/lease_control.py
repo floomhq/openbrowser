@@ -65,6 +65,9 @@ def create_control_session(
     url: str | None = None,
     reason: str | None = None,
     slot: str | None = None,
+    auth_token: str | None = None,
+    vnc: dict[str, Any] | None = None,
+    live_view_error: str | None = None,
 ) -> dict[str, Any]:
     now = int(time.time())
     ttl = max(60, min(int(ttl_seconds), 60 * 60))
@@ -87,6 +90,12 @@ def create_control_session(
         session["reason"] = reason
     if slot:
         session["slot"] = slot
+    if auth_token:
+        session["auth_token"] = auth_token
+    if vnc:
+        session["vnc"] = vnc
+    if live_view_error:
+        session["live_view_error"] = live_view_error
     with locked_control_state() as state:
         gc_control_sessions(state)
         state["sessions"][token] = session

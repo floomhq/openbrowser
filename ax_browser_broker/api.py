@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 from .audit import run_audit
 from .auth import (
     AuthError,
+    _find_free_tcp_port,
     complete_auth_request,
     create_auth_request,
     current_auth_vnc,
@@ -2500,7 +2501,14 @@ async def openbrowser_heartbeat_lease(lease_id: str, _auth: str = Depends(requir
 
 @app.post("/openbrowser/v1/open")
 async def openbrowser_open(request: OpenBrowserOpenRequest, _auth: str = Depends(require_openbrowser_api_key)) -> dict[str, Any]:
-    lease_obj = await create_lease(LeaseRequest(owner=request.owner, ttl_seconds=request.ttl_seconds, identity_id=request.identity_id))
+    lease_obj = await create_lease(
+        LeaseRequest(
+            owner=request.owner,
+            ttl_seconds=request.ttl_seconds,
+            identity_id=request.identity_id,
+            headed=request.control,
+        )
+    )
     try:
         navigation = await browser_navigate(
             NavigateRequest(lease_id=lease_obj["lease_id"], url=request.url, wait_until=request.wait_until)
@@ -2904,6 +2912,33 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
         except Exception:
             current_url = None
         _reject_takeover_for_auth_page(current_url)
+        live_auth_token = None
+        live_vnc = None
+        live_view_error = None
+        try:
+            live_auth = create_auth_request(
+                request.owner,
+                current_url or "about:blank",
+                "browser_control",
+                identity_id=lease_obj.identity_id,
+                mode="same_lease",
+                lease_id=lease_obj.lease_id,
+                slot=lease_obj.name,
+                cdp=lease_obj.cdp,
+            )
+            live_auth_token = str(live_auth["token"])
+            live_vnc = start_auth_vnc(
+                live_auth_token,
+                websocket_port=_find_free_tcp_port(6081, 6180),
+                vnc_port=_find_free_tcp_port(5901, 5999),
+            )
+        except Exception as error:
+            live_view_error = str(error)
+            if live_auth_token:
+                try:
+                    stop_auth_vnc(live_auth_token, missing_ok=True)
+                except Exception:
+                    pass
         result = create_control_session(
             request.owner,
             lease_obj.lease_id,
@@ -2911,6 +2946,9 @@ async def lease_control_request(request: LeaseControlRequest) -> dict[str, Any]:
             identity_id=lease_obj.identity_id,
             url=current_url,
             slot=lease_obj.name,
+            auth_token=live_auth_token if live_vnc else None,
+            vnc=live_vnc,
+            live_view_error=live_view_error,
         )
         _safe_record_event(
             source=request.owner,
@@ -2951,6 +2989,79 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
     cdp_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2-2a5 5 0 0 0-7.07-7.07l-1.2 1.2"></path><path d="M14 11a5 5 0 0 0-7.07 0l-2 2A5 5 0 0 0 12 20.07l1.2-1.2"></path></svg>"""
     lock_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>"""
     status_svg = """<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>"""
+    live_vnc = session.get("vnc") if isinstance(session.get("vnc"), dict) else None
+    live_view_error = html.escape(str(session.get("live_view_error") or ""))
+    live_view = bool(live_vnc and live_vnc.get("websocket_url"))
+    safe_live_embed_url = html.escape(_novnc_embed_url(live_vnc, True), quote=True) if live_view and live_vnc else ""
+    safe_live_open_url = safe_live_embed_url
+    if live_view:
+        frame_body = f"""
+              <iframe id="liveView" src="{safe_live_embed_url}" title="OpenBrowser live browser view" allow="clipboard-read; clipboard-write"></iframe>
+"""
+        stage_actions = f"""
+              <a class="button-outline button-small" href="{safe_live_open_url}" target="_blank" rel="noopener noreferrer">Open full screen</a>
+              <button class="button-outline button-small" id="doneTop" type="button">Mark complete</button>
+"""
+        control_card = f"""
+          <aside class="control-dock" aria-label="Take Over Tab status">
+            <span class="state-dot"></span>
+            <span>Live control active</span>
+            <button class="button-outline button-small" id="done" type="button">Done</button>
+          </aside>
+"""
+        frame_class = "browser-frame is-live"
+        pointer_subtitle = "Direct pointer control"
+        keyboard_subtitle = "Direct keyboard control"
+    else:
+        fallback_note = (
+            f"<div class=\"control-note\">Live view unavailable: {live_view_error}</div>"
+            if live_view_error
+            else ""
+        )
+        frame_body = f"""
+              <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
+              <textarea id="keyCapture" autocapitalize="off" autocomplete="off" spellcheck="false" aria-hidden="true"></textarea>
+"""
+        stage_actions = """
+              <button class="button-outline button-small" id="refreshTop" type="button">Refresh</button>
+"""
+        control_card = f"""
+          <aside class="auth-card is-success is-minimized" id="controlCard" aria-label="Take Over Tab fallback controls">
+            <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize Take Over Tab controls">Hide</button>
+            <div class="auth-logo">{mark_svg}</div>
+            <div class="auth-copy">
+              <div class="auth-title">Screenshot fallback</div>
+              <div class="auth-subtitle">Live control could not start. Click the screenshot, then use fallback controls if needed.</div>
+              {fallback_note}
+              <div class="auth-actions">
+                <button class="button button-soft" id="refresh" type="button">Refresh</button>
+                <button id="done" type="button">Mark complete</button>
+              </div>
+            </div>
+            <details class="advanced-controls">
+              <summary>Fallback keyboard controls</summary>
+              <div class="control-actions">
+                <form id="typeForm" class="control-row">
+                  <input id="text" autocomplete="off" placeholder="Text to type into focused field">
+                  <button type="submit">Type</button>
+                </form>
+                <form id="pressForm" class="control-row">
+                  <input id="key" autocomplete="off" value="Enter" aria-label="Keyboard key">
+                  <button type="submit">Press key</button>
+                </form>
+                <div class="control-buttons">
+                  <button class="button-outline" id="openImage" type="button">Open screenshot</button>
+                </div>
+                <div class="control-note">This view never exposes session cookies, saved passwords, or proxy credentials.</div>
+                <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Screenshot fallback active.</div>
+              </div>
+            </details>
+            <button class="auth-chip" type="button" id="restoreControl">Fallback controls</button>
+          </aside>
+"""
+        frame_class = "browser-frame is-screenshot"
+        pointer_subtitle = "Screenshot coordinates mapped"
+        keyboard_subtitle = "Type and key press fallback"
     return f"""
 <!doctype html>
 <html data-theme="light">
@@ -3249,9 +3360,18 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }}
       .lock {{ color: var(--green); font-size: 11px; text-transform: uppercase; }}
       .browser-frame {{ min-height: 0; overflow: auto; background: #111; }}
+      .browser-frame.is-live {{ overflow: hidden; background: #111; }}
       .browser-frame.is-control-focused {{
         outline: 2px solid color-mix(in srgb, var(--blue) 70%, transparent);
         outline-offset: -2px;
+      }}
+      #liveView {{
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        display: block;
+        border: 0;
+        background: #111;
       }}
       #screen {{
         display: block;
@@ -3357,6 +3477,24 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       }}
       .control-logo {{ width: 50px; height: 50px; color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--panel-solid)); }}
       .control-title {{ font-size: 18px; line-height: 1.2; font-weight: 760; }}
+      .control-dock {{
+        position: absolute;
+        right: 38px;
+        bottom: 34px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        padding: 6px 8px 6px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-pill);
+        background: color-mix(in srgb, var(--panel-solid) 92%, transparent);
+        color: var(--muted);
+        box-shadow: 0 14px 40px rgba(15,23,42,0.12);
+        backdrop-filter: blur(18px) saturate(1.12);
+        font-size: 13px;
+        font-weight: 700;
+      }}
       .state-list {{ display: grid; gap: 22px; }}
       .state-item {{ display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 13px; align-items: center; }}
       .state-icon {{ width: 36px; height: 36px; }}
@@ -3425,7 +3563,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         <section class="browser-stage">
           <div class="stage-title">
             <span>Live Browser Session</span>
-            <button class="button-outline button-small" id="refreshTop" type="button">Refresh</button>
+            <div class="stage-actions">
+              {stage_actions}
+            </div>
           </div>
           <div class="browser-shell">
             <div class="browser-toolbar">
@@ -3437,50 +3577,18 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
               </form>
               <button class="button-outline button-small" id="controlsFocus" type="button">Controls</button>
             </div>
-            <div class="browser-frame" id="browserFrame" tabindex="0" aria-label="Take Over Tab browser surface">
-              <img id="screen" alt="Current browser screenshot" src="/auth/lease-control/{safe_token}/screenshot?ts=0">
-              <textarea id="keyCapture" autocapitalize="off" autocomplete="off" spellcheck="false" aria-hidden="true"></textarea>
+            <div class="{frame_class}" id="browserFrame" tabindex="0" aria-label="Take Over Tab browser surface">
+              {frame_body}
             </div>
           </div>
-          <aside class="auth-card is-success is-minimized" id="controlCard" aria-label="Take Over Tab request">
-            <button class="auth-dismiss" type="button" id="minimizeControl" aria-label="Minimize Take Over Tab request">Hide</button>
-            <div class="auth-logo">{mark_svg}</div>
-            <div class="auth-copy">
-              <div class="auth-title">Take Over Tab</div>
-              <div class="auth-subtitle">Click inside the browser image, then type normally. Use the URL bar above to navigate. Advanced controls are only a fallback.</div>
-              <div class="control-note">This controls the same browser tab the agent is holding.</div>
-              <div class="auth-actions">
-                <button class="button button-soft" id="refresh" type="button">Refresh</button>
-                <button id="done" type="button">Mark complete</button>
-              </div>
-            </div>
-            <details class="advanced-controls">
-              <summary>Advanced fallback controls</summary>
-              <div class="control-actions">
-                <form id="typeForm" class="control-row">
-                  <input id="text" autocomplete="off" placeholder="Text to type into focused field">
-                  <button type="submit">Type</button>
-                </form>
-                <form id="pressForm" class="control-row">
-                  <input id="key" autocomplete="off" value="Enter" aria-label="Keyboard key">
-                  <button type="submit">Press key</button>
-                </form>
-                <div class="control-buttons">
-                  <button class="button-outline" id="openImage" type="button">Open screenshot</button>
-                </div>
-                <div class="control-note">This view never exposes session cookies, saved passwords, or proxy credentials.</div>
-                <div id="status" data-expires-at="{safe_expires_at}" aria-live="polite">Take Over Tab active.</div>
-              </div>
-            </details>
-            <button class="auth-chip" type="button" id="restoreControl">Take Over Tab</button>
-          </aside>
+          {control_card}
         </section>
         <aside class="state-panel">
           <div class="panel-title">Session State</div>
           <div class="state-list">
             <div class="state-item"><div class="state-icon">{status_svg}</div><div><div class="state-title">Active lease</div><div class="state-subtitle">Same lease, same tab</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{pointer_svg}</div><div><div class="state-title">Click control</div><div class="state-subtitle">Screenshot coordinates mapped</div></div><span class="state-dot"></span></div>
-            <div class="state-item"><div class="state-icon">{keyboard_svg}</div><div><div class="state-title">Keyboard input</div><div class="state-subtitle">Type and key press enabled</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{pointer_svg}</div><div><div class="state-title">Pointer control</div><div class="state-subtitle">{pointer_subtitle}</div></div><span class="state-dot"></span></div>
+            <div class="state-item"><div class="state-icon">{keyboard_svg}</div><div><div class="state-title">Keyboard input</div><div class="state-subtitle">{keyboard_subtitle}</div></div><span class="state-dot"></span></div>
             <div class="state-item"><div class="state-icon">{lock_svg}</div><div><div class="state-title">Private session</div><div class="state-subtitle">No cookies or passwords exposed</div></div><span class="state-dot"></span></div>
             <div class="state-item"><div class="state-icon">{cdp_svg}</div><div><div class="state-title">CDP connected</div><div class="state-subtitle">Held browser slot</div></div><span class="state-dot"></span></div>
           </div>
@@ -3494,7 +3602,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
       const keyCapture = document.getElementById('keyCapture');
       const urlInput = document.getElementById('urlInput');
       const statusBox = document.getElementById('status');
-      const setStatus = (text) => {{ statusBox.textContent = text; }};
+      const setStatus = (text) => {{
+        if (statusBox) statusBox.textContent = text;
+      }};
       const isEditableTarget = (target) => {{
         if (!target) return false;
         const tag = String(target.tagName || '').toLowerCase();
@@ -3509,10 +3619,11 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         localStorage.setItem('openbrowser-theme', next);
         setThemeLabel();
       }});
-      const expiresAt = Number(statusBox.dataset.expiresAt || 0);
+      const expiresAt = Number(statusBox?.dataset.expiresAt || 0);
       if (expiresAt) setStatus(`Take Over Tab expires at ${{new Date(expiresAt * 1000).toLocaleString()}}`);
       let shotPending = false;
       const refresh = () => {{
+        if (!screen) return;
         if (shotPending) return;
         shotPending = true;
         const next = new Image();
@@ -3531,9 +3642,11 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         if (!response.ok) throw new Error(await response.text());
         return response;
       }};
-      document.getElementById('refresh').addEventListener('click', refresh);
-      document.getElementById('refreshTop').addEventListener('click', refresh);
-      document.getElementById('openImage').addEventListener('click', () => window.open(screen.src, '_blank', 'noopener,noreferrer'));
+      document.getElementById('refresh')?.addEventListener('click', refresh);
+      document.getElementById('refreshTop')?.addEventListener('click', refresh);
+      document.getElementById('openImage')?.addEventListener('click', () => {{
+        if (screen) window.open(screen.src, '_blank', 'noopener,noreferrer');
+      }});
       document.getElementById('urlForm').addEventListener('submit', async (event) => {{
         event.preventDefault();
         const url = urlInput.value.trim();
@@ -3605,7 +3718,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           focusBrowserControl();
         }}
       }});
-      screen.addEventListener('click', async (event) => {{
+      screen?.addEventListener('click', async (event) => {{
         focusBrowserControl();
         const rect = screen.getBoundingClientRect();
         const x = Math.round((event.clientX - rect.left) * screen.naturalWidth / rect.width);
@@ -3621,7 +3734,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         }}
       }});
       let scrollPending = false;
-      screen.addEventListener('wheel', async (event) => {{
+      screen?.addEventListener('wheel', async (event) => {{
         event.preventDefault();
         if (scrollPending) return;
         scrollPending = true;
@@ -3640,7 +3753,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setTimeout(() => {{ scrollPending = false; }}, 120);
         }}
       }}, {{passive: false}});
-      document.getElementById('typeForm').addEventListener('submit', async (event) => {{
+      document.getElementById('typeForm')?.addEventListener('submit', async (event) => {{
         event.preventDefault();
         const text = document.getElementById('text').value;
         setStatus('Typing...');
@@ -3653,7 +3766,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setStatus(`Type failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
       }});
-      document.getElementById('pressForm').addEventListener('submit', async (event) => {{
+      document.getElementById('pressForm')?.addEventListener('submit', async (event) => {{
         event.preventDefault();
         const key = document.getElementById('key').value || 'Enter';
         setStatus(`Pressing ${{key}}...`);
@@ -3665,7 +3778,7 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
           setStatus(`Key failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
       }});
-      document.getElementById('done').addEventListener('click', async () => {{
+      const completeControl = async () => {{
         try {{
           const response = await fetch(`/auth/lease-control/${{token}}/complete`, {{method: 'POST'}});
           if (!response.ok) throw new Error(await response.text());
@@ -3674,7 +3787,9 @@ def _control_html(token: str, session: dict[str, Any]) -> str:
         }} catch (error) {{
           setStatus(`End failed: ${{String(error.message || error).slice(0, 180)}}`);
         }}
-      }});
+      }};
+      document.getElementById('done')?.addEventListener('click', completeControl);
+      document.getElementById('doneTop')?.addEventListener('click', completeControl);
     </script>
   </body>
 </html>
@@ -3820,6 +3935,12 @@ async def lease_control_keyboard_press(token: str, request: LeaseControlPressReq
 async def lease_control_complete(token: str) -> dict[str, Any]:
     try:
         session = complete_control_session(token)
+        auth_token = session.get("auth_token")
+        if auth_token:
+            try:
+                session["vnc_stop"] = stop_auth_vnc(str(auth_token), missing_ok=True)
+            except Exception as error:
+                session["vnc_stop_error"] = str(error)
         _safe_record_event(
             source=str(session.get("owner", "lease-control")),
             event_type="session",

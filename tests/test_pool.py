@@ -191,7 +191,8 @@ def test_generic_lease_reclaims_idle_proxied_identity_slot(tmp_path, monkeypatch
     monkeypatch.setattr(pool, "active_identity_id", lambda slot_name: active.get(slot_name))
     monkeypatch.setattr(pool, "load_identities", lambda: identities)
     monkeypatch.setattr(pool, "healthy", lambda _port: True)
-    def activate_neutral(slot):
+    def activate_neutral(slot, *, headed=False):
+        assert headed is False
         reclaimed.append(slot.name)
         active[slot.name] = None
         return True
@@ -968,5 +969,34 @@ def test_headed_identity_lease_reactivates_stale_headless_process(tmp_path, monk
         assert leased.headed is True
         assert len(activations) == 1
         assert activations[0][1]["headed"] is True
+    finally:
+        pool.release(leased.lease_id)
+
+
+def test_headed_neutral_lease_restarts_headless_slot(tmp_path, monkeypatch):
+    activations = []
+    headed_ready = {"pool-a": False}
+
+    monkeypatch.setattr(pool, "POOL_STATE_FILE", tmp_path / "leases.json")
+    monkeypatch.setattr(pool, "healthy", lambda _port: True)
+    monkeypatch.setattr(pool, "load_identities", lambda: {})
+    monkeypatch.setattr(pool, "active_identity_id", lambda _slot_name: None)
+    monkeypatch.setattr(pool, "slot_in_maintenance", lambda _slot_name: False)
+    monkeypatch.setattr(pool, "_slot_ready", lambda _slot: True)
+    monkeypatch.setattr(pool, "_slot_headed_ready", lambda slot: headed_ready.get(slot.name, False))
+
+    def fake_activate_neutral_slot(slot, *, headed=False):
+        activations.append((slot.name, headed))
+        if headed:
+            headed_ready[slot.name] = True
+        return True
+
+    monkeypatch.setattr(pool, "_activate_neutral_slot", fake_activate_neutral_slot)
+
+    leased = pool.lease("agent-headed-neutral", headed=True)
+    try:
+        assert leased.name == "pool-a"
+        assert leased.headed is True
+        assert activations == [("pool-a", True)]
     finally:
         pool.release(leased.lease_id)

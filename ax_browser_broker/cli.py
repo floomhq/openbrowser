@@ -120,6 +120,9 @@ def cmd_open(args: argparse.Namespace) -> int:
                 "identity_id": args.identity,
                 "url": args.url,
                 "ttl_seconds": args.ttl,
+                "control": bool(args.control),
+                "control_owner": args.control_owner,
+                "control_ttl_seconds": args.control_ttl,
             },
             auth=True,
         )
@@ -155,7 +158,7 @@ def cmd_open(args: argparse.Namespace) -> int:
             auth=True,
         )
         result["screenshot"] = _compact_screenshot(screenshot)
-    if lease_id and args.control:
+    if lease_id and args.control and "control" not in result:
         control = _request(
             "POST",
             "/openbrowser/v1/takeover/request",

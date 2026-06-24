@@ -180,10 +180,11 @@ fi
     --user-data-dir="$PROFILE_DIR" \
     --no-sandbox \
     --disable-gpu \
-    --disable-gpu-sandbox \
     --disable-dev-shm-usage \
     --disable-background-networking \
     --disable-breakpad \
+    --disable-session-crashed-bubble \
+    --hide-crash-restore-bubble \
     --metrics-recording-only \
     --disable-extensions \
     --disable-component-extensions-with-background-pages \

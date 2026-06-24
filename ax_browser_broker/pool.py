@@ -286,14 +286,25 @@ def _wait_slot_ready(slot: Slot, timeout_seconds: float = 10.0) -> bool:
     return False
 
 
-def _activate_neutral_slot(slot: Slot) -> bool:
+def _activate_neutral_slot(slot: Slot, *, headed: bool = False) -> bool:
     if slot_in_maintenance(slot.name):
         return False
     config_path = POOL_CONFIG_DIR / f"{slot.name}.env"
-    if config_path.exists():
+    if headed:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text("CHROME_HEADLESS='0'\n", encoding="utf-8")
+        try:
+            config_path.chmod(0o600)
+        except OSError:
+            pass
+    elif config_path.exists():
         config_path.unlink()
     subprocess.run([str(BROWSER_POOL_DIR / "bin" / "launch_chrome.sh"), slot.name, str(slot.port)], check=True)
-    return _wait_slot_ready(slot)
+    if not _wait_slot_ready(slot):
+        return False
+    if headed:
+        return _slot_headed_ready(slot)
+    return True
 
 
 def _restart_slot(slot: Slot) -> bool:
@@ -581,6 +592,12 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                 except (IdentityError, subprocess.CalledProcessError) as error:
                     activation_errors.append(f"{slot.name}: {error}")
                     continue
+            if not identity_id and headed and not _slot_headed_ready(slot):
+                try:
+                    if not _activate_neutral_slot(slot, headed=True):
+                        continue
+                except subprocess.CalledProcessError:
+                    continue
             if not _slot_ready(slot):
                 continue
             if headed and not _slot_headed_ready(slot):
@@ -606,7 +623,7 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
             for slot in reclaimable_slots:
                 if slot.name in in_use:
                     continue
-                if not _activate_neutral_slot(slot):
+                if not _activate_neutral_slot(slot, headed=headed):
                     continue
                 lease_id = str(uuid.uuid4())
                 state["leases"][lease_id] = {
@@ -619,6 +636,8 @@ def lease(owner: str, ttl_seconds: int = LEASE_TTL_SECONDS, identity_id: str | N
                     "ttl_seconds": effective_ttl,
                     "profile_dir": str(slot.profile_dir),
                 }
+                if headed:
+                    state["leases"][lease_id]["headed"] = True
                 return _lease_from_state(lease_id, state["leases"][lease_id])
     if identity_id and activation_errors:
         raise LeaseError("No healthy free browser slots; activation failures: " + "; ".join(activation_errors))

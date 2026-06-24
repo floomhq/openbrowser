@@ -89,7 +89,13 @@ def test_cli_open_control_sends_one_step_handoff_payload(monkeypatch, capsys) ->
     def fake_request(method, path, body=None, auth=False):
         calls.append((method, path, body, auth))
         if path == "/openbrowser/v1/open":
-            return {"lease": {"lease_id": "lease-cli"}, "navigation": {"url": "https://lovable.dev/dashboard"}}
+            return {
+                "lease": {"lease_id": "lease-cli"},
+                "navigation": {"url": "https://lovable.dev/dashboard"},
+                "control": {"portal_url": "https://browser.example.com/auth/lease-control/tok"},
+                "takeover": {"portal_url": "https://browser.example.com/auth/lease-control/tok"},
+                "portal_url": "https://browser.example.com/auth/lease-control/tok",
+            }
         if path == "/openbrowser/v1/browser/snapshot":
             return {"title": "Home | Lovable", "url": "https://lovable.dev/dashboard", "bodyText": "ok", "elements": [], "slot": "pool-b"}
         if path == "/openbrowser/v1/browser/screenshot":
@@ -125,17 +131,14 @@ def test_cli_open_control_sends_one_step_handoff_payload(monkeypatch, capsys) ->
                 "identity_id": "chrome-work",
                 "url": "https://lovable.dev",
                 "ttl_seconds": 900,
+                "control": True,
+                "control_owner": None,
+                "control_ttl_seconds": 900,
             },
             True,
         ),
         ("POST", "/openbrowser/v1/browser/snapshot", {"lease_id": "lease-cli"}, True),
         ("POST", "/openbrowser/v1/browser/screenshot", {"lease_id": "lease-cli", "full_page": False}, True),
-        (
-            "POST",
-            "/openbrowser/v1/takeover/request",
-            {"owner": "pytest-open", "lease_id": "lease-cli", "ttl_seconds": 900},
-            True,
-        ),
     ]
     output = json.loads(capsys.readouterr().out)
     assert output["portal_url"].endswith("/tok")
@@ -191,7 +194,15 @@ def test_cli_open_control_reuses_matching_active_identity_lease(monkeypatch, cap
         (
             "POST",
             "/openbrowser/v1/open",
-            {"owner": "pytest-open", "identity_id": "chrome-work", "url": "https://lovable.dev", "ttl_seconds": 900},
+            {
+                "owner": "pytest-open",
+                "identity_id": "chrome-work",
+                "url": "https://lovable.dev",
+                "ttl_seconds": 900,
+                "control": True,
+                "control_owner": None,
+                "control_ttl_seconds": 900,
+            },
             True,
         ),
         ("GET", "/status", None, False),
