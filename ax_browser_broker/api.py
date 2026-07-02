@@ -4760,10 +4760,11 @@ async def auth_portal(token: str, request: Request) -> Any:
     except AuthError as error:
         raise HTTPException(status_code=410 if "expired" in str(error) or "is expired" in str(error) else 404, detail=str(error)) from error
     vnc = current_auth_vnc(token)
-    start_error = None
+    start_error = str(auth_request_data.get("start_error") or "") or None
     if vnc is None and AUTH_PORTAL_AUTOSTART:
         try:
             vnc = start_auth_vnc(token)
+            start_error = None
         except AuthError as error:
             redirect = _active_identity_control_redirect(auth_request_data, error)
             if redirect:
