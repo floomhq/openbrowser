@@ -193,8 +193,7 @@ def test_auth_portal_keeps_password_prompt_for_untrusted_ip(tmp_path, monkeypatc
     assert "OpenBrowser Login Handoff" not in response.text
     assert "access code" in response.text
     assert "manual-pass" in response.text
-    assert response.text.count("manual-pass") == 1
-    assert "#password=manual-pass" not in response.text
+    assert "#password=manual-pass" in response.text
     assert 'id="authCard"' in response.text
     assert 'id="minimizeAuth"' in response.text
     assert 'id="minimizeAuthSecondary"' in response.text
@@ -249,6 +248,23 @@ def test_auth_portal_rejects_expired_requests_before_vnc(tmp_path, monkeypatch) 
 
     assert response.status_code == 410
     assert started == []
+    assert "vnc.html" not in response.text
+
+
+def test_auth_portal_shows_persisted_start_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", tmp_path / "auth.json")
+    monkeypatch.setattr(api, "AUTH_PORTAL_AUTOSTART", False)
+
+    request = auth.create_auth_request("tester", "https://example.com/login")
+    data = auth.json.loads((tmp_path / "auth.json").read_text(encoding="utf-8"))
+    data["requests"][request["token"]]["start_error"] = "Chrome did not open a visible auth window on :870"
+    (tmp_path / "auth.json").write_text(auth.json.dumps(data), encoding="utf-8")
+
+    client = TestClient(api.app)
+    response = client.get("/auth/" + request["token"])
+
+    assert response.status_code == 200
+    assert "Chrome did not open a visible auth window on :870" in response.text
     assert "vnc.html" not in response.text
 
 

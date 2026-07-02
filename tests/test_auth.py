@@ -114,6 +114,58 @@ def test_current_auth_vnc_rejects_expired_request_and_removes_password(tmp_path,
     assert terminated == [123, 456]
 
 
+def test_sync_auth_profile_clone_preserves_cookies_and_excludes_locks(tmp_path, monkeypatch) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    (source / "Default" / "Network").mkdir(parents=True)
+    (source / "Default" / "Network" / "Cookies").write_text("cookie-db", encoding="utf-8")
+    (source / "SingletonLock").write_text("locked", encoding="utf-8")
+    (source / "Default" / "Cache").mkdir(parents=True)
+    (source / "Default" / "Cache" / "blob").write_text("cache", encoding="utf-8")
+    (source / "Default" / "Sessions").mkdir(parents=True)
+    (source / "Default" / "Sessions" / "Session_1").write_text("restore", encoding="utf-8")
+    (source / "Default" / "Preferences").write_text(
+        json.dumps({"profile": {"exit_type": "Crashed", "exited_cleanly": False}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(auth.shutil, "which", lambda name: None if name == "rsync" else f"/usr/bin/{name}")
+
+    auth._sync_auth_profile_clone(source, target)
+    auth._scrub_auth_profile_runtime_state(target)
+
+    assert (target / "Default" / "Network" / "Cookies").read_text(encoding="utf-8") == "cookie-db"
+    assert not (target / "SingletonLock").exists()
+    assert not (target / "Default" / "Cache").exists()
+    assert not (target / "Default" / "Sessions").exists()
+    preferences = json.loads((target / "Default" / "Preferences").read_text(encoding="utf-8"))
+    assert preferences["profile"]["exit_type"] == "Normal"
+    assert preferences["profile"]["exited_cleanly"] is True
+
+
+def test_stop_auth_vnc_removes_identity_auth_profile_clone(tmp_path, monkeypatch) -> None:
+    state_file = tmp_path / "auth_requests.json"
+    clone_root = tmp_path / "auth-profiles"
+    clone_dir = clone_root / "chrome-openpaper" / "tok"
+    clone_dir.mkdir(parents=True)
+    (clone_dir / "marker").write_text("clone", encoding="utf-8")
+    monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
+    monkeypatch.setattr(auth, "_auth_profile_root", lambda: clone_root)
+    monkeypatch.setattr(auth, "_terminate_process_group", lambda _pid: True)
+
+    request = auth.create_auth_request("tester", "https://example.com")
+    data = json.loads(state_file.read_text())
+    data["requests"][request["token"]]["vnc"] = {
+        "chrome_pid": 789,
+        "profile_dir": str(clone_dir),
+        "auth_profile_clone": True,
+    }
+    state_file.write_text(json.dumps(data), encoding="utf-8")
+
+    auth.stop_auth_vnc(request["token"])
+
+    assert not clone_dir.exists()
+
+
 def test_stop_auth_vnc_removes_password_file(tmp_path, monkeypatch) -> None:
     state_file = tmp_path / "auth_requests.json"
     password_file = tmp_path / "vnc.passwd"
@@ -152,10 +204,14 @@ def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monke
     old_password_file = tmp_path / "old.passwd"
     old_password_file.write_text("old\n", encoding="utf-8")
     monkeypatch.setattr(auth, "AUTH_STATE_FILE", state_file)
-    monkeypatch.setattr(auth, "_authenticated_x_display", lambda: (":99", None))
+    monkeypatch.setattr(auth, "_authenticated_x_display", lambda: (_ for _ in ()).throw(AssertionError("must not mirror existing display")))
     monkeypatch.setattr(auth.shutil, "which", lambda name: f"/usr/bin/{name}")
     monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(auth, "_terminate_process_group", lambda _pid: True)
+    monkeypatch.setattr(auth, "_find_free_display", lambda: ":870")
+    monkeypatch.setattr(auth, "_find_free_tcp_port", lambda *args, **kwargs: 19401)
+    monkeypatch.setattr(auth, "_prepare_generic_auth_profile", lambda token: tmp_path / "auth-clone")
+    monkeypatch.setattr(auth, "_wait_for_chrome_window", lambda *_args, **_kwargs: None)
 
     popen_calls = []
 
@@ -170,6 +226,9 @@ def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monke
             if args[0] == "/usr/bin/x11vnc":
                 password_path = args[args.index("-passwdfile") + 1]
                 assert auth.Path(password_path).exists()
+
+        def poll(self):
+            return None
 
     monkeypatch.setattr(auth.subprocess, "Popen", FakePopen)
     monkeypatch.setattr(auth, "_wait_for_process_port", lambda *_args, **_kwargs: None)
@@ -187,6 +246,14 @@ def test_start_auth_vnc_recreates_password_after_restart_cleanup(tmp_path, monke
 
     assert not old_password_file.exists()
     assert result["password"]
+    assert result["display"] == ":870"
+    assert result["cdp_port"] == 19401
+    assert any(call[0] == "/usr/bin/Xvfb" and call[1] == ":870" for call in popen_calls)
+    chrome_call = next(call for call in popen_calls if call[0] == "/usr/bin/google-chrome-stable")
+    assert f"--user-data-dir={tmp_path / 'auth-clone'}" in chrome_call
+    assert "--use-gl=swiftshader" in chrome_call
+    assert "--remote-debugging-port=19401" in chrome_call
+    assert chrome_call[-1] == "https://example.com"
     assert any(call[0] == "/usr/bin/x11vnc" for call in popen_calls)
     assert any(call[0] == "/usr/bin/websockify" for call in popen_calls)
 
@@ -370,6 +437,8 @@ def test_start_auth_vnc_removes_password_file_when_identity_start_fails(tmp_path
         raise AssertionError("expected identity start failure")
 
     assert not password_file.exists()
+    data = json.loads(state_file.read_text(encoding="utf-8"))
+    assert data["requests"][request["token"]]["start_error"] == "refused"
 
 
 def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path, monkeypatch) -> None:
@@ -407,6 +476,9 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
         ],
     )
     monkeypatch.setattr(auth, "_terminate_pids", lambda pids: killed_pool_pids.extend(pids))
+    monkeypatch.setattr(auth, "_prepare_identity_auth_profile", lambda identity_id, profile_dir, token: tmp_path / "auth-clone")
+    monkeypatch.setattr(auth, "_wait_for_process_port", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(auth, "_wait_for_chrome_window", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(auth, "_terminate_process_group", lambda pid: terminated.append(pid) or True)
@@ -425,7 +497,7 @@ def test_identity_auth_partial_start_failure_terminates_started_helpers(tmp_path
         raise AssertionError("expected partial start failure")
 
     assert terminated == [333, 222, 111]
-    assert killed_pool_pids == [444, 444]
+    assert killed_pool_pids == []
     assert not (tmp_path / "maintenance" / "pool-b.json").exists()
 
 
@@ -461,6 +533,9 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     monkeypatch.setattr(auth, "_find_free_tcp_port", lambda *args, **kwargs: 18901)
     monkeypatch.setattr(auth, "_process_rows", lambda: [])
     monkeypatch.setattr(auth, "_terminate_pids", lambda _pids: None)
+    monkeypatch.setattr(auth, "_prepare_identity_auth_profile", lambda identity_id, profile_dir, token: tmp_path / "auth-clone")
+    monkeypatch.setattr(auth, "_wait_for_process_port", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(auth, "_wait_for_chrome_window", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(auth.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(auth.time, "sleep", lambda _seconds: None)
 
@@ -476,5 +551,7 @@ def test_identity_auth_starts_proxy_forwarder_for_proxied_identity(tmp_path, mon
     assert result["proxy_local_port"] == 18901
     assert any(str(call[0]).endswith("/bin/ax-proxy-forwarder") for call in popen_calls)
     chrome_call = next(call for call in popen_calls if call[0] == "/usr/bin/google-chrome-stable")
+    assert f"--user-data-dir={tmp_path / 'auth-clone'}" in chrome_call
+    assert f"--user-data-dir={tmp_path / 'work-main'}" not in chrome_call
     assert "--proxy-server=http://127.0.0.1:18901" in chrome_call
     assert "--remote-allow-origins=*" in chrome_call
