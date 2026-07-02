@@ -35,6 +35,27 @@ class AuthError(RuntimeError):
     pass
 
 
+AUTH_PROFILE_EXCLUDES = [
+    "Singleton*",
+    ".com.google.Chrome.*",
+    "Crashpad",
+    "BrowserMetrics*",
+    "Cache",
+    "Code Cache",
+    "GPUCache",
+    "ShaderCache",
+    "GrShaderCache",
+    "DawnCache",
+    "component_crx_cache",
+    "Default/Cache",
+    "Default/Code Cache",
+    "Default/GPUCache",
+    "Default/Service Worker/CacheStorage",
+    "*/LOCK",
+    "*.log",
+]
+
+
 def _url_from_base(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
 
@@ -89,6 +110,29 @@ def current_auth_vnc(token: str) -> dict[str, Any] | None:
     }
 
 
+def _record_auth_start_error(token: str, error: str) -> None:
+    now = int(time.time())
+    with locked_auth_state() as state:
+        request = state.get("requests", {}).get(token)
+        if request is None:
+            return
+        request["start_error"] = error
+        request["start_error_at"] = now
+        vnc = request.get("vnc")
+        if isinstance(vnc, dict):
+            vnc["start_error"] = error
+            vnc["start_error_at"] = now
+
+
+def _clear_auth_start_error(token: str) -> None:
+    with locked_auth_state() as state:
+        request = state.get("requests", {}).get(token)
+        if request is None:
+            return
+        request.pop("start_error", None)
+        request.pop("start_error_at", None)
+
+
 @contextmanager
 def locked_auth_state() -> Any:
     ensure_dirs()
@@ -129,6 +173,8 @@ def gc_auth_requests(state: dict[str, Any]) -> list[str]:
                 vnc["stopped_pids"] = stopped
                 maintenance_slots = [str(item) for item in vnc.get("maintenance_slots", [])]
                 vnc["cleared_maintenance_slots"] = _clear_auth_maintenance(maintenance_slots)
+                if vnc.get("auth_profile_clone"):
+                    _cleanup_auth_profile_clone(str(vnc.get("profile_dir") or ""))
                 password_file = vnc.get("password_file")
                 if password_file:
                     try:
@@ -291,6 +337,60 @@ def _find_free_tcp_port(start: int = 18900, end: int = 18999) -> int:
                 continue
             return port
     raise AuthError("No free local proxy port found for identity auth")
+
+
+def _auth_profile_root() -> Path:
+    return ROOT / "state" / "auth-profiles"
+
+
+def _safe_profile_token(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in value)[:96] or "auth"
+
+
+def _sync_auth_profile_clone(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        shutil.rmtree(target, ignore_errors=True)
+    if not source.exists():
+        target.mkdir(parents=True, exist_ok=True)
+        return
+    target.mkdir(parents=True, exist_ok=True)
+    rsync = shutil.which("rsync")
+    if rsync:
+        cmd = [rsync, "-a", "--delete", "--delete-excluded"]
+        for pattern in AUTH_PROFILE_EXCLUDES:
+            cmd.extend(["--exclude", pattern])
+        cmd.extend([str(source) + "/", str(target) + "/"])
+        subprocess.run(cmd, check=True)
+        return
+
+    def ignore(_dir: str, names: list[str]) -> set[str]:
+        import fnmatch
+
+        ignored: set[str] = set()
+        for name in names:
+            if any(fnmatch.fnmatch(name, pattern) for pattern in AUTH_PROFILE_EXCLUDES if "/" not in pattern):
+                ignored.add(name)
+        return ignored
+
+    shutil.copytree(source, target, dirs_exist_ok=True, ignore=ignore)
+
+
+def _prepare_identity_auth_profile(identity_id: str, source_profile_dir: Path, token: str) -> Path:
+    clone_dir = _auth_profile_root() / _safe_profile_token(identity_id) / _safe_profile_token(token)
+    _sync_auth_profile_clone(source_profile_dir, clone_dir)
+    return clone_dir
+
+
+def _cleanup_auth_profile_clone(profile_dir: str | None) -> None:
+    if not profile_dir:
+        return
+    path = Path(profile_dir)
+    try:
+        path.resolve().relative_to(_auth_profile_root().resolve())
+    except ValueError:
+        return
+    shutil.rmtree(path, ignore_errors=True)
 
 
 def _terminate_tcp_listeners(port: int) -> list[int]:
@@ -459,8 +559,8 @@ def _start_identity_auth_vnc(
     auth_slots = _identity_auth_slots(identity.identity_id, identity.profile_dir, identity.slot)
     maintenance_slots = _write_auth_maintenance(auth_slots, request)
     identity.profile_dir.mkdir(parents=True, exist_ok=True)
-    _kill_identity_pool_processes(identity.identity_id, identity.profile_dir, maintenance_slots)
-    time.sleep(0.5)
+    token = str(request.get("token") or "manual")
+    auth_profile_dir = _prepare_identity_auth_profile(identity.identity_id, identity.profile_dir, token)
     display = _find_free_display()
     env = os.environ.copy()
     env["DISPLAY"] = display
@@ -507,7 +607,7 @@ def _start_identity_auth_vnc(
             chrome_proc = subprocess.Popen(
                 [
                     chrome,
-                    f"--user-data-dir={identity.profile_dir}",
+                    f"--user-data-dir={auth_profile_dir}",
                     "--no-sandbox",
                     "--disable-gpu",
                     "--disable-gpu-sandbox",
@@ -531,7 +631,8 @@ def _start_identity_auth_vnc(
                 start_new_session=True,
             )
             started_pids.append(chrome_proc.pid)
-            time.sleep(0.7)
+            _wait_for_process_port(chrome_proc, cdp_port, log_path, "Chrome remote debugging", timeout_seconds=8.0)
+            _wait_for_chrome_window(chrome_proc, display, log_path)
             x11vnc_proc = subprocess.Popen(
                 [
                     x11vnc,
@@ -563,10 +664,14 @@ def _start_identity_auth_vnc(
                 env=env,
                 start_new_session=True,
             )
+            started_pids.append(websockify_proc.pid)
+            _wait_for_process_port(x11vnc_proc, vnc_port, log_path, "x11vnc")
+            _wait_for_process_port(websockify_proc, websocket_port, log_path, "websockify")
         except Exception:
             for pid in reversed(started_pids):
                 _terminate_process_group(pid)
             _clear_auth_maintenance(maintenance_slots)
+            _cleanup_auth_profile_clone(str(auth_profile_dir))
             raise
     return {
         "mode": "identity",
@@ -585,7 +690,9 @@ def _start_identity_auth_vnc(
         "vnc_port": vnc_port,
         "password_file": str(password_file),
         "started_at": int(time.time()),
-        "profile_dir": str(identity.profile_dir),
+        "profile_dir": str(auth_profile_dir),
+        "source_profile_dir": str(identity.profile_dir),
+        "auth_profile_clone": True,
     }
 
 
@@ -666,7 +773,8 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
                 "password_file": str(password_file),
                 "started_at": int(time.time()),
             }
-    except Exception:
+    except Exception as error:
+        _record_auth_start_error(token, str(error))
         try:
             password_file.unlink(missing_ok=True)
         except OSError:
@@ -678,6 +786,7 @@ def start_auth_vnc(token: str, websocket_port: int = 6081, vnc_port: int = 5901)
         state_request = state["requests"].get(token)
         if state_request is not None:
             state_request["vnc"] = vnc_state
+    _clear_auth_start_error(token)
     return {
         "token": token,
         "display": display,
@@ -777,6 +886,40 @@ def _wait_for_process_port(proc: subprocess.Popen[Any], port: int, log_path: Pat
     except OSError:
         pass
     raise AuthError(f"{label} failed to listen on 127.0.0.1:{port}: {error_tail}")
+
+
+def _wait_for_chrome_window(
+    chrome_proc: subprocess.Popen[Any],
+    display: str,
+    log_path: Path,
+    timeout_seconds: float = 8.0,
+) -> None:
+    xdotool = shutil.which("xdotool")
+    if not xdotool:
+        raise AuthError("xdotool is missing; cannot verify Chrome opened a visible auth window")
+    env = os.environ.copy()
+    env["DISPLAY"] = display
+    deadline = time.time() + timeout_seconds
+    last_error = ""
+    while time.time() < deadline:
+        if chrome_proc.poll() is not None:
+            break
+        for args in (
+            [xdotool, "search", "--onlyvisible", "--class", "chrome"],
+            [xdotool, "search", "--onlyvisible", "--name", "."],
+        ):
+            result = subprocess.run(args, env=env, capture_output=True, text=True, check=False)
+            if result.returncode == 0 and result.stdout.strip():
+                return
+            last_error = (result.stderr or result.stdout or "").strip()
+        time.sleep(0.2)
+    error_tail = ""
+    try:
+        error_tail = log_path.read_text(encoding="utf-8", errors="replace")[-1200:]
+    except OSError:
+        pass
+    details = f"{last_error}\n{error_tail}".strip()
+    raise AuthError(f"Chrome did not open a visible auth window on {display}: {details}")
 
 
 def _start_lease_vnc(
@@ -887,6 +1030,8 @@ def stop_auth_vnc(token: str, missing_ok: bool = False) -> dict[str, Any]:
             pass
     maintenance_slots = [str(item) for item in vnc.get("maintenance_slots", [])]
     cleared_maintenance = _clear_auth_maintenance(maintenance_slots)
+    if vnc.get("auth_profile_clone"):
+        _cleanup_auth_profile_clone(str(vnc.get("profile_dir") or ""))
     with locked_auth_state() as state:
         state_request = state["requests"].get(token)
         if state_request is not None and "vnc" in state_request:
