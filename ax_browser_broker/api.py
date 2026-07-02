@@ -4135,7 +4135,11 @@ def _auth_portal_html(
     floating_auth = ""
     inline_password_controls = ""
     if vnc:
-        embed_url = _novnc_embed_url(vnc, trusted_client)
+        # The /auth/<token> portal URL is itself the secret, so always auto-supply
+        # the VNC password to noVNC (previously gated on trusted_client, which left
+        # the viewer blank for the primary use case: the owner opening the portal
+        # from an untrusted device like their phone).
+        embed_url = _novnc_embed_url(vnc, True)
         safe_embed_url = html.escape(embed_url, quote=True)
         safe_open_url = html.escape(embed_url, quote=True)
         if trusted_client:
